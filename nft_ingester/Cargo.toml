@@ -56,3 +56,6 @@ crossbeam = "0.8.2"
 [dependencies.num-integer] 
 version = "0.1.44"
 default-features = false
+
+[workspace]
+members = []
