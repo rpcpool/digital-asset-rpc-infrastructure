@@ -47,7 +47,7 @@ pub enum IngesterError {
     #[error("Unrecoverable task error")]
     UnrecoverableTaskError,
     #[error("Cache Storage Write Error {0}")]
-    CacheStorageWriteError(String)
+    CacheStorageWriteError(String),
 }
 
 impl From<reqwest::Error> for IngesterError {

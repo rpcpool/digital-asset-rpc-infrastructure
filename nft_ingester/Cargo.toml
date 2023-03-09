@@ -34,7 +34,7 @@ spl-account-compression = "0.1.8"
 uuid = "1.0.0"
 async-trait = "0.1.53"
 num-traits = "0.2.15"
-blockbuster = { version = "0.7.3" }
+blockbuster = { path = "../../blockbuster/blockbuster" }
 figment = { version = "0.10.6", features = ["env"] }
 cadence = "0.29.0"
 cadence-macros = "0.29.0"
