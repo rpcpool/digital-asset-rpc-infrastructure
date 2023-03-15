@@ -1,4 +1,4 @@
-use crate::TaskData;
+use crate::tasks::TaskData;
 use blockbuster::error::BlockbusterError;
 use plerkle_messenger::MessengerError;
 use plerkle_serialization::error::PlerkleSerializationError;
