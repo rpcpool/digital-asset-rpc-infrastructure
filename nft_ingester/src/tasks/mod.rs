@@ -275,7 +275,7 @@ impl TaskManager {
                         name,
                         task,
                         task_map.clone(),
-                        process_on_receive
+                        process_on_receive,
                     );
                 }
             }

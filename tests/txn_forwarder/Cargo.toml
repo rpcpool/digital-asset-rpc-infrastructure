@@ -11,8 +11,10 @@ base64 = "0.20.0"
 thiserror = "1.0.31"
 serde_json = "1.0.81"
 tokio = { version = "1.23.0", features = ["full", "tracing"] }
-plerkle_messenger = { version = "1.5.0", features = ['redis'] }
-plerkle_serialization = { version = "1.5.0" }
+plerkle_serialization = { path = "../../../digital-asset-validator-plugin/plerkle_serialization" }
+plerkle_messenger = { path = "../../../digital-asset-validator-plugin/plerkle_messenger", features = [
+  "redis",
+] }
 flatbuffers = "23.1.21"
 clap = { version = "4.1.4", features = ["derive"] }
 solana-client = { version = "=1.14.15"}
