@@ -2628,7 +2628,7 @@ dependencies = [
 
 [[package]]
 name = "nft_ingester"
-version = "0.6.9"
+version = "0.7.0"
 dependencies = [
  "anchor-lang",
  "async-trait",
@@ -3112,6 +3112,7 @@ version = "1.5.1"
 dependencies = [
  "async-mutex",
  "async-trait",
+ "blake3",
  "figment",
  "futures",
  "log",
@@ -3122,22 +3123,7 @@ dependencies = [
 
 [[package]]
 name = "plerkle_serialization"
-version = "1.5.1"
-dependencies = [
- "bs58 0.4.0",
- "chrono",
- "flatbuffers",
- "serde",
- "solana-sdk",
- "solana-transaction-status",
- "thiserror",
-]
-
-[[package]]
-name = "plerkle_serialization"
-version = "1.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5606c38961b93dd12a642e96798ca5decb6fa86fed0447051aede5d6c954320c"
+version = "1.5.2"
 dependencies = [
  "bs58 0.4.0",
  "chrono",
