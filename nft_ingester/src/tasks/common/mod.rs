@@ -86,7 +86,7 @@ impl BgTask for DownloadMetadataTask {
         let download_metadata: DownloadMetadata = serde_json::from_value(data)?;
         let meta_url = Url::parse(&download_metadata.uri);
         let body = match meta_url {
-            Ok(_) => DownloadMetadataTask::request_metadata(download_metadata.uri).await?,
+            Ok(_) => DownloadMetadataTask::request_metadata(download_metadata.uri.clone()).await?,
             _ => serde_json::Value::String("Invalid Uri".to_string()), //TODO -> enumize this.
         };
         let model = asset_data::ActiveModel {
@@ -111,7 +111,10 @@ impl BgTask for DownloadMetadataTask {
                 ))
             })?;
         if meta_url.is_err() {
-            return Err(IngesterError::UnrecoverableTaskError);
+            return Err(IngesterError::UnrecoverableTaskError(format!(
+                "Failed to parse URI: {}",
+                download_metadata.uri
+            )));
         }
         Ok(())
     }

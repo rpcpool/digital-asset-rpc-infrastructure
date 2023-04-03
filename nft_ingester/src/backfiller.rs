@@ -493,8 +493,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
         if missing_trees.len() > 0 {
             info!("Number of Missing local trees: {}", missing_trees.len());
         } else {
-            debug!("No missing trees"
-            )
+            debug!("No missing trees");
         }
         Ok(missing_trees)
     }
