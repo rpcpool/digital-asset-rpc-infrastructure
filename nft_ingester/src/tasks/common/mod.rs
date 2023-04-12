@@ -1,4 +1,4 @@
-use super::{BgTask, FromTaskData, IngesterError, IntoTaskData, TaskData};
+use super::{BgTask, FromTaskData, IngesterError, IntoTaskData, TaskData, metric};
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
 use digital_asset_types::dao::asset_data;
@@ -11,6 +11,8 @@ use std::{
     time::Duration,
 };
 use url::Url;
+use cadence_macros::is_global_default_set;
+use cadence_macros::{set_global_default, statsd_count, statsd_gauge, statsd_time};
 
 const TASK_NAME: &str = "DownloadMetadata";
 
@@ -55,12 +57,29 @@ impl DownloadMetadataTask {
         let client = ClientBuilder::new()
             .timeout(Duration::from_secs(3))
             .build()?;
-        let val: serde_json::Value = Client::get(&client, uri) // Need to check for malicious sites ?
+        let response = Client::get(&client, uri) // Need to check for malicious sites ?
             .send()
-            .await?
-            .json()
-            .await?;
-        Ok(val)
+            .await;
+
+        if let Err(e) = response {
+            metric! {
+                let status = match e.status().clone() {
+                    Some(s) => String::from(s.as_str()),
+                    _ => String::from("")
+                };
+                let redirect = match e.is_redirect() {
+                    true => "yes",
+                    false => "no"
+                };
+                statsd_count!("ingester.bgtask.http_error", 1, 
+                    "redirect" => redirect,
+                    "status" => status.as_str());
+            }
+            Err(IngesterError::HttpError(e.to_string()))
+        } else {
+            let val: serde_json::Value = response.unwrap().json().await?;
+            Ok(val)
+        }
     }
 }
 

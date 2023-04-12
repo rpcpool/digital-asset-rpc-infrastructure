@@ -48,6 +48,8 @@ pub enum IngesterError {
     UnrecoverableTaskError,
     #[error("Cache Storage Write Error {0}")]
     CacheStorageWriteError(String),
+    #[error("HttpError {0}")]
+    HttpError(String)
 }
 
 impl From<reqwest::Error> for IngesterError {
