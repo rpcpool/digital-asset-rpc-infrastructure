@@ -201,8 +201,8 @@ impl TaskManager {
                             .less_or_equal(Expr::col(tasks::Column::MaxAttempts)),
                     ),
             )
-            .order_by(tasks::Column::Attempts, Order::Asc)
-            .order_by(tasks::Column::CreatedAt, Order::Desc)
+            .order_by(tasks::Column::Attempts, Order::Asc) // Order by attempts first so we first try with assets we haven't previously tried
+            .order_by(tasks::Column::CreatedAt, Order::Desc) // Then order by created_at so we try with the most recent assets first
             .limit(batch_size)
             .all(conn)
             .await
