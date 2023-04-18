@@ -130,7 +130,6 @@ pub async fn send_account(
         .value
         .expect(&format!("Account {} not found", account));
     let slot = get_account_response.context.slot;
-
     send(account_key, account_data, slot, messenger).await
 }
 

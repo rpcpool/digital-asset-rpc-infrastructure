@@ -1,5 +1,5 @@
 FROM rust:1.65-bullseye AS chef
-RUN cargo install cargo-chef
+RUN cargo install --version 0.1.55 cargo-chef
 FROM chef AS planner
 COPY das_api /rust/das_api/
 WORKDIR /rust/das_api
