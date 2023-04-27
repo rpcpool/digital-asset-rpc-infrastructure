@@ -16,6 +16,7 @@ use digital_asset_types::{
     },
     json::ChainDataV1,
 };
+use log::{debug, info};
 use num_traits::FromPrimitive;
 use plerkle_serialization::Pubkey as FBPubkey;
 use sea_orm::{
@@ -95,10 +96,11 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
             OwnerType::Single => {
                 let token: Option<tokens::Model> =
                     tokens::Entity::find_by_id(mint.clone()).one(conn).await?;
-                // query for token account associated with mint with positive balance
+                // query for token account associated with mint with positive balance with latest slot
                 let token_account: Option<token_accounts::Model> = token_accounts::Entity::find()
                     .filter(token_accounts::Column::Mint.eq(mint.clone()))
                     .filter(token_accounts::Column::Amount.gt(0))
+                    .order_by(token_accounts::Column::SlotUpdated, Order::Desc)
                     .one(conn)
                     .await?;
                 Ok((token, token_account))
