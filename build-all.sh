@@ -17,6 +17,7 @@ pushd migration
 cargo build
 popd
 
-pushd metaplex-rpc-proxy
-cargo build
-popd
+# Not used by Helius
+# pushd metaplex-rpc-proxy
+# cargo build
+# popd
