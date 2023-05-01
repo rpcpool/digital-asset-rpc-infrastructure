@@ -45,6 +45,10 @@ enum Action {
         #[arg(long)]
         include_failed: Option<bool>,
     },
+    Addresses {
+        #[arg(long)]
+        file: String,
+    },
     Scenario {
         #[arg(long)]
         scenario_file: String,
@@ -92,6 +96,29 @@ async fn main() {
                 cli.max_retries,
             )
             .await;
+        }
+        Action::Addresses { file } => {
+            let addresses = std::fs::read_to_string(file).unwrap();
+            let addresses: Vec<String> = addresses.lines().map(|s| s.to_string()).collect();
+            let mut tasks = Vec::new();
+            for addr in addresses {
+                let messenger = Arc::clone(&messenger);
+                let cli_url = cli.rpc_url.clone();
+                tasks.push(tokio::spawn(async move {
+                    send_address(
+                        &addr,
+                        cli_url.clone(),
+                        messenger,
+                        false,
+                        cli.max_retries,
+                    )
+                    .await;
+                }));
+            }
+            for task in tasks {
+                task.await.unwrap();
+            }
+
         }
         Action::Scenario { scenario_file } => {
             let scenario = std::fs::read_to_string(scenario_file).unwrap();
