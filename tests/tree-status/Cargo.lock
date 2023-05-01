@@ -201,6 +201,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "anchor-client"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "582dd4960f08a340a91ebe3cac5431338cfd2d2ccfa6520dcc8f2036a86f5125"
+dependencies = [
+ "anchor-lang",
+ "anyhow",
+ "regex",
+ "serde",
+ "solana-account-decoder",
+ "solana-client",
+ "solana-sdk",
+ "thiserror",
+ "url",
+]
+
+[[package]]
 name = "anchor-derive-accounts"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -456,6 +473,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-recursion"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e97ce7de6cf12de5d7226c73f5ba9811622f4db3a5b91b55c53e987e5f91cba"
+dependencies = [
+ "proc-macro2 1.0.56",
+ "quote 1.0.26",
+ "syn 2.0.15",
+]
+
+[[package]]
 name = "async-stream"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -547,6 +575,12 @@ name = "base64"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
+
+[[package]]
+name = "base64"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ea22880d78093b0cbe17c89f64a7d457941e65759157ec6cb31a31d652b05e5"
 
 [[package]]
 name = "base64"
@@ -5820,8 +5854,11 @@ dependencies = [
 name = "tree-status"
 version = "0.1.0"
 dependencies = [
+ "anchor-client",
  "anyhow",
- "borsh 0.9.3",
+ "async-recursion",
+ "borsh 0.10.3",
+ "bs58 0.4.0",
  "clap 4.2.4",
  "digital_asset_types",
  "flatbuffers",
@@ -5837,8 +5874,12 @@ dependencies = [
  "solana-transaction-status",
  "spl-account-compression",
  "spl-concurrent-merkle-tree",
+ "spl-noop",
  "sqlx",
+ "thiserror",
  "tokio",
+ "tokio-stream",
+ "txn_forwarder",
 ]
 
 [[package]]
@@ -5877,6 +5918,29 @@ dependencies = [
  "utf-8",
  "webpki",
  "webpki-roots",
+]
+
+[[package]]
+name = "txn_forwarder"
+version = "0.6.9"
+dependencies = [
+ "base64 0.20.0",
+ "bs58 0.4.0",
+ "clap 4.2.4",
+ "figment",
+ "flatbuffers",
+ "futures",
+ "futures-util",
+ "plerkle_messenger",
+ "plerkle_serialization",
+ "redis",
+ "serde_json",
+ "solana-client",
+ "solana-sdk",
+ "solana-transaction-status",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
