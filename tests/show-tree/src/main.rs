@@ -43,11 +43,11 @@ struct Cli {
 async fn main() {
     let cli = Cli::parse();
 
-    read_address(cli.address, cli.rpc_url, false, cli.max_retries).await;
+    read_tree(cli.address, cli.rpc_url, false, cli.max_retries).await;
 }
 
 // Fetches all the transactions referencing a specific trees
-pub async fn read_address(address: String, client_url: String, failed: bool, max_retries: u8) {
+pub async fn read_tree(address: String, client_url: String, failed: bool, max_retries: u8) {
     let client1 = RpcClient::new(client_url.clone());
     let pub_addr = Pubkey::from_str(address.as_str()).unwrap();
     // This takes a param failed but it excludes all failed TXs
