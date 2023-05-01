@@ -25,3 +25,5 @@ sea-query = { version = "0.28.1", features = ["postgres-array"] }
 nft_ingester = { path = "../../nft_ingester" }
 digital_asset_types = { path = "../../digital_asset_types", features = ["json_types", "sql_types"] }
 hex = "0.4.3"
+log = "0.4"
+log4rs = "1"
