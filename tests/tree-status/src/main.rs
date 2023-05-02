@@ -114,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
                 //println!("seq for pubkey {:?}: {:?}", pubkey, seq);
                 if seq.is_err() {
                    eprintln!("[{:?}] tree is missing from chain or error occurred: {:?}", pubkey, seq);
-                   trace!("{:?}, Tree missing, {:?}", pubkey, seq);
+                   error!("{:?}, Tree missing, {:?}", pubkey, seq);
                     continue;
                 }
 
@@ -132,13 +132,13 @@ async fn main() -> anyhow::Result<()> {
                         // Check tip 
                         if indexed_seq.max_seq > seq.try_into().unwrap() {
                             eprintln!("[{:?}] indexer error: {:?} > {:?}", pubkey, indexed_seq.max_seq, seq);
-                            info!("{:?}, Seq is lower than max_indexed_seq, {:?}", pubkey, indexed_seq.max_seq);
+                            debug!("{:?}, Seq is lower than max_indexed_seq, {:?}", pubkey, indexed_seq.max_seq);
                         } else if indexed_seq.max_seq < seq.try_into().unwrap() {
                             eprintln!(
                                 "[{:?}] tree not fully indexed: {:?} < {:?}",
                                 pubkey, indexed_seq.max_seq, seq
                             );
-                            warn!("{:?}, Seq is higher than max_indexed_seq, {:?}", pubkey,  indexed_seq.max_seq);
+                            debug!("{:?}, Seq is higher than max_indexed_seq, {:?}", pubkey,  indexed_seq.max_seq);
                         } else {
                             indexing_successful = true;
                         }
@@ -149,7 +149,7 @@ async fn main() -> anyhow::Result<()> {
                                 "[{:?}] tree has gaps {:?} != {:?}",
                                 pubkey, indexed_seq.max_seq, indexed_seq.cnt_seq
                             );
-                            error!("{:?}, cnt_seq, {:?}, doesn't match max_seq, {:?}", pubkey,  indexed_seq.cnt_seq, indexed_seq.max_seq);
+                            debug!("{:?}, cnt_seq, {:?}, doesn't match max_seq, {:?}", pubkey,  indexed_seq.cnt_seq, indexed_seq.max_seq);
                             indexing_successful = false;
                         }
 
@@ -157,14 +157,15 @@ async fn main() -> anyhow::Result<()> {
                             println!("[{:?}] indexing is complete, seq={:?}", pubkey, seq)
                         } else {
                             eprintln!("[{:?}] indexing is failed, seq={:?} max_seq={:?}", pubkey, seq, indexed_seq);
-                            error!("{:?}, indexing failed, seq={:?}, doesn't match, max_seq={:?}", pubkey, seq, indexed_seq);
+                            debug!("{:?}, indexing failed, seq={:?}, doesn't match, max_seq={:?}", pubkey, seq, indexed_seq);
                             let ret = get_missing_seq(&pubkey.to_bytes(), seq.try_into().unwrap(), &conn).await;
                             if ret.is_err() {
                                 eprintln!("[{:?}] failed to query missing seq: {:?}", pubkey, ret);
-                                error!("{:?}, failed to query missing seq, {:?}", pubkey, ret);
+                                debug!("{:?}, failed to query missing seq, {:?}", pubkey, ret);
                             } else {
                                 let ret = ret.unwrap();
                                 eprintln!("[{:?}] missing seq: {:?}", pubkey, ret);
+                                // error we want to follow up after executing this.
                                 error!("{:?}, missing seq, {:?}", pubkey, ret);
                             }
                         }
