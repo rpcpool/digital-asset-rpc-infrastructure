@@ -27,6 +27,7 @@ use {
 use log::{debug, error, info, trace, warn};
 use log4rs;
 
+
 #[derive(Debug, FromQueryResult, Clone)]
 struct MaxSeqItem {
     max_seq: i64,
@@ -166,7 +167,10 @@ async fn main() -> anyhow::Result<()> {
                                 let ret = ret.unwrap();
                                 eprintln!("[{:?}] missing seq: {:?}", pubkey, ret);
                                 // error we want to follow up after executing this.
-                                error!("{:?}, missing seq, {:?}", pubkey, ret);
+                                // Itearate over ret and print each iteration wit error!()
+                                for i in &ret {
+                                    error!("{:?}, {:?}", pubkey, i);
+                                }
                             }
                         }
                     },
