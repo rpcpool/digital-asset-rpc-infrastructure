@@ -23,11 +23,6 @@ use {
     },
 };
 
-// logging dependencies
-use log::{debug, error, info, trace, warn};
-use log4rs;
-
-
 #[derive(Debug, FromQueryResult, Clone)]
 struct MaxSeqItem {
     max_seq: i64,
@@ -105,17 +100,13 @@ async fn main() -> anyhow::Result<()> {
             .collect(),
     };
 
-    // config log appender
-    log4rs::init_file("./log4rs.yml", Default::default()).unwrap();
-
     for pubkey in pubkeys {
         match pubkey.parse() {
             Ok(pubkey) => {
                 let seq = get_tree_latest_seq(pubkey, &client).await;
                 //println!("seq for pubkey {:?}: {:?}", pubkey, seq);
                 if seq.is_err() {
-                   eprintln!("[{:?}] tree is missing from chain or error occurred: {:?}", pubkey, seq);
-                   error!("{:?}, Tree missing, {:?}", pubkey, seq);
+                   eprintln!("{:?}, tree is missing from chain or error occurred: ,{:?}", pubkey, seq);
                     continue;
                 }
 
@@ -123,8 +114,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let fetch_seq = get_tree_max_seq(&pubkey.to_bytes(), &conn).await;
                 if fetch_seq.is_err() {
-                    eprintln!("[{:?}] couldn't query tree from index: {:?}", pubkey, fetch_seq);
-                    debug!("{:?}, Couldn't query tree from index, {:?}", pubkey, fetch_seq);
+                    eprintln!("{:?}, couldn't query tree from index: , {:?}", pubkey, fetch_seq);
                     continue;
                 }
                 match fetch_seq.unwrap() {
@@ -132,14 +122,12 @@ async fn main() -> anyhow::Result<()> {
                         let mut indexing_successful = false;
                         // Check tip 
                         if indexed_seq.max_seq > seq.try_into().unwrap() {
-                            eprintln!("[{:?}] indexer error: {:?} > {:?}", pubkey, indexed_seq.max_seq, seq);
-                            debug!("{:?}, Seq is lower than max_indexed_seq, {:?}", pubkey, indexed_seq.max_seq);
+                            eprintln!("{:?}, indexer error: ,{:?}, >, {:?}", pubkey, indexed_seq.max_seq, seq);
                         } else if indexed_seq.max_seq < seq.try_into().unwrap() {
                             eprintln!(
-                                "[{:?}] tree not fully indexed: {:?} < {:?}",
+                                "{:?}, tree not fully indexed:, {:?}, < ,{:?}",
                                 pubkey, indexed_seq.max_seq, seq
                             );
-                            debug!("{:?}, Seq is higher than max_indexed_seq, {:?}", pubkey,  indexed_seq.max_seq);
                         } else {
                             indexing_successful = true;
                         }
@@ -147,36 +135,30 @@ async fn main() -> anyhow::Result<()> {
                         // Check completeness
                         if indexed_seq.max_seq != indexed_seq.cnt_seq {
                             eprintln!(
-                                "[{:?}] tree has gaps {:?} != {:?}",
+                                "[{:?}], tree has gaps, {:?}, != , {:?}",
                                 pubkey, indexed_seq.max_seq, indexed_seq.cnt_seq
                             );
-                            debug!("{:?}, cnt_seq, {:?}, doesn't match max_seq, {:?}", pubkey,  indexed_seq.cnt_seq, indexed_seq.max_seq);
                             indexing_successful = false;
                         }
 
                         if indexing_successful {
                             println!("[{:?}] indexing is complete, seq={:?}", pubkey, seq)
                         } else {
-                            eprintln!("[{:?}] indexing is failed, seq={:?} max_seq={:?}", pubkey, seq, indexed_seq);
-                            debug!("{:?}, indexing failed, seq={:?}, doesn't match, max_seq={:?}", pubkey, seq, indexed_seq);
+                            eprintln!("[{:?}], indexing is failed, seq=,{:?}, max_seq=,{:?}", pubkey, seq, indexed_seq);
                             let ret = get_missing_seq(&pubkey.to_bytes(), seq.try_into().unwrap(), &conn).await;
                             if ret.is_err() {
                                 eprintln!("[{:?}] failed to query missing seq: {:?}", pubkey, ret);
-                                debug!("{:?}, failed to query missing seq, {:?}", pubkey, ret);
                             } else {
                                 let ret = ret.unwrap();
-                                eprintln!("[{:?}] missing seq: {:?}", pubkey, ret);
                                 // error we want to follow up after executing this.
-                                // Itearate over ret and print each iteration wit error!()
                                 for i in &ret {
-                                    error!("{:?}, {:?}", pubkey, i);
+                                    eprintln!("{:?}, missing seq, {:?}", pubkey, i);
                                 }
                             }
                         }
                     },
                     None => {
-                        eprintln!("[{:?}] tree  missing from index", pubkey);
-                        error!("{:?}, tree missing from index", pubkey);
+                        eprintln!("{:?}, tree  missing from index", pubkey);
                     }
                 }
             }
