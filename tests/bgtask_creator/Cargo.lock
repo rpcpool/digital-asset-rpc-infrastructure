@@ -585,6 +585,7 @@ dependencies = [
  "nft_ingester",
  "sea-orm",
  "sea-query 0.28.4",
+ "solana-sdk",
  "sqlx",
  "thiserror",
  "tokio",
