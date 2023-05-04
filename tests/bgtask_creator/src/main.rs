@@ -93,12 +93,11 @@ pub async fn main() {
             Command::new("show")
                 .about("Show tasks")
         )
-
         .get_matches();
 
     let config_path = matches.get_one::<PathBuf>("config");
     if let Some(config_path) = config_path {
-        println!("Loading config from: {}", config_path.display());
+        info!("Loading config from: {}", config_path.display());
     }
 
     // Pull Env variables into config struct
@@ -163,13 +162,15 @@ pub async fn main() {
       aa.authority='\x0b6eeb8809df3468cbe2ee7b224e7b3291d99770811728fcdefbc180c6933157' and 
       ad.metadata=to_jsonb('processing'::text); 
        */
+
+    let all = "all".to_string();
     let mut asset_data_missing =  if let Some(authority) = authority {
             info!("Creating new tasks for assets with missing metadata for authority {}, batch size={}", authority, batch_size);
 
             let pubkey = Pubkey::from_str(&authority.as_str()).unwrap();
             let pubkey_bytes = pubkey.to_bytes().to_vec();
             
-            asset_data::Entity::find()
+            (asset_data::Entity::find()
                  .join_rev(
                     JoinType::InnerJoin,
                     asset_authority::Entity::belongs_to(asset_data::Entity)
@@ -184,12 +185,12 @@ pub async fn main() {
                  )
                  .order_by(asset_data::Column::Id, Order::Asc)
                 .paginate(&conn, *batch_size)
-                .into_stream()
+                .into_stream(), authority)
 
         } else if let Some(collection) = collection {
             info!("Creating new tasks for assets with missing metadata for collection {}, batch size={}", collection, batch_size);
 
-            asset_data::Entity::find()
+            (asset_data::Entity::find()
                  .join_rev(
                     JoinType::InnerJoin,
                     asset_grouping::Entity::belongs_to(asset_data::Entity)
@@ -204,61 +205,107 @@ pub async fn main() {
                  )
                  .order_by(asset_data::Column::Id, Order::Asc)
                 .paginate(&conn, *batch_size)
-                .into_stream()
+                .into_stream(), collection)
         } else {
             info!("Creating new tasks for all assets with missing metadata, batch size={}", batch_size);
-            asset_data::Entity::find()
+            (asset_data::Entity::find()
                 .filter(
                     Condition::all()
                         .add(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
                 )
                 .order_by(asset_data::Column::Id, Order::Asc)
                 .paginate(&conn, *batch_size)
-                .into_stream()
+                .into_stream(), &all)
         };
     
-    let mut i = 0;
-    // Find all the assets with missing metadata
-    while let Some(assets) = asset_data_missing.try_next().await.unwrap() {
-            info!("Found {} assets", assets.len());
-            for asset in assets {
-                let asset_clone = asset.clone();
+    match matches.subcommand_name() {
+        Some("show") => {
+            // Check the assets found
+            let asset_data_found = if let Some(collection) = collection {
+                asset_data::Entity::find()
+                    .join_rev(
+                        JoinType::InnerJoin,
+                        asset_grouping::Entity::belongs_to(asset_data::Entity)
+                            .from(asset_grouping::Column::AssetId)
+                            .to(asset_data::Column::Id)
+                            .into()
+                    )
+                    .filter(
+                        Condition::all()
+                            .add(asset_grouping::Column::GroupValue.eq(collection.as_str()))
+                            .add(asset_data::Column::Metadata.ne(JsonValue::String("processing".to_string())))
+                    )
+                    .count(&conn)
+                    .await
+            } else {
+                asset_data::Entity::find()
+                    .filter(
+                        Condition::all()
+                            .add(asset_data::Column::Metadata.ne(JsonValue::String("processing".to_string())))
+                    )
+                    .count(&conn)
+                    .await
+            };
 
-                let mut task = DownloadMetadata {
-                    asset_data_id: asset.id,
-                    uri: asset.metadata_url,
-                    created_at: Some(Utc::now().naive_utc()),
-                };
-
-
-                task.sanitize();
-                let task_data = task.into_task_data().unwrap();
-                debug!("Print task {} hash {:?}", task_data.data, task_data.hash());
-                let res = bg_task_sender.send(task_data);
-                match res {
-                    Ok(_) => {
-                        info!("Created new task for asset {:?}", asset_clone.id);
-                    }
-                    Err(e) => {
-                        error!("Error creating new task for asset {:?}: {}", asset_clone.id, e);
-                    }
-                }
-                i += 1;
+            let mut i = 0;
+            while let Some(assets) = asset_data_missing.0.try_next().await.unwrap() {
+                info!("Found {} assets", assets.len());
+                i += assets.len()
             }
-    }
+            if let Ok(total) = asset_data_found {
+                println!("{}, total assets, {}", asset_data_missing.1, total);
+            }
+            println!("{}, total missing assets, {}", asset_data_missing.1, i)
+        }
+        _ => {
 
-    if i  == 0 {
-        info!("No assets with missing metadata found");
-        return
-    }
+            let mut i = 0;
+            // Find all the assets with missing metadata
+            while let Some(assets) = asset_data_missing.0.try_next().await.unwrap() {
+                    info!("Found {} assets", assets.len());
+                    for asset in assets {
+                        let asset_clone = asset.clone();
 
-    match signal::ctrl_c().await {
-        Ok(()) => {}
-        Err(err) => {
-            error!("Unable to listen for shutdown signal: {}", err);
-            // we also shut down in case of error
+                        let mut task = DownloadMetadata {
+                            asset_data_id: asset.id,
+                            uri: asset.metadata_url,
+                            created_at: Some(Utc::now().naive_utc()),
+                        };
+
+
+                        task.sanitize();
+                        let task_data = task.into_task_data().unwrap();
+                        debug!("Print task {} hash {:?}", task_data.data, task_data.hash());
+                        let res = bg_task_sender.send(task_data);
+                        
+
+                        match res {
+                            Ok(_) => {
+                                info!("Created new task for asset {:?}", asset_clone.id);
+                            }
+                            Err(e) => {
+                                error!("Error creating new task for asset {:?}: {}", asset_clone.id, e);
+                            }
+                        }
+                        i += 1;
+                    }
+            }
+
+            if i  == 0 {
+                info!("No assets with missing metadata found");
+                return
+            }
+
+            info!("Queue length: {}", bg_task_listener.
+            match signal::ctrl_c().await {
+                Ok(()) => {}
+                Err(err) => {
+                    error!("Unable to listen for shutdown signal: {}", err);
+                    // we also shut down in case of error
+                }
+            }
+
+            tasks.shutdown().await;
         }
     }
-
-    tasks.shutdown().await;
 }
