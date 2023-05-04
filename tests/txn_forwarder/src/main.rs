@@ -35,6 +35,8 @@ enum Action {
         address: String,
         #[arg(long)]
         include_failed: Option<bool>,
+        #[arg(long)]
+        before: Option<Signature>,
     },
     Scenario {
         #[arg(long)]
@@ -75,13 +77,15 @@ async fn main() {
         Action::Address {
             include_failed,
             address,
+            before,
         } => {
-            println!("Sending address");
+            println!("Sending address (before: {:?})", before);
             send_address(
                 &address,
                 cli.rpc_url,
                 &mut messenger,
                 include_failed.unwrap_or(false),
+                before,
             )
             .await;
         }
@@ -100,10 +104,11 @@ pub async fn send_address(
     client_url: String,
     messenger: &mut Box<dyn plerkle_messenger::Messenger>,
     failed: bool,
+    before: Option<Signature>,
 ) {
     let client1 = RpcClient::new(client_url.clone());
     let pub_addr = Pubkey::from_str(address).unwrap();
-    let mut sig = Siggrabbenheimer::new(client1, pub_addr, failed);
+    let mut sig = Siggrabbenheimer::new(client1, pub_addr, before);
     let client2 = RpcClient::new(client_url);
     while let Some(s) = sig.next().await {
         send_txn(&s, &client2, messenger).await;
@@ -129,6 +134,8 @@ pub async fn send_txn(
             .await;
         if let Ok(t) = txn {
             send(t, messenger).await;
+            // log sent txn  with signature
+            println!("Sent txn: {}", sig);
             break;
         }
     }
@@ -143,5 +150,4 @@ pub async fn send(
     let bytes = fbb.finished_data();
 
     messenger.send(STREAM, bytes).await.unwrap();
-    println!("Sent txn to stream");
 }
