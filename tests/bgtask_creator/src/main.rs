@@ -57,6 +57,7 @@ pub async fn main() {
                 .short('d')
                 .help("Delete all existing tasks before creating new ones.")
                 .required(false)
+                .action(clap::ArgAction::SetTrue)
         )
         .arg(
             Arg::new("batch_size")
@@ -103,6 +104,14 @@ pub async fn main() {
         .subcommand(
             Command::new("show")
                 .about("Show tasks")
+                .arg(
+                    Arg::new("print")
+                        .long("print")
+                        .short('p')
+                        .help("Print the tasks to stdout")
+                        .required(false)
+                        .action(clap::ArgAction::SetTrue)
+                )
         )
         .get_matches();
 
@@ -138,7 +147,7 @@ pub async fn main() {
     // Get a postgres connection from the pool
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(database_pool.clone());
 
-    if matches.contains_id("delete") {
+    if matches.get_flag("delete") {
         info!("Deleting all existing tasks");
 
         // Delete all existing tasks
@@ -332,7 +341,7 @@ pub async fn main() {
                     .filter(
                         Condition::all()
                             .add(tokens::Column::MintAuthority.eq(pubkey_bytes))
-                            .add(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
+                            .add(asset_data::Column::Metadata.ne(JsonValue::String("processing".to_string())))
                     )
                     .count(&conn)
                     .await
@@ -351,7 +360,7 @@ pub async fn main() {
                     .filter(
                         Condition::all()
                             .add(asset_creators::Column::Creator.eq(pubkey_bytes))
-                            .add(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
+                            .add(asset_data::Column::Metadata.ne(JsonValue::String("processing".to_string())))
                     )
                     .count(&conn)
                     .await
@@ -368,7 +377,14 @@ pub async fn main() {
             let mut i = 0;
             while let Some(assets) = asset_data_missing.0.try_next().await.unwrap() {
                 info!("Found {} assets", assets.len());
-                i += assets.len()
+                i += assets.len();
+                if let Some(matches) = matches.subcommand_matches("show") {
+                    if matches.get_flag("print") {
+                        for asset in assets {
+                            println!("{}, missing asset, {:?}", asset_data_missing.1, Pubkey::try_from(asset.id));
+                        }
+                    }
+                }
             }
             if let Ok(total) = asset_data_found {
                 println!("{}, total assets, {}", asset_data_missing.1, total);
