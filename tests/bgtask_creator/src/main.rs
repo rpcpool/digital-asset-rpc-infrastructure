@@ -161,7 +161,7 @@ pub async fn main() {
     let authority = matches.get_one::<String>("authority");
     let collection = matches.get_one::<String>("collection");
     let mint = matches.get_one::<String>("mint");
-    let creator = matches.get_one::<String>("mint");
+    let creator = matches.get_one::<String>("creator");
 
     /*
             select ad.id from asset_data ad 
