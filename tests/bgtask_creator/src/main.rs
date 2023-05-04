@@ -216,7 +216,9 @@ pub async fn main() {
                 .into_stream(), collection)
         } else if let Some(mint) = mint {
             info!("Creating new tasks for assets with missing metadata for mint {}, batch size={}", mint, batch_size);
-
+            
+            let pubkey = Pubkey::from_str(&mint.as_str()).unwrap();
+            let pubkey_bytes = pubkey.to_bytes().to_vec();
 
             (asset_data::Entity::find()
                  .join(
@@ -232,12 +234,34 @@ pub async fn main() {
                  )
                  .filter(
                     Condition::all()
-                        .add(tokens::Column::MintAuthority.eq(mint.as_str()))
+                        .add(tokens::Column::MintAuthority.eq(pubkey_bytes))
                         .add(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
                  )
                  .order_by(asset_data::Column::Id, Order::Asc)
                 .paginate(&conn, *batch_size)
                 .into_stream(), mint)
+        } else if let Some(creator) = creator {
+            info!("Creating new tasks for assets with missing metadata for creator {}, batch size={}", creator, batch_size);
+
+            let pubkey = Pubkey::from_str(&creator.as_str()).unwrap();
+            let pubkey_bytes = pubkey.to_bytes().to_vec();
+
+            (asset_data::Entity::find()
+                 .join_rev(
+                    JoinType::InnerJoin,
+                    asset_creators::Entity::belongs_to(asset_data::Entity)
+                        .from(asset_creators::Column::AssetId)
+                        .to(asset_data::Column::Id)
+                        .into()
+                 )
+                 .filter(
+                    Condition::all()
+                        .add(asset_creators::Column::Creator.eq(pubkey_bytes))
+                        .add(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
+                 )
+                .order_by(asset_data::Column::Id, Order::Asc)
+                .paginate(&conn, *batch_size)
+                .into_stream(), creator)
         } else {
             info!("Creating new tasks for all assets with missing metadata, batch size={}", batch_size);
             (asset_data::Entity::find()
@@ -286,6 +310,48 @@ pub async fn main() {
                         Condition::all()
                             .add(asset_grouping::Column::GroupValue.eq(collection.as_str()))
                             .add(asset_data::Column::Metadata.ne(JsonValue::String("processing".to_string())))
+                    )
+                    .count(&conn)
+                    .await
+            } else if let Some(mint) = mint {
+                let pubkey = Pubkey::from_str(&mint.as_str()).unwrap();
+                let pubkey_bytes = pubkey.to_bytes().to_vec();
+
+                asset_data::Entity::find()
+                    .join(
+                        JoinType::InnerJoin,
+                        asset::Relation::AssetData.def()
+                    )
+                    .join_rev(
+                        JoinType::InnerJoin,
+                        tokens::Entity::belongs_to(asset::Entity)
+                            .from(tokens::Column::Mint)
+                            .to(asset::Column::SupplyMint)
+                            .into()
+                    )
+                    .filter(
+                        Condition::all()
+                            .add(tokens::Column::MintAuthority.eq(pubkey_bytes))
+                            .add(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
+                    )
+                    .count(&conn)
+                    .await
+            } else if let Some(creator) = creator {
+                let pubkey = Pubkey::from_str(&creator.as_str()).unwrap();
+                let pubkey_bytes = pubkey.to_bytes().to_vec();
+
+                asset_data::Entity::find()
+                    .join_rev(
+                        JoinType::InnerJoin,
+                        asset_creators::Entity::belongs_to(asset_data::Entity)
+                            .from(asset_creators::Column::AssetId)
+                            .to(asset_data::Column::Id)
+                            .into()
+                    )
+                    .filter(
+                        Condition::all()
+                            .add(asset_creators::Column::Creator.eq(pubkey_bytes))
+                            .add(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
                     )
                     .count(&conn)
                     .await
