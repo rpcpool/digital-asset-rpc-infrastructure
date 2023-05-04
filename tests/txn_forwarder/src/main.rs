@@ -39,7 +39,7 @@ enum Action {
     Scenario {
         #[arg(long)]
         scenario_file: String,
-    }
+    },
 }
 const STREAM: &str = "TXN";
 const MAX_CACHE_COST: i64 = 32;
@@ -116,19 +116,22 @@ pub async fn send_txn(
     messenger: &mut Box<dyn plerkle_messenger::Messenger>,
 ) {
     let sig = Signature::from_str(txn).unwrap();
-    let txn = client
-        .get_transaction_with_config(
-            &sig,
-            solana_client::rpc_config::RpcTransactionConfig {
-                encoding: Some(UiTransactionEncoding::Base64),
-                commitment: Some(CommitmentConfig::confirmed()),
-                max_supported_transaction_version: Some(0),
-            },
-        )
-        .await
-        .unwrap();
-
-    send(txn, messenger).await
+    for _ in 0..10 {
+        let txn = client
+            .get_transaction_with_config(
+                &sig,
+                solana_client::rpc_config::RpcTransactionConfig {
+                    encoding: Some(UiTransactionEncoding::Base64),
+                    commitment: Some(CommitmentConfig::confirmed()),
+                    max_supported_transaction_version: Some(0),
+                },
+            )
+            .await;
+        if let Ok(t) = txn {
+            send(t, messenger).await;
+            break;
+        }
+    }
 }
 
 pub async fn send(
