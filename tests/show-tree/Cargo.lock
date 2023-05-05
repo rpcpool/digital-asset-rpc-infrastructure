@@ -4398,7 +4398,10 @@ dependencies = [
 name = "txn_forwarder"
 version = "0.6.9"
 dependencies = [
+ "anchor-client",
+ "async-recursion",
  "base64 0.20.0",
+ "borsh 0.10.3",
  "bs58 0.4.0",
  "clap 4.2.5",
  "figment",
@@ -4412,6 +4415,9 @@ dependencies = [
  "solana-client",
  "solana-sdk",
  "solana-transaction-status",
+ "spl-account-compression",
+ "spl-concurrent-merkle-tree",
+ "spl-noop",
  "thiserror",
  "tokio",
  "tokio-stream",

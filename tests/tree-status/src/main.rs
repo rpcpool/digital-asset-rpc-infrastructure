@@ -2,7 +2,6 @@ use {
     anchor_client::anchor_lang::AnchorDeserialize,
     anyhow::Context,
     async_recursion::async_recursion,
-    borsh::BorshDeserialize,
     clap::{arg, Parser, Subcommand},
     digital_asset_types::dao::cl_items,
     sea_orm::{
@@ -25,12 +24,9 @@ use {
         merkle_tree_get_size, ConcurrentMerkleTreeHeader, CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1,
     },
     spl_account_compression::{AccountCompressionEvent, ChangeLogEvent},
-    sqlx::{
-        postgres::{PgConnectOptions, PgPoolOptions},
-        ConnectOptions, PgPool,
-    },
+    sqlx::postgres::{PgConnectOptions, PgPoolOptions},
 
-    std::str::FromStr,
+    std::{cmp::Ordering, str::FromStr},
     thiserror::Error,
     tokio_stream::StreamExt,
     txn_forwarder::utils::Siggrabbenheimer,
@@ -60,13 +56,11 @@ struct Args {
     #[arg(short, long)]
     rpc_url: String,
 
-
     #[arg(long, short, default_value_t = 3)]
     max_retries: u8,
 
     #[command(subcommand)]
     action: Action,
-
 }
 
 #[derive(Subcommand, Clone)]
@@ -127,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
         Action::CheckTree { pg_url, .. } | Action::CheckTrees { pg_url, .. } => {
             // Set up db connection
             let url = pg_url;
-            let mut options: PgConnectOptions = url.parse().unwrap();
+            let options: PgConnectOptions = url.parse().unwrap();
 
             // Create postgres pool
             let pool = PgPoolOptions::new()
@@ -140,9 +134,8 @@ async fn main() -> anyhow::Result<()> {
             // Create new postgres connection
             let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone());
 
-
             let client = RpcClient::new(args.rpc_url);
-            check_trees(pubkeys, &conn, &client).await;
+            check_trees(pubkeys, &conn, &client).await?;
         }
         Action::ShowTree { .. } | Action::ShowTrees { .. } => {
             for pubkey in pubkeys {
@@ -163,7 +156,7 @@ async fn check_trees(
     for pubkey in pubkeys {
         match pubkey.parse() {
             Ok(pubkey) => {
-                let seq = get_tree_latest_seq(pubkey, &client).await;
+                let seq = get_tree_latest_seq(pubkey, client).await;
                 //println!("seq for pubkey {:?}: {:?}", pubkey, seq);
                 if seq.is_err() {
                     eprintln!(
@@ -175,7 +168,7 @@ async fn check_trees(
 
                 let seq = seq.unwrap();
 
-                let fetch_seq = get_tree_max_seq(&pubkey.to_bytes(), &conn).await;
+                let fetch_seq = get_tree_max_seq(&pubkey.to_bytes(), conn).await;
                 if fetch_seq.is_err() {
                     eprintln!(
                         "[{:?}] couldn't query tree from index: {:?}",
@@ -187,18 +180,22 @@ async fn check_trees(
                     Some(indexed_seq) => {
                         let mut indexing_successful = false;
                         // Check tip
-                        if indexed_seq.max_seq > seq.try_into().unwrap() {
-                            eprintln!(
-                                "[{:?}] indexer error: {:?} > {:?}",
-                                pubkey, indexed_seq.max_seq, seq
-                            );
-                        } else if indexed_seq.max_seq < seq.try_into().unwrap() {
-                            eprintln!(
-                                "[{:?}] tree not fully indexed: {:?} < {:?}",
-                                pubkey, indexed_seq.max_seq, seq
-                            );
-                        } else {
-                            indexing_successful = true;
+                        match indexed_seq.max_seq.cmp(&seq.try_into().unwrap()) {
+                            Ordering::Less => {
+                                eprintln!(
+                                    "[{:?}] tree not fully indexed: {:?} < {:?}",
+                                    pubkey, indexed_seq.max_seq, seq
+                                );
+                            }
+                            Ordering::Equal => {
+                                indexing_successful = true;
+                            }
+                            Ordering::Greater => {
+                                eprintln!(
+                                    "[{:?}] indexer error: {:?} > {:?}",
+                                    pubkey, indexed_seq.max_seq, seq
+                                );
+                            }
                         }
 
                         // Check completeness
@@ -218,7 +215,7 @@ async fn check_trees(
                                 pubkey, seq, indexed_seq
                             );
                             let ret =
-                                get_missing_seq(&pubkey.to_bytes(), seq.try_into().unwrap(), &conn)
+                                get_missing_seq(&pubkey.to_bytes(), seq.try_into().unwrap(), conn)
                                     .await;
                             if ret.is_err() {
                                 eprintln!("[{:?}] failed to query missing seq: {:?}", pubkey, ret);
@@ -302,7 +299,7 @@ async fn get_tree_latest_seq(address: Pubkey, client: &RpcClient) -> anyhow::Res
 }
 
 // Fetches all the transactions referencing a specific trees
-pub async fn read_tree(address: String, client_url: String, failed: bool, max_retries: u8) { 
+pub async fn read_tree(address: String, client_url: String, failed: bool, max_retries: u8) {
     let client1 = RpcClient::new(client_url.clone());
     let pub_addr = Pubkey::from_str(address.as_str()).unwrap();
     // This takes a param failed but it excludes all failed TXs
@@ -347,7 +344,7 @@ pub async fn process_txn(sig_str: &str, client: &RpcClient, retries: u8) {
         Err(e) => {
             if retries > 0 {
                 eprintln!("Retrying transaction {} retry no {}: {}", sig, retries, e);
-                process_txn(sig_str, &client, retries - 1).await;
+                process_txn(sig_str, client, retries - 1).await;
             } else {
                 eprintln!("Could not load transaction {}: {}", sig, e);
             }
@@ -377,28 +374,34 @@ pub async fn parse_txn_sequence(
                 "Couldn't parse transction",
             )))?;
 
-    let msg = transaction.message;
-    let account_keys = msg.static_account_keys();
+    let mut account_keys = transaction.message.static_account_keys().to_vec();
+    // Add the account lookup stuff
+    if let OptionSerializer::Some(loaded_addresses) = meta.loaded_addresses {
+        loaded_addresses.writable.iter().for_each(|pkey| {
+            account_keys.push(Pubkey::from_str(pkey).unwrap());
+        });
+        loaded_addresses.readonly.iter().for_each(|pkey| {
+            account_keys.push(Pubkey::from_str(pkey).unwrap());
+        });
+    }
 
     // See https://github.com/ngundotra/spl-ac-seq-parse/blob/main/src/main.rs
-    for (i, _) in msg.instructions().iter().enumerate() {
-        if let OptionSerializer::Some(inner_instructions_vec) = meta.inner_instructions.as_ref() {
-            if let Some(inner_ixs) = inner_instructions_vec.get(i) {
-                for (_, inner_ix) in inner_ixs.instructions.iter().enumerate() {
-                    if let solana_transaction_status::UiInstruction::Compiled(instr) = inner_ix {
-                        if let Some(program) = account_keys.get(instr.program_id_index as usize) {
-                            if program.to_string() == spl_noop::id().to_string() {
-                                let data = bs58::decode(&instr.data).into_vec().map_err(|_| {
-                                    TransactionParsingError::DecodingError(String::from(
-                                        "error base58ing",
-                                    ))
-                                })?;
-                                if let Ok(event) = &AccountCompressionEvent::try_from_slice(&data) {
-                                    if let AccountCompressionEvent::ChangeLog(_cl_data) = event {
-                                        let ChangeLogEvent::V1(cl_data) = _cl_data;
-                                        seq_updates.push(cl_data.seq);
-                                    }
-                                }
+    if let OptionSerializer::Some(inner_instructions_vec) = meta.inner_instructions.as_ref() {
+        for inner_ixs in inner_instructions_vec.iter() {
+            for (_, inner_ix) in inner_ixs.instructions.iter().enumerate() {
+                if let solana_transaction_status::UiInstruction::Compiled(instr) = inner_ix {
+                    if let Some(program) = account_keys.get(instr.program_id_index as usize) {
+                        if program.to_string() == spl_noop::id().to_string() {
+                            let data = bs58::decode(&instr.data).into_vec().map_err(|_| {
+                                TransactionParsingError::DecodingError(String::from(
+                                    "error base58ing",
+                                ))
+                            })?;
+                            if let Ok(AccountCompressionEvent::ChangeLog(cl_data)) =
+                                &AccountCompressionEvent::try_from_slice(&data)
+                            {
+                                let ChangeLogEvent::V1(cl_data) = cl_data;
+                                seq_updates.push(cl_data.seq);
                             }
                         }
                     }

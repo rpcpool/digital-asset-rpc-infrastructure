@@ -19,7 +19,6 @@ use thiserror::Error;
 use tokio_stream::StreamExt;
 use txn_forwarder::utils::Siggrabbenheimer;
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum TransactionParsingError {
     #[error("Meta parsing error: {0}")]
@@ -92,7 +91,7 @@ pub async fn process_txn(sig_str: &str, client: &RpcClient, retries: u8) {
         Err(e) => {
             if retries > 0 {
                 eprintln!("Retrying transaction {} retry no {}: {}", sig, retries, e);
-                process_txn(sig_str, &client, retries - 1).await;
+                process_txn(sig_str, client, retries - 1).await;
             } else {
                 eprintln!("Could not load transaction {}: {}", sig, e);
             }
@@ -122,24 +121,34 @@ pub async fn parse_txn_sequence(
                 "Couldn't parse transction",
             )))?;
 
-    let msg = transaction.message;
-    let account_keys = msg.static_account_keys();
+    let mut account_keys = transaction.message.static_account_keys().to_vec();
+    // Add the account lookup stuff
+    if let OptionSerializer::Some(loaded_addresses) = meta.loaded_addresses {
+        loaded_addresses.writable.iter().for_each(|pkey| {
+            account_keys.push(Pubkey::from_str(pkey).unwrap());
+        });
+        loaded_addresses.readonly.iter().for_each(|pkey| {
+            account_keys.push(Pubkey::from_str(pkey).unwrap());
+        });
+    }
 
     // See https://github.com/ngundotra/spl-ac-seq-parse/blob/main/src/main.rs
-    for (i, _) in msg.instructions().iter().enumerate() {
-        if let OptionSerializer::Some(inner_instructions_vec) = meta.inner_instructions.as_ref() {
-            if let Some(inner_ixs) = inner_instructions_vec.get(i) {
-                for (_, inner_ix) in inner_ixs.instructions.iter().enumerate() {
-                    if let solana_transaction_status::UiInstruction::Compiled(instr) = inner_ix {
-                        if let Some(program) = account_keys.get(instr.program_id_index as usize) {
-                            if program.to_string() == spl_noop::id().to_string() {
-                                let data = bs58::decode(&instr.data).into_vec().map_err(|_| TransactionParsingError::DecodingError(String::from("error base58ing")))?;
-                                if let Ok(event) = &AccountCompressionEvent::try_from_slice(&data) {
-                                    if let AccountCompressionEvent::ChangeLog(_cl_data) = event {
-                                        let ChangeLogEvent::V1(cl_data) = _cl_data;
-                                        seq_updates.push(cl_data.seq);
-                                    }
-                                }
+    if let OptionSerializer::Some(inner_instructions_vec) = meta.inner_instructions.as_ref() {
+        for inner_ixs in inner_instructions_vec.iter() {
+            for inner_ix in inner_ixs.instructions.iter() {
+                if let solana_transaction_status::UiInstruction::Compiled(instr) = inner_ix {
+                    if let Some(program) = account_keys.get(instr.program_id_index as usize) {
+                        if program.to_string() == spl_noop::id().to_string() {
+                            let data = bs58::decode(&instr.data).into_vec().map_err(|_| {
+                                TransactionParsingError::DecodingError(String::from(
+                                    "error base58ing",
+                                ))
+                            })?;
+                            if let Ok(AccountCompressionEvent::ChangeLog(cl_data)) =
+                                &AccountCompressionEvent::try_from_slice(&data)
+                            {
+                                let ChangeLogEvent::V1(cl_data) = cl_data;
+                                seq_updates.push(cl_data.seq);
                             }
                         }
                     }
@@ -149,5 +158,3 @@ pub async fn parse_txn_sequence(
     }
     Ok(seq_updates)
 }
-
-
