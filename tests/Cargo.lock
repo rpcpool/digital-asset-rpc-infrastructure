@@ -13,6 +13,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "acc_forwarder"
+version = "0.0.1"
+dependencies = [
+ "clap 4.2.7",
+ "figment",
+ "flatbuffers",
+ "mpl-token-metadata",
+ "plerkle_messenger",
+ "plerkle_serialization",
+ "reqwest",
+ "serde_json",
+ "solana-client",
+ "solana-sdk",
+ "tokio",
+]
+
+[[package]]
 name = "adler"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

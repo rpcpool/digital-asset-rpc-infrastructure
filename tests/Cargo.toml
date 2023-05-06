@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "acc_forwarder",
   "bgtask_creator",
   "load_generation",
   "show-tree",
