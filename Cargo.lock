@@ -2621,6 +2621,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "metaplex-rpc-proxy"
+version = "0.6.8"
+dependencies = [
+ "lazy_static",
+ "log",
+ "proxy-wasm",
+ "regex",
+ "wasi 0.7.0",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3464,6 +3476,16 @@ dependencies = [
  "syn 2.0.15",
  "version_check",
  "yansi",
+]
+
+[[package]]
+name = "proxy-wasm"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "823b744520cd4a54ba7ebacbffe4562e839d6dcd8f89209f96a1ace4f5229cd4"
+dependencies = [
+ "hashbrown 0.13.2",
+ "log",
 ]
 
 [[package]]
@@ -6179,6 +6201,12 @@ dependencies = [
  "log",
  "try-lock",
 ]
+
+[[package]]
+name = "wasi"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b89c3ce4ce14bdc6fb6beaf9ec7928ca331de5df7e5ea278375642a2f478570d"
 
 [[package]]
 name = "wasi"
