@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use url::Url;
 
-use log::{debug, info, warn};
+use log::{warn};
 
 pub fn to_uri(uri: String) -> Option<Url> {
     Url::parse(&*uri).ok()

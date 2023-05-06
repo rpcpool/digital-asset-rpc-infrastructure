@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "load_generation",
   "show-tree",
   "tree-status",
   "txn_forwarder",

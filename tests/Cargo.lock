@@ -1594,6 +1594,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
 
 [[package]]
+name = "fake"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1429a9ab42c62b5768abe594aa7e405c63c83829643da6027671a36885fe8d55"
+dependencies = [
+ "rand 0.8.5",
+ "unidecode",
+]
+
+[[package]]
 name = "fastrand"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2340,6 +2350,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ece97ea872ece730aed82664c424eb4c8291e1ff2480247ccf7409044bc6479f"
 
 [[package]]
+name = "load_generation"
+version = "0.1.0"
+dependencies = [
+ "fake",
+ "mpl-token-metadata",
+ "rand 0.8.5",
+ "solana-client",
+ "solana-program",
+ "solana-sdk",
+ "spl-associated-token-account",
+ "spl-token",
+ "tokio",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2531,9 +2556,9 @@ dependencies = [
 
 [[package]]
 name = "mpl-token-metadata"
-version = "1.11.0"
+version = "1.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aed414104154928aa995a44a0a474c449d04ce5a4ee6c975ad41c5d2912f0dfe"
+checksum = "301235b920e1b3a4bf9c3ffd6a16b1db1f3ac5bdcb6b6f201d4bb7a9fd1d94a0"
 dependencies = [
  "arrayref",
  "borsh 0.9.3",
@@ -2563,9 +2588,9 @@ dependencies = [
 
 [[package]]
 name = "mpl-utils"
-version = "0.2.0"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "822133b6cba8f9a43e5e0e189813be63dd795858f54155c729833be472ffdb51"
+checksum = "7fc48e64c50dba956acb46eec86d6968ef0401ef37031426da479f1f2b592066"
 dependencies = [
  "arrayref",
  "borsh 0.9.3",
@@ -5463,6 +5488,12 @@ name = "unicode_categories"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39ec24b3121d976906ece63c9daad25b85969647682eee313cb5779fdd69e14e"
+
+[[package]]
+name = "unidecode"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "402bb19d8e03f1d1a7450e2bd613980869438e0666331be3e073089124aa1adc"
 
 [[package]]
 name = "universal-hash"
