@@ -4527,7 +4527,6 @@ dependencies = [
  "spl-noop",
  "thiserror",
  "tokio",
- "tokio-stream",
  "txn_forwarder",
 ]
 
@@ -5928,7 +5927,6 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
- "tokio-stream",
  "txn_forwarder",
 ]
 
@@ -5983,8 +5981,8 @@ dependencies = [
  "solana-client",
  "solana-sdk",
  "solana-transaction-status",
+ "thiserror",
  "tokio",
- "tokio-stream",
 ]
 
 [[package]]

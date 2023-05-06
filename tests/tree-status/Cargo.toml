@@ -24,5 +24,4 @@ spl-noop = { version ="0.1.3", features = ["no-entrypoint"] }
 sqlx = { version = "0.6.2", features = ["macros", "runtime-tokio-rustls", "postgres", "uuid", "offline", "json"] }
 thiserror = "1.0.31"
 tokio = { version = "1.23.0", features = ["fs", "macros", "rt-multi-thread"] }
-tokio-stream = "0.1.11"
 txn_forwarder = { path = "../txn_forwarder" }
