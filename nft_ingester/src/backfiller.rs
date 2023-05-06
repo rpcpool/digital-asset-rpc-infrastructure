@@ -67,6 +67,7 @@ const BLOCK_CACHE_SIZE: usize = 300_000;
 const MAX_CACHE_COST: i64 = 32;
 const BLOCK_CACHE_DURATION: u64 = 172800;
 // Account key used to determine if transaction is a simple vote.
+#[allow(dead_code)]
 const VOTE: &str = "Vote111111111111111111111111111111111111111";
 pub const BUBBLEGUM_SIGNER: Pubkey = pubkey!("4ewWZC5gT6TGpm5LZNDs9wVonfUT2q5PP5sc9kVbwMAK");
 
@@ -143,6 +144,7 @@ struct MissingTree {
 }
 
 /// Struct used when storing trees to backfill.
+#[allow(dead_code)]
 struct BackfillTree {
     unique_tree: UniqueTree,
     backfill_from_seq_1: bool,
@@ -473,7 +475,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
         let locked_or_failed_trees = cn.query_all(get_locked_or_failed_trees).await?;
         for row in locked_or_failed_trees.into_iter() {
             let tree = UniqueTree::from_query_result(&row, "")?;
-            let key = &Pubkey::new(&tree.tree);
+            let key = &Pubkey::try_from(tree.tree.as_slice()).unwrap();
             if all_trees.contains_key(key) {
                 all_trees.remove(key);
             }
@@ -487,7 +489,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
         let local_trees = cn.query_all(get_all_local_trees).await?;
         for row in local_trees.into_iter() {
             let tree = UniqueTree::from_query_result(&row, "")?;
-            let key = &Pubkey::new(&tree.tree);
+            let key = &Pubkey::try_from(tree.tree.as_slice()).unwrap();
             if all_trees.contains_key(key) {
                 all_trees.remove(key);
             }
@@ -613,7 +615,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
         &mut self,
         btree: &BackfillTree,
     ) -> Result<Option<i64>, IngesterError> {
-        let address = Pubkey::new(btree.unique_tree.tree.as_slice());
+        let address = Pubkey::try_from(btree.unique_tree.tree.as_slice()).unwrap();
         let slots = self.find_slots_via_address(&address).await?;
         let address = btree.unique_tree.tree.clone();
         for slot in slots {
@@ -678,6 +680,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
         Ok(Vec::from_iter(slots))
     }
 
+    #[allow(dead_code)]
     async fn get_max_seq(&self, tree: &[u8]) -> Result<Option<i64>, DbErr> {
         let query = backfill_items::Entity::find()
             .select_only()
@@ -731,8 +734,8 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
 
             let merkle_tree_size = merkle_tree_get_size(&header)
                 .map_err(|e| IngesterError::RpcGetDataError(e.to_string()))?;
-            let (tree_bytes, canopy_bytes) = rest.split_at_mut(merkle_tree_size);
-            let seq_bytes = tree_bytes[0..8].try_into().map_err(|e| {
+            let (tree_bytes, _canopy_bytes) = rest.split_at_mut(merkle_tree_size);
+            let seq_bytes = tree_bytes[0..8].try_into().map_err(|_e| {
                 IngesterError::RpcGetDataError("Failed to convert seq bytes to array".to_string())
             })?;
             let seq = u64::from_le_bytes(seq_bytes);

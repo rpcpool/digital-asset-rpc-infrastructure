@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "bgtask_creator",
   "load_generation",
   "show-tree",
   "tree-status",

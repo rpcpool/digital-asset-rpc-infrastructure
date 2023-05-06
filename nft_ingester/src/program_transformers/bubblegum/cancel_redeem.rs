@@ -43,7 +43,7 @@ where
                 };
                 update_asset(txn, id_bytes, Some(seq), asset_to_update).await
             }
-            _ => Err(IngesterError::NotImplemented),
+            // _ => Err(IngesterError::NotImplemented),
         };
     }
     Err(IngesterError::ParsingError(

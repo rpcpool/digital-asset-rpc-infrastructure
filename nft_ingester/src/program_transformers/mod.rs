@@ -62,7 +62,7 @@ impl ProgramTransformer {
     }
 
     pub fn match_program(&self, key: &FBPubkey) -> Option<&Box<dyn ProgramParser>> {
-        self.matchers.get(&Pubkey::new(key.0.as_slice()))
+        self.matchers.get(&Pubkey::try_from(key.0.as_slice()).unwrap())
     }
 
     pub async fn handle_transaction<'a>(

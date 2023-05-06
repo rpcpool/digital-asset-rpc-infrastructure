@@ -6,7 +6,7 @@ use sea_orm::{
 };
 
 pub async fn decompress<'c, T>(
-    parsing_result: &BubblegumInstruction,
+    _parsing_result: &BubblegumInstruction,
     bundle: &InstructionBundle<'c>,
     txn: &'c T,
 ) -> Result<(), IngesterError>

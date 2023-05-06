@@ -32,7 +32,7 @@ where
                 // run this update even if it's from a backfill/replay.
                 update_asset(txn, id_bytes, None, asset_to_update).await
             }
-            _ => Err(IngesterError::NotImplemented),
+            // _ => Err(IngesterError::NotImplemented),
         };
     }
     Err(IngesterError::ParsingError(

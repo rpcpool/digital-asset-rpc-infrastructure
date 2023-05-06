@@ -48,7 +48,7 @@ where
     ) {
         let seq = save_changelog_event(cl, bundle.slot, txn).await?;
         let metadata = args;
-        return match le.schema {
+        match le.schema {
             LeafSchema::V1 {
                 id,
                 delegate,
@@ -277,8 +277,8 @@ where
                 task.sanitize();
                 return task.into_task_data();
             }
-            _ => Err(IngesterError::NotImplemented),
-        }?;
+            // _ => Err(IngesterError::NotImplemented),
+        }
     }
     Err(IngesterError::ParsingError(
         "Ix not parsed correctly".to_string(),
