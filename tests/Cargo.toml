@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "show-tree",
   "tree-status",
   "txn_forwarder",
 ]
