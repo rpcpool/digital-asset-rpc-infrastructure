@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "digital_asset_types",
   "metaplex-rpc-proxy",
   "nft_ingester",
   "tests/acc_forwarder",
@@ -10,8 +11,7 @@ members = [
   "tests/txn_forwarder",
 ]
 exclude = [
-  "dash_api",
-  "digital_asset_types",
+  "das_api",
   "migration",
 ]
 
