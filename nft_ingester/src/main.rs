@@ -32,7 +32,7 @@ use plerkle_messenger::{
 };
 use tokio::{signal, task::JoinSet};
 
-use clap::{arg, command, value_parser, ArgAction, Command};
+use clap::{arg, command, value_parser};
 use std::{path::PathBuf, time};
 
 #[tokio::main(flavor = "multi_thread")]
@@ -106,7 +106,7 @@ pub async fn main() -> Result<(), IngesterError> {
         ACCOUNT_STREAM,
     )?;
     let mut timer_txn = StreamSizeTimer::new(
-        stream_metrics_timer.clone(),
+        stream_metrics_timer,
         config.messenger_config.clone(),
         TRANSACTION_STREAM,
     )?;
@@ -120,10 +120,10 @@ pub async fn main() -> Result<(), IngesterError> {
 
     // Stream Consumers Setup -------------------------------------
     if role == IngesterRole::Ingester || role == IngesterRole::All {
-        let (ack_task, ack_sender) =
+        let (_ack_task, ack_sender) =
             ack_worker::<RedisMessenger>(config.get_messneger_client_config());
         for i in 0..config.get_account_stream_worker_count() {
-            let account = account_worker::<RedisMessenger>(
+            let _account = account_worker::<RedisMessenger>(
                 database_pool.clone(),
                 config.get_messneger_client_config(),
                 bg_task_sender.clone(),
@@ -136,7 +136,7 @@ pub async fn main() -> Result<(), IngesterError> {
             );
         }
         for i in 0..config.get_transaction_stream_worker_count() {
-            let txn = transaction_worker::<RedisMessenger>(
+            let _txn = transaction_worker::<RedisMessenger>(
                 database_pool.clone(),
                 config.get_messneger_client_config(),
                 bg_task_sender.clone(),

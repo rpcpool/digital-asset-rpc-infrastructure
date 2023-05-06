@@ -23,13 +23,13 @@ impl StreamSizeTimer {
         Ok(Self {
             interval: interval_time,
             stream,
-            messenger_config: messenger_config,
+            messenger_config,
         })
     }
 
     pub async fn start<T: Messenger>(&mut self) -> Option<JoinHandle<()>> {
         metric! {
-            let i = self.interval.clone();
+            let i = self.interval;
             let messenger_config = self.messenger_config.clone();
             let stream = self.stream;
 

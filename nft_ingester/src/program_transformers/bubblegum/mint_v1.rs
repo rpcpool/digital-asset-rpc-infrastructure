@@ -92,7 +92,6 @@ where
                     metadata: Set(JsonValue::String("processing".to_string())),
                     metadata_mutability: Set(Mutability::Mutable),
                     slot_updated: Set(slot_i),
-                    ..Default::default()
                 };
 
                 let mut query = asset_data::Entity::insert(data)

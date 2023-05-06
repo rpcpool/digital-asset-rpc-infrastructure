@@ -69,6 +69,7 @@ const BLOCK_CACHE_DURATION: u64 = 172800;
 // Account key used to determine if transaction is a simple vote.
 #[allow(dead_code)]
 const VOTE: &str = "Vote111111111111111111111111111111111111111";
+#[allow(dead_code)]
 pub const BUBBLEGUM_SIGNER: Pubkey = pubkey!("4ewWZC5gT6TGpm5LZNDs9wVonfUT2q5PP5sc9kVbwMAK");
 
 struct SlotSeq(u64, u64);
@@ -501,7 +502,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
             .into_iter()
             .map(|(k, s)| MissingTree { tree: k, slot: s.0 })
             .collect::<Vec<MissingTree>>();
-        if missing_trees.len() > 0 {
+        if !missing_trees.is_empty() {
             info!("Number of Missing local trees: {}", missing_trees.len());
         } else {
             info!("No missing trees");
@@ -723,11 +724,11 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
         let mut list = HashMap::with_capacity(results.len());
         for r in results.into_iter() {
             let (pubkey, mut account) = r;
-            let (mut header_bytes, rest) = account
+            let (header_bytes, rest) = account
                 .data
                 .split_at_mut(CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1);
             let header: ConcurrentMerkleTreeHeader =
-                ConcurrentMerkleTreeHeader::try_from_slice(&mut header_bytes)
+                ConcurrentMerkleTreeHeader::try_from_slice(header_bytes)
                     .map_err(|e| IngesterError::RpcGetDataError(e.to_string()))?;
 
             let auth = Pubkey::find_program_address(&[pubkey.as_ref()], &mpl_bubblegum::id()).0;
@@ -859,7 +860,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
                 info!("Fetching block {} from RPC", slot);
                 let block = EncodedConfirmedBlock::from(
                     self.rpc_client
-                        .get_block_with_config(slot as u64, self.rpc_block_config)
+                        .get_block_with_config(slot, self.rpc_block_config)
                         .await
                         .map_err(|e| IngesterError::RpcGetDataError(e.to_string()))?,
                 );

@@ -50,14 +50,12 @@ pub fn transaction_worker<T: Messenger>(
                     }
                 }
                 while let Some(res) = tasks.join_next().await {
-                    if let Ok(id) = res {
-                        if let Some(id) = id {
-                            let send = ack_channel.send((TRANSACTION_STREAM, id));
-                            if let Err(err) = send {
-                                metric! {
-                                    error!("Txn stream ack error: {}", err);
-                                    statsd_count!("ingester.stream.ack_error", 1, "stream" => TRANSACTION_STREAM);
-                                }
+                    if let Ok(Some(id)) = res {
+                        let send = ack_channel.send((TRANSACTION_STREAM, id));
+                        if let Err(err) = send {
+                            metric! {
+                                error!("Txn stream ack error: {}", err);
+                                statsd_count!("ingester.stream.ack_error", 1, "stream" => TRANSACTION_STREAM);
                             }
                         }
                     }
