@@ -2,7 +2,7 @@ use std::net::UdpSocket;
 
 use cadence::{BufferedUdpMetricSink, QueuingMetricSink, StatsdClient};
 use cadence_macros::{is_global_default_set, set_global_default, statsd_count, statsd_time};
-use log::{error,warn};
+use log::{error, warn};
 use tokio::time::Instant;
 
 use crate::{

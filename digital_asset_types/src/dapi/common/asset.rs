@@ -1,7 +1,7 @@
 use crate::dao::sea_orm_active_enums::SpecificationVersions;
+use crate::dao::FullAsset;
 use crate::dao::Pagination;
 use crate::dao::{asset, asset_authority, asset_creators, asset_data, asset_grouping};
-use crate::dao::FullAsset;
 
 use crate::rpc::filter::{AssetSortBy, AssetSortDirection, AssetSorting};
 use crate::rpc::response::{AssetError, AssetList};
@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use url::Url;
 
-use log::{warn};
+use log::warn;
 
 pub fn to_uri(uri: String) -> Option<Url> {
     Url::parse(&*uri).ok()
@@ -30,7 +30,9 @@ pub fn get_mime(url: Url) -> Option<Mime> {
 
 pub fn get_mime_type_from_uri(uri: String) -> String {
     let default_mime_type = "image/png".to_string();
-    to_uri(uri).and_then(get_mime).map_or(default_mime_type, |m| m.to_string())
+    to_uri(uri)
+        .and_then(get_mime)
+        .map_or(default_mime_type, |m| m.to_string())
 }
 
 pub fn file_from_str(str: String) -> File {
@@ -173,26 +175,22 @@ pub fn v1_content_from_json(asset_data: &asset_data::Model) -> Result<Content, D
                     match (uri, mime_type) {
                         (Some(u), Some(m)) => {
                             if let Some(str_uri) = u.as_str() {
-                                let file = 
-                                    if let Some(str_mime) = m.as_str() {
-                                        File {
-                                             uri: Some(str_uri.to_string()),
-                                             mime: Some(str_mime.to_string()),
-                                             quality: None,
-                                             contexts: None,
-                                        }
-                                    } else {
-                                        warn!("Mime is not string: {:?}", m); 
-                                        file_from_str(str_uri.to_string())
-                                    };
-                                actual_files.insert(
-                                   str_uri.to_string().clone(),
-                                   file,
-                                );
+                                let file = if let Some(str_mime) = m.as_str() {
+                                    File {
+                                        uri: Some(str_uri.to_string()),
+                                        mime: Some(str_mime.to_string()),
+                                        quality: None,
+                                        contexts: None,
+                                    }
+                                } else {
+                                    warn!("Mime is not string: {:?}", m);
+                                    file_from_str(str_uri.to_string())
+                                };
+                                actual_files.insert(str_uri.to_string().clone(), file);
                             } else {
                                 warn!("URI is not string: {:?}", u);
-                            }     
-                           /*  let str_uri = u.as_str().unwrap_or("").to_string();
+                            }
+                            /*  let str_uri = u.as_str().unwrap_or("").to_string();
                             let str_mime = m.as_str().unwrap_or("").to_string();
                             actual_files.insert(
                                 str_uri.clone(),
@@ -205,7 +203,8 @@ pub fn v1_content_from_json(asset_data: &asset_data::Model) -> Result<Content, D
                             );*/
                         }
                         (Some(u), None) => {
-                            let str_uri = serde_json::to_string(u).unwrap_or_else(|_|String::new());
+                            let str_uri =
+                                serde_json::to_string(u).unwrap_or_else(|_| String::new());
                             actual_files.insert(str_uri.clone(), file_from_str(str_uri));
                         }
                         _ => {}

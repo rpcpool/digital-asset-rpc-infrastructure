@@ -3,13 +3,13 @@ use crate::{
     error::IngesterError,
     tasks::{DownloadMetadata, IntoTaskData, TaskData},
 };
-use blockbuster::token_metadata::{
-    pda::find_master_edition_account,
-    state::{TokenStandard, UseMethod, Uses},
-};
 use blockbuster::{
     instruction::InstructionBundle,
     programs::bubblegum::{BubblegumInstruction, LeafSchema, Payload},
+    token_metadata::{
+        pda::find_master_edition_account,
+        state::{TokenStandard, UseMethod, Uses},
+    },
 };
 use chrono::Utc;
 use digital_asset_types::{
@@ -276,8 +276,7 @@ where
                 };
                 task.sanitize();
                 return task.into_task_data();
-            }
-            // _ => Err(IngesterError::NotImplemented),
+            } // _ => Err(IngesterError::NotImplemented),
         }
     }
     Err(IngesterError::ParsingError(

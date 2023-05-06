@@ -1,6 +1,6 @@
+use log::debug;
 use sea_orm::sea_query::Expr;
 use sea_orm::{DatabaseConnection, DbBackend};
-use log::debug;
 use {
     crate::dao::asset,
     crate::dao::cl_items,
