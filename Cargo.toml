@@ -1,11 +1,18 @@
 [workspace]
 members = [
+  "nft_ingester",
   "tests/acc_forwarder",
   "tests/bgtask_creator",
   "tests/load_generation",
   "tests/show-tree",
   "tests/tree-status",
   "tests/txn_forwarder",
+]
+exclude = [
+  "dash_api",
+  "digital_asset_types",
+  "metaplex-rpc-proxy",
+  "migration",
 ]
 
 [profile.release]

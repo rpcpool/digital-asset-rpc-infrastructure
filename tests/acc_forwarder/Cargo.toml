@@ -6,13 +6,13 @@ publish = false
 
 [dependencies]
 clap = { version = "4.1.4", features = ["derive"] }
-figment = { version = "0.10.8" }
+figment = "0.10.8"
 flatbuffers = "23.1.21"
-mpl-token-metadata = { version = "1.8.3"}
-plerkle_messenger = { version = "1.5.2", features = ['redis'] }
-plerkle_serialization = { version = "1.5.2" }
+mpl-token-metadata = "1.8.3"
+plerkle_messenger = { version = "1.5.2", features = ["redis"] }
+plerkle_serialization = "1.5.2"
 reqwest = { version = "0.11", features = ["json"] }
 serde_json = "1.0.81"
-solana-client = { version = "=1.14.15"}
-solana-sdk = { version = "=1.14.15"}
+solana-client = "=1.14.15"
+solana-sdk = "=1.14.15"
 tokio = { version = "1.23.0", features = ["macros", "rt-multi-thread"] }

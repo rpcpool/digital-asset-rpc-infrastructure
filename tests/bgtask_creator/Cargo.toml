@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 clap = { version = "4.1.4", features = ["derive", "cargo"] }
 digital_asset_types = { path = "../../digital_asset_types", features = ["json_types", "sql_types"] }
-futures = { version = "0.3.25"}
+futures = "0.3.25"
 log = "0.4.17"
 nft_ingester = { path = "../../nft_ingester" }
 sea-orm = { version = "0.10.6", features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-chrono", "mock"] }

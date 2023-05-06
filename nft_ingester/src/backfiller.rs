@@ -25,11 +25,11 @@ use solana_client::{
 use solana_sdk::{
     account::Account,
     commitment_config::{CommitmentConfig, CommitmentLevel},
+    pubkey,
     pubkey::Pubkey,
     signature::Signature,
     slot_history::Slot,
 };
-use solana_sdk_macro::pubkey;
 use solana_transaction_status::{
     option_serializer::OptionSerializer, EncodedConfirmedBlock,
     EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding,
