@@ -106,7 +106,7 @@ pub async fn send_address(
     let client1 = RpcClient::new(client_url.clone());
     let pub_addr = Pubkey::from_str(address).unwrap();
     // This takes a param failed but it excludes all failed TXs
-    let mut sig = find_signatures(pub_addr, client1);
+    let mut sig = find_signatures(pub_addr, client1, 2_000);
     let mut tasks = Vec::new();
     while let Some(s) = sig.recv().await {
         let s = s.unwrap();

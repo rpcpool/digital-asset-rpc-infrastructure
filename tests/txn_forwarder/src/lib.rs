@@ -22,8 +22,9 @@ pub enum FindSignaturesError {
 pub fn find_signatures(
     address: Pubkey,
     client: RpcClient,
-) -> mpsc::UnboundedReceiver<Result<Signature, FindSignaturesError>> {
-    let (chan, rx) = mpsc::unbounded_channel();
+    buffer: usize,
+) -> mpsc::Receiver<Result<Signature, FindSignaturesError>> {
+    let (chan, rx) = mpsc::channel(buffer);
     tokio::spawn(async move {
         let mut last_signature = None;
         loop {
@@ -37,27 +38,29 @@ pub fn find_signatures(
                 .await
             {
                 Ok(vec) => {
-                    for tx in vec {
+                    for tx in vec.iter() {
                         match Signature::from_str(&tx.signature) {
                             Ok(signature) => {
                                 last_signature = Some(signature);
                                 if tx.confirmation_status.is_some() && tx.err.is_none() {
-                                    let _ = chan.send(Ok(signature));
+                                    chan.send(Ok(signature)).await.map_err(|_| ())?;
                                 }
                             }
                             Err(error) => {
-                                let _ = chan.send(Err(error.into()));
-                                break;
+                                chan.send(Err(error.into())).await.map_err(|_| ())?;
                             }
                         }
                     }
+                    if vec.is_empty() || vec.len() < 1000 {
+                        break;
+                    }
                 }
                 Err(error) => {
-                    let _ = chan.send(Err(error.into()));
-                    break;
+                    chan.send(Err(error.into())).await.map_err(|_| ())?;
                 }
             }
         }
+        Ok::<(), ()>(())
     });
     rx
 }
