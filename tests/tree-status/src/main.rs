@@ -1,9 +1,9 @@
 use {
     anchor_client::anchor_lang::AnchorDeserialize,
     anyhow::Context,
-    async_recursion::async_recursion,
     clap::{arg, Parser, Subcommand},
     digital_asset_types::dao::cl_items,
+    futures::future::try_join_all,
     sea_orm::{
         sea_query::Expr, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr,
         EntityTrait, FromQueryResult, QueryFilter, QuerySelect, QueryTrait, SqlxPostgresConnector,
@@ -11,9 +11,13 @@ use {
     },
     // plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
     // solana_client::rpc_client::GetConfirmedSignaturesForAddress2Config,
-    solana_client::nonblocking::rpc_client::RpcClient,
-    solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey},
-    solana_sdk::{signature::Signature, transaction::VersionedTransaction},
+    solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig},
+    solana_sdk::{
+        commitment_config::CommitmentConfig,
+        pubkey::{ParsePubkeyError, Pubkey},
+        signature::Signature,
+        transaction::VersionedTransaction,
+    },
     solana_transaction_status::{
         option_serializer::OptionSerializer, EncodedConfirmedTransactionWithStatusMeta,
         UiTransactionEncoding, UiTransactionStatusMeta,
@@ -25,19 +29,34 @@ use {
     },
     spl_account_compression::{AccountCompressionEvent, ChangeLogEvent},
     sqlx::postgres::{PgConnectOptions, PgPoolOptions},
-
-    std::{cmp::Ordering, str::FromStr},
-    thiserror::Error,
+    std::{
+        cmp,
+        num::NonZeroUsize,
+        str::FromStr,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+    },
+    tokio::{
+        sync::Mutex,
+        time::{sleep, Duration},
+    },
     txn_forwarder::find_signatures,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum TransactionParsingError {
-    #[error("Meta parsing error: {0}")]
-    MetaError(String),
-    #[error("Transaction decoding error: {0}")]
-    DecodingError(String),
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ParseError {
+    #[error("failed to load Transaction Meta")]
+    TransactionMeta,
+    #[error("failed to decode Transaction")]
+    Transaction,
+    #[error("failed to decode instruction data: {0}")]
+    Instruction(#[from] bs58::decode::Error),
+    #[error("failed to parse pubkey: {0}")]
+    Pubkey(#[from] ParsePubkeyError),
 }
+
 #[derive(Debug, FromQueryResult, Clone)]
 struct MaxSeqItem {
     max_seq: i64,
@@ -53,9 +72,15 @@ struct MissingSeq {
 #[derive(Parser)]
 #[command(next_line_help = true, author, version, about)]
 struct Args {
-    #[arg(short, long)]
-    rpc_url: String,
+    /// Solana RPC endpoint.
+    #[arg(long, short, alias = "rpc-url")]
+    rpc: String,
 
+    /// Number of concurrent requests for fetching transactions.
+    #[arg(long, short, default_value_t = 25)]
+    concurrency: usize,
+
+    /// Maximum number of retries for transaction fetching.
     #[arg(long, short, default_value_t = 3)]
     max_retries: u8,
 
@@ -85,12 +110,12 @@ enum Action {
         )]
         file: String,
     },
-    // Show a tree
+    /// Show a tree
     ShowTree {
         #[arg(short, long, help = "Takes a single tree as a parameter to check")]
         tree: String,
     },
-    // Shows a list of trees
+    /// Shows a list of trees
     ShowTrees {
         #[arg(short, long, help = "Takes a single tree as a parameter to check")]
         file: String,
@@ -101,9 +126,12 @@ enum Action {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
+    let concurrency = NonZeroUsize::new(args.concurrency)
+        .ok_or_else(|| anyhow::anyhow!("invalid concurrency: {}", args.concurrency))?;
+
     // Set up RPC interface
-    let pubkeys = match args.action.clone() {
-        Action::CheckTree { tree, .. } | Action::ShowTree { tree } => vec![tree],
+    let pubkeys = match &args.action {
+        Action::CheckTree { tree, .. } | Action::ShowTree { tree } => vec![tree.to_string()],
         Action::CheckTrees { file, .. } | Action::ShowTrees { file } => {
             tokio::fs::read_to_string(&file)
                 .await
@@ -117,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    match args.action.clone() {
+    match args.action {
         Action::CheckTree { pg_url, .. } | Action::CheckTrees { pg_url, .. } => {
             // Set up db connection
             let url = pg_url;
@@ -134,13 +162,16 @@ async fn main() -> anyhow::Result<()> {
             // Create new postgres connection
             let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone());
 
-            let client = RpcClient::new(args.rpc_url);
+            let client = RpcClient::new(args.rpc);
             check_trees(pubkeys, &conn, &client).await?;
         }
         Action::ShowTree { .. } | Action::ShowTrees { .. } => {
             for pubkey in pubkeys {
-                println!("showing tree {:?}", pubkey);
-                read_tree(pubkey, args.rpc_url.clone(), args.max_retries).await;
+                let address = Pubkey::from_str(&pubkey)
+                    .with_context(|| format!("failed to parse address: {}", &pubkey))?;
+
+                println!("showing tree {:?}", address);
+                read_tree(address, args.rpc.clone(), concurrency, args.max_retries).await?;
             }
         }
     }
@@ -181,16 +212,16 @@ async fn check_trees(
                         let mut indexing_successful = false;
                         // Check tip
                         match indexed_seq.max_seq.cmp(&seq.try_into().unwrap()) {
-                            Ordering::Less => {
+                            cmp::Ordering::Less => {
                                 eprintln!(
                                     "[{:?}] tree not fully indexed: {:?} < {:?}",
                                     pubkey, indexed_seq.max_seq, seq
                                 );
                             }
-                            Ordering::Equal => {
+                            cmp::Ordering::Equal => {
                                 indexing_successful = true;
                             }
-                            Ordering::Greater => {
+                            cmp::Ordering::Greater => {
                                 eprintln!(
                                     "[{:?}] indexer error: {:?} > {:?}",
                                     pubkey, indexed_seq.max_seq, seq
@@ -299,107 +330,119 @@ async fn get_tree_latest_seq(address: Pubkey, client: &RpcClient) -> anyhow::Res
 }
 
 // Fetches all the transactions referencing a specific trees
-pub async fn read_tree(address: String, client_url: String, max_retries: u8) {
-    let client1 = RpcClient::new(client_url.clone());
-    let pub_addr = Pubkey::from_str(address.as_str()).unwrap();
-    // This takes a param failed but it excludes all failed TXs
-    let mut sig = find_signatures(pub_addr, client1, 2_000);
-    let mut tasks = Vec::new();
-    while let Some(s) = sig.recv().await {
-        let s = s.unwrap();
-        let client_url = client_url.clone();
-        tasks.push(tokio::spawn(async move {
-            let client2 = RpcClient::new(client_url.clone());
-            process_txn(&s.to_string(), &client2, max_retries).await;
-        }))
-    }
-    for task in tasks {
-        task.await.unwrap();
-    }
-}
+async fn read_tree(
+    address: Pubkey,
+    client_url: String,
+    concurrency: NonZeroUsize,
+    max_retries: u8,
+) -> anyhow::Result<()> {
+    let sig_id = Arc::new(AtomicUsize::new(0));
+    let rx_sig = Arc::new(Mutex::new(find_signatures(
+        address,
+        RpcClient::new(client_url.clone()),
+        2_000,
+    )));
 
-// Process and individual transaction, fetching it and reading out the sequence numbers
-#[async_recursion]
-pub async fn process_txn(sig_str: &str, client: &RpcClient, retries: u8) {
-    let sig = Signature::from_str(sig_str).unwrap();
-    let tx = client
-        .get_transaction_with_config(
-            &sig,
-            solana_client::rpc_config::RpcTransactionConfig {
-                encoding: Some(UiTransactionEncoding::Base64),
-                commitment: Some(CommitmentConfig::confirmed()),
-                max_supported_transaction_version: Some(0),
-            },
-        )
-        .await;
-
-    match tx {
-        Ok(txn) => {
-            let seq_numbers = parse_txn_sequence(&txn).await;
-            if let Ok(arr) = seq_numbers {
-                for seq in arr {
-                    println!("{} {}", seq, sig);
+    try_join_all((0..concurrency.get()).map(|_| {
+        let sig_id = Arc::clone(&sig_id);
+        let rx_sig = Arc::clone(&rx_sig);
+        let client = RpcClient::new(client_url.clone());
+        async move {
+            loop {
+                let mut lock = rx_sig.lock().await;
+                let maybe_msg = lock.recv().await;
+                let id = sig_id.fetch_add(1, Ordering::SeqCst);
+                drop(lock);
+                match maybe_msg {
+                    Some(maybe_sig) => {
+                        if let Err(error) = process_txn(maybe_sig?, id, &client, max_retries).await
+                        {
+                            eprintln!("{}", error);
+                        }
+                    }
+                    None => return Ok(()),
                 }
             }
         }
-        Err(e) => {
-            if retries > 0 {
-                eprintln!("Retrying transaction {} retry no {}: {}", sig, retries, e);
-                process_txn(sig_str, client, retries - 1).await;
-            } else {
-                eprintln!("Could not load transaction {}: {}", sig, e);
+    }))
+    .await
+    .map(|_| ())
+}
+
+// Process and individual transaction, fetching it and reading out the sequence numbers
+async fn process_txn(
+    sig: Signature,
+    id: usize,
+    client: &RpcClient,
+    mut retries: u8,
+) -> anyhow::Result<()> {
+    let mut delay = Duration::from_millis(100);
+    loop {
+        let config = RpcTransactionConfig {
+            encoding: Some(UiTransactionEncoding::Base64),
+            commitment: Some(CommitmentConfig::confirmed()),
+            max_supported_transaction_version: Some(0),
+        };
+        match client.get_transaction_with_config(&sig, config).await {
+            Ok(tx) => {
+                for seq in parse_txn_sequence(tx).await? {
+                    println!("{} {} {}", seq, sig, id);
+                }
+                return Ok(());
+            }
+            Err(error) => {
+                eprintln!(
+                    "Retrying transaction {} retry no {}: {}",
+                    sig, retries, error
+                );
+                anyhow::ensure!(retries > 0, "Failed to load transaction {}: {}", sig, error);
+                sleep(delay).await;
+                retries -= 1;
+                delay *= 2;
             }
         }
     }
 }
 
 // Parse the trasnaction data
-pub async fn parse_txn_sequence(
-    txn: &EncodedConfirmedTransactionWithStatusMeta,
-) -> Result<Vec<u64>, TransactionParsingError> {
+async fn parse_txn_sequence(
+    tx: EncodedConfirmedTransactionWithStatusMeta,
+) -> Result<Vec<u64>, ParseError> {
     let mut seq_updates = vec![];
 
     // Get `UiTransaction` out of `EncodedTransactionWithStatusMeta`.
-    let meta: UiTransactionStatusMeta =
-        txn.transaction
-            .meta
-            .clone()
-            .ok_or(TransactionParsingError::MetaError(String::from(
-                "couldn't load meta",
-            )))?;
-    let transaction: VersionedTransaction =
-        txn.transaction
-            .transaction
-            .decode()
-            .ok_or(TransactionParsingError::DecodingError(String::from(
-                "Couldn't parse transction",
-            )))?;
-
-    let mut account_keys = transaction.message.static_account_keys().to_vec();
-    // Add the account lookup stuff
-    if let OptionSerializer::Some(loaded_addresses) = meta.loaded_addresses {
-        loaded_addresses.writable.iter().for_each(|pkey| {
-            account_keys.push(Pubkey::from_str(pkey).unwrap());
-        });
-        loaded_addresses.readonly.iter().for_each(|pkey| {
-            account_keys.push(Pubkey::from_str(pkey).unwrap());
-        });
-    }
+    let meta: UiTransactionStatusMeta = tx.transaction.meta.ok_or(ParseError::TransactionMeta)?;
 
     // See https://github.com/ngundotra/spl-ac-seq-parse/blob/main/src/main.rs
     if let OptionSerializer::Some(inner_instructions_vec) = meta.inner_instructions.as_ref() {
+        let transaction: VersionedTransaction = tx
+            .transaction
+            .transaction
+            .decode()
+            .ok_or(ParseError::Transaction)?;
+
+        // Add the account lookup stuff
+        let mut account_keys = transaction.message.static_account_keys().to_vec();
+        if let OptionSerializer::Some(loaded_addresses) = meta.loaded_addresses {
+            for pubkey in loaded_addresses.writable.iter() {
+                account_keys.push(Pubkey::from_str(pubkey)?);
+            }
+            for pubkey in loaded_addresses.readonly.iter() {
+                account_keys.push(Pubkey::from_str(pubkey)?);
+            }
+        }
+
         for inner_ixs in inner_instructions_vec.iter() {
-            for (_, inner_ix) in inner_ixs.instructions.iter().enumerate() {
+            for inner_ix in inner_ixs.instructions.iter() {
                 if let solana_transaction_status::UiInstruction::Compiled(instr) = inner_ix {
                     if let Some(program) = account_keys.get(instr.program_id_index as usize) {
-                        if program.to_string() == spl_noop::id().to_string() {
-                            let data = bs58::decode(&instr.data).into_vec().map_err(|_| {
-                                TransactionParsingError::DecodingError(String::from(
-                                    "error base58ing",
-                                ))
-                            })?;
+                        if *program == spl_noop::id() {
+                            let data = bs58::decode(&instr.data)
+                                .into_vec()
+                                .map_err(ParseError::Instruction)?;
+
                             if let Ok(AccountCompressionEvent::ChangeLog(cl_data)) =
-                                &AccountCompressionEvent::try_from_slice(&data)
+                                AccountCompressionEvent::try_from_slice(&data)
                             {
                                 let ChangeLogEvent::V1(cl_data) = cl_data;
                                 seq_updates.push(cl_data.seq);
