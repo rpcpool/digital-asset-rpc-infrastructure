@@ -3,7 +3,7 @@ use {
     anyhow::Context,
     clap::{arg, Parser, Subcommand},
     digital_asset_types::dao::cl_items,
-    futures::future::try_join_all,
+    futures::future::{try_join, try_join_all, TryFutureExt},
     sea_orm::{
         sea_query::Expr, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr,
         EntityTrait, FromQueryResult, QueryFilter, QuerySelect, QueryTrait, SqlxPostgresConnector,
@@ -31,6 +31,7 @@ use {
     sqlx::postgres::{PgConnectOptions, PgPoolOptions},
     std::{
         cmp,
+        collections::HashMap,
         num::NonZeroUsize,
         str::FromStr,
         sync::{
@@ -39,7 +40,7 @@ use {
         },
     },
     tokio::{
-        sync::Mutex,
+        sync::{mpsc, Mutex},
         time::{sleep, Duration},
     },
     txn_forwarder::find_signatures,
@@ -343,28 +344,60 @@ async fn read_tree(
         2_000,
     )));
 
-    try_join_all((0..concurrency.get()).map(|_| {
-        let sig_id = Arc::clone(&sig_id);
-        let rx_sig = Arc::clone(&rx_sig);
-        let client = RpcClient::new(client_url.clone());
-        async move {
-            loop {
-                let mut lock = rx_sig.lock().await;
-                let maybe_msg = lock.recv().await;
-                let id = sig_id.fetch_add(1, Ordering::SeqCst);
-                drop(lock);
-                match maybe_msg {
-                    Some(maybe_sig) => {
-                        if let Err(error) = process_txn(maybe_sig?, id, &client, max_retries).await
-                        {
-                            eprintln!("{}", error);
+    let (print_tx, mut print_rx) = mpsc::unbounded_channel();
+    let print_tx = Arc::new(print_tx);
+
+    let fetch_futs = (0..concurrency.get())
+        .map(|_| {
+            let sig_id = Arc::clone(&sig_id);
+            let rx_sig = Arc::clone(&rx_sig);
+            let client = RpcClient::new(client_url.clone());
+            let print_tx = Arc::clone(&print_tx);
+            async move {
+                loop {
+                    let mut lock = rx_sig.lock().await;
+                    let maybe_msg = lock.recv().await;
+                    let id = sig_id.fetch_add(1, Ordering::SeqCst);
+                    drop(lock);
+                    match maybe_msg {
+                        Some(maybe_sig) => {
+                            let signature = maybe_sig?;
+                            let mut map = process_txn(signature, &client, max_retries).await?;
+                            let _ = print_tx.send((id, signature, map.remove(&address)));
                         }
+                        None => return Ok::<(), anyhow::Error>(()),
                     }
-                    None => return Ok(()),
                 }
             }
+        })
+        .collect::<Vec<_>>();
+    drop(print_tx);
+
+    try_join(try_join_all(fetch_futs).map_ok(|_| ()), async move {
+        let mut next_id = 0;
+        let mut map = HashMap::new();
+
+        while let Some((id, sig, seqs)) = print_rx.recv().await {
+            map.insert(id, (sig, seqs));
+
+            if let Some((sig, seqs)) = map.remove(&next_id) {
+                for seq in seqs.unwrap_or_default() {
+                    println!("{seq} {sig} {next_id}");
+                }
+                next_id += 1;
+            }
         }
-    }))
+
+        let mut vec = map.into_iter().collect::<Vec<_>>();
+        vec.sort_by_key(|(id, _)| *id);
+        for (id, (sig, seqs)) in vec.into_iter() {
+            for seq in seqs.unwrap_or_default() {
+                println!("{seq} {sig} {id}");
+            }
+        }
+
+        Ok(())
+    })
     .await
     .map(|_| ())
 }
@@ -372,10 +405,9 @@ async fn read_tree(
 // Process and individual transaction, fetching it and reading out the sequence numbers
 async fn process_txn(
     sig: Signature,
-    id: usize,
     client: &RpcClient,
     mut retries: u8,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<HashMap<Pubkey, Vec<u64>>> {
     let mut delay = Duration::from_millis(100);
     loop {
         let config = RpcTransactionConfig {
@@ -384,20 +416,12 @@ async fn process_txn(
             max_supported_transaction_version: Some(0),
         };
         match client.get_transaction_with_config(&sig, config).await {
-            Ok(tx) => {
-                for seq in parse_txn_sequence(tx).await? {
-                    println!("{} {} {}", seq, sig, id);
-                }
-                return Ok(());
-            }
+            Ok(tx) => return parse_txn_sequence(tx).map_err(Into::into),
             Err(error) => {
-                eprintln!(
-                    "Retrying transaction {} retry no {}: {}",
-                    sig, retries, error
-                );
-                anyhow::ensure!(retries > 0, "Failed to load transaction {}: {}", sig, error);
-                sleep(delay).await;
+                eprintln!("Retrying transaction {sig} retry no {retries}: {error}",);
+                anyhow::ensure!(retries > 0, "Failed to load transaction {sig}: {error}");
                 retries -= 1;
+                sleep(delay).await;
                 delay *= 2;
             }
         }
@@ -405,10 +429,10 @@ async fn process_txn(
 }
 
 // Parse the trasnaction data
-async fn parse_txn_sequence(
+fn parse_txn_sequence(
     tx: EncodedConfirmedTransactionWithStatusMeta,
-) -> Result<Vec<u64>, ParseError> {
-    let mut seq_updates = vec![];
+) -> Result<HashMap<Pubkey, Vec<u64>>, ParseError> {
+    let mut seq_updates = HashMap::<Pubkey, Vec<u64>>::new();
 
     // Get `UiTransaction` out of `EncodedTransactionWithStatusMeta`.
     let meta: UiTransactionStatusMeta = tx.transaction.meta.ok_or(ParseError::TransactionMeta)?;
@@ -445,7 +469,7 @@ async fn parse_txn_sequence(
                                 AccountCompressionEvent::try_from_slice(&data)
                             {
                                 let ChangeLogEvent::V1(cl_data) = cl_data;
-                                seq_updates.push(cl_data.seq);
+                                seq_updates.entry(cl_data.id).or_default().push(cl_data.seq);
                             }
                         }
                     }
