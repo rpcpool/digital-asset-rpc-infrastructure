@@ -14,6 +14,7 @@ impl MigrationTrait for Migration {
               .add_column(
                 ColumnDef::new(Alias::new("reindex"))
                   .boolean()
+                  .default(false)
               )
               .to_owned(),
             )
