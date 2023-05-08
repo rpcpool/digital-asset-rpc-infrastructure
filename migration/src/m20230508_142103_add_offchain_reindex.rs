@@ -9,7 +9,7 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
           .alter_table(
-            seq_query::Table::alter()
+            sea_query::Table::alter()
               .table(asset_data::Entity)
               .add_column(
                 ColumnDef::new(Alias::new("reindex"))
@@ -17,7 +17,7 @@ impl MigrationTrait for Migration {
               )
               .to_owned(),
             )
-            .await?
+            .await?;
         Ok(())
     }
 
