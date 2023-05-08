@@ -15,7 +15,14 @@ use {
         UiTransactionEncoding, UiTransactionStatusMeta,
     },
     spl_account_compression::{AccountCompressionEvent, ChangeLogEvent},
-    std::{num::NonZeroUsize, str::FromStr, sync::Arc},
+    std::{
+        num::NonZeroUsize,
+        str::FromStr,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+    },
     tokio::{
         sync::Mutex,
         time::{sleep, Duration},
@@ -74,6 +81,7 @@ async fn read_tree(
     concurrency: NonZeroUsize,
     max_retries: u8,
 ) -> anyhow::Result<()> {
+    let sig_id = Arc::new(AtomicUsize::new(0));
     let rx_sig = Arc::new(Mutex::new(find_signatures(
         address,
         RpcClient::new(client_url.clone()),
@@ -81,16 +89,19 @@ async fn read_tree(
     )));
 
     try_join_all((0..concurrency.get()).map(|_| {
+        let sig_id = Arc::clone(&sig_id);
         let rx_sig = Arc::clone(&rx_sig);
         let client = RpcClient::new(client_url.clone());
         async move {
             loop {
                 let mut lock = rx_sig.lock().await;
                 let maybe_msg = lock.recv().await;
+                let id = sig_id.fetch_add(1, Ordering::SeqCst);
                 drop(lock);
                 match maybe_msg {
                     Some(maybe_sig) => {
-                        if let Err(error) = process_txn(maybe_sig?, &client, max_retries).await {
+                        if let Err(error) = process_txn(maybe_sig?, id, &client, max_retries).await
+                        {
                             eprintln!("{}", error);
                         }
                     }
@@ -104,7 +115,12 @@ async fn read_tree(
 }
 
 // Process and individual transaction, fetching it and reading out the sequence numbers
-async fn process_txn(sig: Signature, client: &RpcClient, mut retries: u8) -> anyhow::Result<()> {
+async fn process_txn(
+    sig: Signature,
+    id: usize,
+    client: &RpcClient,
+    mut retries: u8,
+) -> anyhow::Result<()> {
     let mut delay = Duration::from_millis(100);
     loop {
         let config = RpcTransactionConfig {
@@ -115,7 +131,7 @@ async fn process_txn(sig: Signature, client: &RpcClient, mut retries: u8) -> any
         match client.get_transaction_with_config(&sig, config).await {
             Ok(tx) => {
                 for seq in parse_txn_sequence(tx).await? {
-                    println!("{} {}", seq, sig);
+                    println!("{} {} {}", seq, sig, id);
                 }
                 return Ok(());
             }
