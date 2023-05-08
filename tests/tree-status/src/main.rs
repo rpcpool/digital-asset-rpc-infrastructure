@@ -131,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("invalid concurrency: {}", args.concurrency))?;
 
     // Set up RPC interface
-    let pubkeys = match &args.action {
+    let pubkeys_str = match &args.action {
         Action::CheckTree { tree, .. } | Action::ShowTree { tree } => vec![tree.to_string()],
         Action::CheckTrees { file, .. } | Action::ShowTrees { file } => {
             tokio::fs::read_to_string(&file)
@@ -146,8 +146,19 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let mut pubkeys: Vec<Pubkey> = vec![];
+    for pubkey_str in pubkeys_str {
+        pubkeys.push(
+            pubkey_str
+                .parse()
+                .with_context(|| format!("failed to parse pubkey: {}", &pubkey_str))?,
+        );
+    }
+
     match args.action {
         Action::CheckTree { pg_url, .. } | Action::CheckTrees { pg_url, .. } => {
+            let client = RpcClient::new(args.rpc);
+
             // Set up db connection
             let url = pg_url;
             let options: PgConnectOptions = url.parse().unwrap();
@@ -163,16 +174,21 @@ async fn main() -> anyhow::Result<()> {
             // Create new postgres connection
             let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone());
 
-            let client = RpcClient::new(args.rpc);
-            check_trees(pubkeys, &conn, &client).await?;
+            for pubkey in pubkeys {
+                println!("checking tree {pubkey}");
+                if let Err(error) = check_tree(pubkey, &client, &conn).await {
+                    eprintln!("{:?}", error);
+                }
+            }
         }
         Action::ShowTree { .. } | Action::ShowTrees { .. } => {
             for pubkey in pubkeys {
-                let address = Pubkey::from_str(&pubkey)
-                    .with_context(|| format!("failed to parse address: {}", &pubkey))?;
-
-                println!("showing tree {:?}", address);
-                read_tree(address, args.rpc.clone(), concurrency, args.max_retries).await?;
+                println!("showing tree {pubkey}");
+                if let Err(error) =
+                    read_tree(pubkey, &args.rpc, concurrency, args.max_retries).await
+                {
+                    eprintln!("{:?}", error);
+                }
             }
         }
     }
@@ -180,129 +196,54 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn check_trees(
-    pubkeys: Vec<String>,
-    conn: &DatabaseConnection,
+async fn check_tree(
+    pubkey: Pubkey,
     client: &RpcClient,
+    conn: &DatabaseConnection,
 ) -> anyhow::Result<()> {
-    for pubkey in pubkeys {
-        match pubkey.parse() {
-            Ok(pubkey) => {
-                let seq = get_tree_latest_seq(pubkey, client).await;
-                //println!("seq for pubkey {:?}: {:?}", pubkey, seq);
-                if seq.is_err() {
-                    eprintln!(
-                        "[{:?}] tree is missing from chain or error occurred: {:?}",
-                        pubkey, seq
-                    );
-                    continue;
-                }
+    let seq = get_tree_latest_seq(pubkey, client)
+        .await
+        .with_context(|| format!("[{pubkey}] tree is missing from chain or error occured"))?
+        as i64;
 
-                let seq = seq.unwrap();
+    let indexed_seq = get_tree_max_seq(pubkey, conn)
+        .await
+        .with_context(|| format!("[{pubkey:?}] coundn't query tree from index"))?
+        .ok_or_else(|| anyhow::anyhow!("[{pubkey}] tree missing from index"))?;
 
-                let fetch_seq = get_tree_max_seq(&pubkey.to_bytes(), conn).await;
-                if fetch_seq.is_err() {
-                    eprintln!(
-                        "[{:?}] couldn't query tree from index: {:?}",
-                        pubkey, fetch_seq
-                    );
-                    continue;
-                }
-                match fetch_seq.unwrap() {
-                    Some(indexed_seq) => {
-                        let mut indexing_successful = false;
-                        // Check tip
-                        match indexed_seq.max_seq.cmp(&seq.try_into().unwrap()) {
-                            cmp::Ordering::Less => {
-                                eprintln!(
-                                    "[{:?}] tree not fully indexed: {:?} < {:?}",
-                                    pubkey, indexed_seq.max_seq, seq
-                                );
-                            }
-                            cmp::Ordering::Equal => {
-                                indexing_successful = true;
-                            }
-                            cmp::Ordering::Greater => {
-                                eprintln!(
-                                    "[{:?}] indexer error: {:?} > {:?}",
-                                    pubkey, indexed_seq.max_seq, seq
-                                );
-                            }
-                        }
+    // Check tip
+    match indexed_seq.max_seq.cmp(&seq) {
+        cmp::Ordering::Less => {
+            eprintln!(
+                "[{pubkey}] tree not fully indexed: {} < {seq}",
+                indexed_seq.max_seq
+            );
+        }
+        cmp::Ordering::Equal => {}
+        cmp::Ordering::Greater => {
+            eprintln!("[{pubkey}] indexer error: {} > {seq}", indexed_seq.max_seq);
+        }
+    }
 
-                        // Check completeness
-                        if indexed_seq.max_seq != indexed_seq.cnt_seq {
-                            eprintln!(
-                                "[{:?}] tree has gaps {:?} != {:?}",
-                                pubkey, indexed_seq.max_seq, indexed_seq.cnt_seq
-                            );
-                            indexing_successful = false;
-                        }
+    // Check completeness
+    if indexed_seq.max_seq != indexed_seq.cnt_seq {
+        eprintln!(
+            "[{pubkey}] tree has gaps {} != {}",
+            indexed_seq.max_seq, indexed_seq.cnt_seq
+        );
+    }
 
-                        if indexing_successful {
-                            println!("[{:?}] indexing is complete, seq={:?}", pubkey, seq)
-                        } else {
-                            eprintln!(
-                                "[{:?}] indexing is failed, seq={:?} max_seq={:?}",
-                                pubkey, seq, indexed_seq
-                            );
-                            let ret =
-                                get_missing_seq(&pubkey.to_bytes(), seq.try_into().unwrap(), conn)
-                                    .await;
-                            if ret.is_err() {
-                                eprintln!("[{:?}] failed to query missing seq: {:?}", pubkey, ret);
-                            } else {
-                                let ret = ret.unwrap();
-                                eprintln!("[{:?}] missing seq: {:?}", pubkey, ret);
-                            }
-                        }
-                    }
-                    None => {
-                        eprintln!("[{:?}] tree  missing from index", pubkey)
-                    }
-                }
-            }
-            Err(error) => {
-                eprintln!("failed to parse pubkey {:?}, reason: {:?}", pubkey, error);
-            }
+    if indexed_seq.max_seq == seq && indexed_seq.max_seq == indexed_seq.cnt_seq {
+        println!("[{:?}] indexing is complete, seq={:?}", pubkey, seq)
+    } else {
+        eprintln!("[{pubkey}] indexing is failed, seq={seq} max_seq={indexed_seq:?}");
+        match get_missing_seq(pubkey, seq, conn).await {
+            Ok(seqs) => eprintln!("[{pubkey}] missing seq: {seqs:?}"),
+            Err(error) => eprintln!("[{pubkey}] failed to query missing seq: {error:?}"),
         }
     }
 
     Ok(())
-}
-
-async fn get_missing_seq(
-    tree: &[u8],
-    max_seq: i64,
-    conn: &DatabaseConnection,
-) -> Result<Vec<MissingSeq>, DbErr> {
-    let query = Statement::from_string(
-            DbBackend::Postgres,
-            format!("SELECT s.seq AS missing_seq FROM generate_series(1::bigint,{}::bigint) s(seq) WHERE NOT EXISTS (SELECT 1 FROM cl_items WHERE seq = s.seq AND tree='\\x{}')", max_seq, hex::encode(tree))
-        );
-
-    let missing_sequence_numbers: Vec<MissingSeq> = conn.query_all(query).await.map(|qr| {
-        qr.iter()
-            .map(|q| MissingSeq::from_query_result(q, "").unwrap())
-            .collect()
-    })?;
-
-    Ok(missing_sequence_numbers)
-}
-
-async fn get_tree_max_seq(
-    tree: &[u8],
-    conn: &DatabaseConnection,
-) -> Result<Option<MaxSeqItem>, DbErr> {
-    let query = cl_items::Entity::find()
-        .select_only()
-        .filter(cl_items::Column::Tree.eq(tree))
-        .column_as(Expr::col(cl_items::Column::Seq).max(), "max_seq")
-        .column_as(Expr::cust("count(distinct seq)"), "cnt_seq")
-        .build(DbBackend::Postgres);
-
-    let res = MaxSeqItem::find_by_statement(query).one(conn).await?;
-    Ok(res)
 }
 
 async fn get_tree_latest_seq(address: Pubkey, client: &RpcClient) -> anyhow::Result<u64> {
@@ -318,8 +259,7 @@ async fn get_tree_latest_seq(address: Pubkey, client: &RpcClient) -> anyhow::Res
     let (header_bytes, rest) = account
         .data
         .split_at_mut(CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1);
-    let header: ConcurrentMerkleTreeHeader =
-        ConcurrentMerkleTreeHeader::try_from_slice(header_bytes)?;
+    let header = ConcurrentMerkleTreeHeader::try_from_slice(header_bytes)?;
 
     // let auth = Pubkey::find_program_address(&[address.as_ref()], &mpl_bubblegum::id()).0;
 
@@ -330,17 +270,49 @@ async fn get_tree_latest_seq(address: Pubkey, client: &RpcClient) -> anyhow::Res
     Ok(u64::from_le_bytes(seq_bytes))
 }
 
+async fn get_tree_max_seq(
+    tree: Pubkey,
+    conn: &DatabaseConnection,
+) -> Result<Option<MaxSeqItem>, DbErr> {
+    let query = cl_items::Entity::find()
+        .select_only()
+        .filter(cl_items::Column::Tree.eq(tree.as_ref()))
+        .column_as(Expr::col(cl_items::Column::Seq).max(), "max_seq")
+        .column_as(Expr::cust("count(distinct seq)"), "cnt_seq")
+        .build(DbBackend::Postgres);
+
+    MaxSeqItem::find_by_statement(query).one(conn).await
+}
+
+async fn get_missing_seq(
+    tree: Pubkey,
+    max_seq: i64,
+    conn: &DatabaseConnection,
+) -> Result<Vec<MissingSeq>, DbErr> {
+    let query = Statement::from_string(
+            DbBackend::Postgres,
+            format!("SELECT s.seq AS missing_seq FROM generate_series(1::bigint, {}::bigint) s(seq) WHERE NOT EXISTS (SELECT 1 FROM cl_items WHERE seq = s.seq AND tree='\\x{}')", max_seq, hex::encode(tree.as_ref()))
+        );
+
+    Ok(conn
+        .query_all(query)
+        .await?
+        .iter()
+        .map(|q| MissingSeq::from_query_result(q, "").unwrap())
+        .collect())
+}
+
 // Fetches all the transactions referencing a specific trees
 async fn read_tree(
-    address: Pubkey,
-    client_url: String,
+    pubkey: Pubkey,
+    client_url: &str,
     concurrency: NonZeroUsize,
     max_retries: u8,
 ) -> anyhow::Result<()> {
     let sig_id = Arc::new(AtomicUsize::new(0));
     let rx_sig = Arc::new(Mutex::new(find_signatures(
-        address,
-        RpcClient::new(client_url.clone()),
+        pubkey,
+        RpcClient::new(client_url.to_owned()),
         2_000,
     )));
 
@@ -351,7 +323,7 @@ async fn read_tree(
         .map(|_| {
             let sig_id = Arc::clone(&sig_id);
             let rx_sig = Arc::clone(&rx_sig);
-            let client = RpcClient::new(client_url.clone());
+            let client = RpcClient::new(client_url.to_owned());
             let print_tx = Arc::clone(&print_tx);
             async move {
                 loop {
@@ -363,7 +335,7 @@ async fn read_tree(
                         Some(maybe_sig) => {
                             let signature = maybe_sig?;
                             let mut map = process_txn(signature, &client, max_retries).await?;
-                            let _ = print_tx.send((id, signature, map.remove(&address)));
+                            let _ = print_tx.send((id, signature, map.remove(&pubkey)));
                         }
                         None => return Ok::<(), anyhow::Error>(()),
                     }
