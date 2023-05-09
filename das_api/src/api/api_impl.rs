@@ -146,8 +146,8 @@ impl ApiContract for DasApi {
             sort_by,
             limit.map(|x| x as u64).unwrap_or(1000),
             page.map(|x| x as u64),
-            before.map(|x| x.as_bytes().to_vec()),
-            after.map(|x| x.as_bytes().to_vec()),
+            before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
         )
         .await
         .map_err(Into::into)
@@ -177,8 +177,8 @@ impl ApiContract for DasApi {
             sort_by,
             limit.map(|x| x as u64).unwrap_or(1000),
             page.map(|x| x as u64),
-            before.map(|x| x.as_bytes().to_vec()),
-            after.map(|x| x.as_bytes().to_vec()),
+            before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
         )
         .await
         .map_err(Into::into)
@@ -210,8 +210,8 @@ impl ApiContract for DasApi {
             sort_by,
             limit.map(|x| x as u64).unwrap_or(1000),
             page.map(|x| x as u64),
-            before.map(|x| x.as_bytes().to_vec()),
-            after.map(|x| x.as_bytes().to_vec()),
+            before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
         )
         .await
         .map_err(Into::into)
@@ -240,8 +240,8 @@ impl ApiContract for DasApi {
             sort_by,
             limit.map(|x| x as u64).unwrap_or(1000),
             page.map(|x| x as u64),
-            before.map(|x| x.as_bytes().to_vec()),
-            after.map(|x| x.as_bytes().to_vec()),
+            before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
         )
         .await
         .map_err(Into::into)
@@ -331,8 +331,8 @@ impl ApiContract for DasApi {
             sort_by,
             limit.map(|x| x as u64).unwrap_or(1000),
             page.map(|x| x as u64),
-            before.map(|x| x.as_bytes().to_vec()),
-            after.map(|x| x.as_bytes().to_vec()),
+            before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
         )
         .await
         .map_err(Into::into)
