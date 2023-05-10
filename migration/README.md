@@ -4,6 +4,10 @@
     ```sh
     cargo run -- migrate generate MIGRATION_NAME
     ```
+
+    ```
+    sea-orm-cli migrate -d src generate reindex_index
+    ```
 - Apply all pending migrations
     ```sh
     cargo run
