@@ -18,6 +18,7 @@ mod m20230310_162227_add_indexes_to_bg;
 mod m20230317_121944_remove_indexes_for_perf;
 mod m20230508_142103_add_offchain_reindex;
 mod m20230510_224316_cl_audit_table;
+mod m20230510_183736_add_indices_to_assets;
 
 pub struct Migrator;
 
@@ -43,6 +44,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20230317_121944_remove_indexes_for_perf::Migration),
             Box::new(m20230508_142103_add_offchain_reindex::Migration),
             Box::new(m20230510_224316_cl_audit_table::Migration),
+            Box::new(m20230510_183736_add_indices_to_assets::Migration),
         ]
     }
 }
