@@ -3,13 +3,13 @@ use crate::{
     error::IngesterError,
     tasks::{DownloadMetadata, IntoTaskData, TaskData},
 };
-use blockbuster::token_metadata::{
-    pda::find_master_edition_account,
-    state::{TokenStandard, UseMethod, Uses},
-};
 use blockbuster::{
     instruction::InstructionBundle,
     programs::bubblegum::{BubblegumInstruction, LeafSchema, Payload},
+    token_metadata::{
+        pda::find_master_edition_account,
+        state::{TokenStandard, UseMethod, Uses},
+    },
 };
 use chrono::Utc;
 use digital_asset_types::{
@@ -48,7 +48,7 @@ where
     ) {
         let seq = save_changelog_event(cl, bundle.slot, txn).await?;
         let metadata = args;
-        return match le.schema {
+        match le.schema {
             LeafSchema::V1 {
                 id,
                 delegate,
@@ -92,7 +92,7 @@ where
                     metadata: Set(JsonValue::String("processing".to_string())),
                     metadata_mutability: Set(Mutability::Mutable),
                     slot_updated: Set(slot_i),
-                    ..Default::default()
+                    reindex: Set(Some(true)),
                 };
 
                 let mut query = asset_data::Entity::insert(data)
@@ -102,9 +102,9 @@ where
                                 asset_data::Column::ChainDataMutability,
                                 asset_data::Column::ChainData,
                                 asset_data::Column::MetadataUrl,
-                                asset_data::Column::Metadata,
                                 asset_data::Column::MetadataMutability,
                                 asset_data::Column::SlotUpdated,
+                                asset_data::Column::Reindex,
                             ])
                             .to_owned(),
                     )
@@ -276,9 +276,8 @@ where
                 };
                 task.sanitize();
                 return task.into_task_data();
-            }
-            _ => Err(IngesterError::NotImplemented),
-        }?;
+            } // _ => Err(IngesterError::NotImplemented),
+        }
     }
     Err(IngesterError::ParsingError(
         "Ix not parsed correctly".to_string(),

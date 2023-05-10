@@ -32,7 +32,7 @@ use std::{str::FromStr, collections::HashMap, sync::Arc};
 /**
  * The bgtask creator is intended to be use as a tool to handle assets that have not been indexed.
  * It will delete all the current bgtasks and create new ones for assets where the metadata is missing.
- * 
+ *
  * Currently it will try every missing asset every run.
  */
 
@@ -49,7 +49,7 @@ pub async fn main() {
                 .help("Sets a custom config file")
                 .required(false)
                 .action(ArgAction::Set)
-                .value_parser(value_parser!(PathBuf))
+                .value_parser(value_parser!(PathBuf)),
         )
         .arg(
             Arg::new("delete")
@@ -67,7 +67,7 @@ pub async fn main() {
                 .required(false)
                 .action(ArgAction::Set)
                 .value_parser(value_parser!(u64))
-                .default_value("1000")
+                .default_value("1000"),
         )
         .arg(
             Arg::new("authority")
@@ -130,11 +130,16 @@ pub async fn main() {
     let database_pool = setup_database(config.clone()).await;
 
     //Setup definitions for background tasks
-    let task_runner_config = config.background_task_runner_config.clone().unwrap_or_default();
+    let task_runner_config = config
+        .background_task_runner_config
+        .clone()
+        .unwrap_or_default();
     let bg_task_definitions: Vec<Box<dyn BgTask>> = vec![Box::new(DownloadMetadataTask {
         lock_duration: task_runner_config.lock_duration,
         max_attempts: task_runner_config.max_attempts,
-        timeout: Some(time::Duration::from_secs(task_runner_config.timeout.unwrap_or(3))),
+        timeout: Some(time::Duration::from_secs(
+            task_runner_config.timeout.unwrap_or(3),
+        )),
     })];
     let mut bg_tasks = HashMap::new();
     for task in bg_task_definitions {
@@ -152,10 +157,10 @@ pub async fn main() {
 
         // Delete all existing tasks
         let deleted_tasks: Result<DeleteResult, IngesterError> = tasks::Entity::delete_many()
-                .exec(&conn)
-                .await
-                .map_err(|e| e.into());
-        
+            .exec(&conn)
+            .await
+            .map_err(|e| e.into());
+
         match deleted_tasks {
             Ok(result) => {
                 info!("Deleted a number of tasks {}", result.rows_affected);
@@ -198,7 +203,7 @@ pub async fn main() {
                  .filter(
                     Condition::all()
                         .add(asset_authority::Column::Authority.eq(pubkey_bytes))
-                        .add(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
+                        .add(asset_data::Column::Reindex.eq(false))
                  )
                  .order_by(asset_data::Column::Id, Order::Asc)
                 .paginate(&conn, *batch_size)
@@ -218,7 +223,7 @@ pub async fn main() {
                  .filter(
                     Condition::all()
                         .add(asset_grouping::Column::GroupValue.eq(collection.as_str()))
-                        .add(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
+                        .add(asset_data::Column::Reindex.eq(false))
                  )
                  .order_by(asset_data::Column::Id, Order::Asc)
                 .paginate(&conn, *batch_size)
@@ -244,7 +249,7 @@ pub async fn main() {
                  .filter(
                     Condition::all()
                         .add(tokens::Column::MintAuthority.eq(pubkey_bytes))
-                        .add(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
+                        .add(asset_data::Column::Reindex.eq(false))
                  )
                  .order_by(asset_data::Column::Id, Order::Asc)
                 .paginate(&conn, *batch_size)
@@ -266,7 +271,7 @@ pub async fn main() {
                  .filter(
                     Condition::all()
                         .add(asset_creators::Column::Creator.eq(pubkey_bytes))
-                        .add(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
+                        .add(asset_data::Column::Reindex.eq(false))
                  )
                 .order_by(asset_data::Column::Id, Order::Asc)
                 .paginate(&conn, *batch_size)
