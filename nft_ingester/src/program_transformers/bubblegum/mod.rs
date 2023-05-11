@@ -3,7 +3,7 @@ use blockbuster::{
     instruction::InstructionBundle,
     programs::bubblegum::{BubblegumInstruction, InstructionName},
 };
-use log::debug;
+use log::{debug,info};
 use sea_orm::{ConnectionTrait, TransactionTrait};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -32,6 +32,8 @@ where
     T: ConnectionTrait + TransactionTrait,
 {
     let ix_type = &parsing_result.instruction;
+
+    info!("Parsing instruction: {:?} from transaction {:?}", ix_type, bundle.txn_id);
     match ix_type {
         InstructionName::Unknown => {
             debug!("Unknown instruction:");

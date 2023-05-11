@@ -18,7 +18,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(ClAudits::Seq).big_integer().not_null())
                     .col(ColumnDef::new(ClAudits::Level).big_integer().not_null())
                     .col(ColumnDef::new(ClAudits::Hash).binary().not_null())
-                    .col(ColumnDef::new(ClAudits::CreatedAt).date_time().not_null())
+                    .col(ColumnDef::new(ClAudits::CreatedAt).date_time().default(SimpleExpr::Keyword(Keyword::CurrentTimestamp)).not_null())
                     .col(ColumnDef::new(ClAudits::Tx).string().not_null())
                     .to_owned(),
             )
