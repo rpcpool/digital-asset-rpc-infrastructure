@@ -8,8 +8,6 @@ use spl_account_compression::events::ChangeLogEventV1;
 
 use std::convert::From;
 
-
-
 pub async fn save_changelog_event<'c, T>(
     change_log_event: &ChangeLogEventV1,
     slot: u64,
