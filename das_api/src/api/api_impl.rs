@@ -12,7 +12,7 @@ use digital_asset_types::{
         get_asset, get_assets_by_authority, get_assets_by_creator, get_assets_by_group,
         get_assets_by_owner, get_proof_for_asset, search_assets,
     },
-    rpc::{filter::SearchConditionType, response::GetGroupingResponse},
+    rpc::{filter::SearchConditionType, response::GetGroupingResponse, transform::AssetTransform},
     rpc::{OwnershipModel, RoyaltyModel},
 };
 use open_rpc_derive::document_rpc;
@@ -33,6 +33,7 @@ use {
 
 pub struct DasApi {
     db_connection: DatabaseConnection,
+    cdn_prefix: Option<String>,
 }
 
 impl DasApi {
@@ -45,6 +46,7 @@ impl DasApi {
         let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
         Ok(DasApi {
             db_connection: conn,
+            cdn_prefix: config.cdn_prefix,
         })
     }
 
@@ -119,7 +121,10 @@ impl ApiContract for DasApi {
     async fn get_asset(self: &DasApi, payload: GetAsset) -> Result<Asset, DasApiError> {
         let id = validate_pubkey(payload.id.clone())?;
         let id_bytes = id.to_bytes().to_vec();
-        get_asset(&self.db_connection, id_bytes)
+        let transform = AssetTransform {
+            cdn_prefix: self.cdn_prefix.clone(),
+        };
+        get_asset(&self.db_connection, id_bytes, &transform)
             .await
             .map_err(Into::into)
     }
@@ -142,6 +147,9 @@ impl ApiContract for DasApi {
         let owner_address_bytes = owner_address.to_bytes().to_vec();
         let sort_by = sort_by.unwrap_or_default();
         self.validate_pagination(&limit, &page, &before, &after)?;
+        let transform = AssetTransform {
+            cdn_prefix: self.cdn_prefix.clone(),
+        };
         get_assets_by_owner(
             &self.db_connection,
             owner_address_bytes,
@@ -150,6 +158,7 @@ impl ApiContract for DasApi {
             page.map(|x| x as u64),
             before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
             after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            &transform,
         )
         .await
         .map_err(Into::into)
@@ -172,6 +181,9 @@ impl ApiContract for DasApi {
         let after: Option<String> = after.filter(|after| !after.is_empty());
         let sort_by = sort_by.unwrap_or_default();
         self.validate_pagination(&limit, &page, &before, &after)?;
+        let transform = AssetTransform {
+            cdn_prefix: self.cdn_prefix.clone(),
+        };
         get_assets_by_group(
             &self.db_connection,
             group_key,
@@ -181,6 +193,7 @@ impl ApiContract for DasApi {
             page.map(|x| x as u64),
             before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
             after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            &transform,
         )
         .await
         .map_err(Into::into)
@@ -205,6 +218,9 @@ impl ApiContract for DasApi {
         self.validate_pagination(&limit, &page, &before, &after)?;
         let sort_by = sort_by.unwrap_or_default();
         let only_verified = only_verified.unwrap_or_default();
+        let transform = AssetTransform {
+            cdn_prefix: self.cdn_prefix.clone(),
+        };
         get_assets_by_creator(
             &self.db_connection,
             creator_address_bytes,
@@ -214,6 +230,7 @@ impl ApiContract for DasApi {
             page.map(|x| x as u64),
             before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
             after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            &transform,
         )
         .await
         .map_err(Into::into)
@@ -234,8 +251,10 @@ impl ApiContract for DasApi {
         let sort_by = sort_by.unwrap_or_default();
         let authority_address = validate_pubkey(authority_address.clone())?;
         let authority_address_bytes = authority_address.to_bytes().to_vec();
-
         self.validate_pagination(&limit, &page, &before, &after)?;
+        let transform = AssetTransform {
+            cdn_prefix: self.cdn_prefix.clone(),
+        };
         get_assets_by_authority(
             &self.db_connection,
             authority_address_bytes,
@@ -244,6 +263,7 @@ impl ApiContract for DasApi {
             page.map(|x| x as u64),
             before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
             after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            &transform,
         )
         .await
         .map_err(Into::into)
@@ -326,6 +346,9 @@ impl ApiContract for DasApi {
             burnt,
         };
         let sort_by = sort_by.unwrap_or_default();
+        let transform = AssetTransform {
+            cdn_prefix: self.cdn_prefix.clone(),
+        };
         // Execute query
         search_assets(
             &self.db_connection,
@@ -335,6 +358,7 @@ impl ApiContract for DasApi {
             page.map(|x| x as u64),
             before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
             after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            &transform,
         )
         .await
         .map_err(Into::into)

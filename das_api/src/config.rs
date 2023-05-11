@@ -11,6 +11,7 @@ pub struct Config {
     pub metrics_host: Option<String>,
     pub server_port: u16,
     pub env: Option<String>,
+    pub cdn_prefix: Option<String>,
 }
 
 pub fn load_config() -> Result<Config, DasApiError> {

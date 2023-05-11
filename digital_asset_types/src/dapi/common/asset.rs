@@ -5,6 +5,7 @@ use crate::dao::{FullAsset, FullAssetList};
 
 use crate::rpc::filter::{AssetSortBy, AssetSortDirection, AssetSorting};
 use crate::rpc::response::{AssetError, AssetList};
+use crate::rpc::transform::AssetTransform;
 use crate::rpc::{
     Asset as RpcAsset, Authority, Compression, Content, Creator, File, Group, Interface,
     MetadataMap, Ownership, Royalty, Scope, Supply, Uses,
@@ -15,6 +16,7 @@ use mime_guess::Mime;
 use sea_orm::DatabaseConnection;
 use sea_orm::{entity::*, query::*, DbErr};
 use serde_json::Value;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use url::Url;
@@ -47,6 +49,7 @@ pub fn build_asset_response(
     assets: Vec<FullAsset>,
     limit: u64,
     pagination: &Pagination,
+    transform: &AssetTransform,
 ) -> AssetList {
     let total = assets.len() as u32;
     let (page, before, after) = match pagination {
@@ -57,7 +60,7 @@ pub fn build_asset_response(
         }
         Pagination::Page { page } => (Some(*page), None, None),
     };
-    let (items, errors) = asset_list_to_rpc(assets);
+    let (items, errors) = asset_list_to_rpc(assets, transform);
     AssetList {
         total,
         limit: limit as u32,
@@ -122,7 +125,10 @@ pub fn safe_select<'a>(
         .and_then(|v| v.pop())
 }
 
-pub fn v1_content_from_json(asset_data: &asset_data::Model) -> Result<Content, DbErr> {
+pub fn v1_content_from_json(
+    asset_data: &asset_data::Model,
+    cdn_prefix: Option<String>,
+) -> Result<Content, DbErr> {
     // todo -> move this to the bg worker for pre processing
     let json_uri = asset_data.metadata_url.clone();
     let metadata = &asset_data.metadata;
@@ -199,7 +205,39 @@ pub fn v1_content_from_json(asset_data: &asset_data::Model) -> Result<Content, D
 
     track_top_level_file(&mut actual_files, image);
     track_top_level_file(&mut actual_files, animation);
-    let files: Vec<File> = actual_files.into_values().collect();
+
+    let mut files: Vec<File> = actual_files.into_values().collect();
+
+    // List the defined image file before the other files (if one exists).
+    files.sort_by(|a, _: &File| match (a.uri.as_ref(), image) {
+        (Some(x), Some(y)) => {
+            if x == y {
+                Ordering::Less
+            } else {
+                Ordering::Equal
+            }
+        }
+        _ => Ordering::Equal,
+    });
+
+    // Enrich files with CDN for images (optional).
+    if let Some(cdn_prefix) = &cdn_prefix {
+        // Use default options for now.
+        let cdn_options = "";
+        files.iter_mut().for_each(|mut f| match (&f.uri, &f.mime) {
+            (Some(uri), Some(mime)) => {
+                if mime.starts_with("image/") {
+                    f.uri = Some(format!(
+                        "{}/{}/{}",
+                        cdn_prefix.trim_end_matches('/'),
+                        cdn_options,
+                        uri
+                    ));
+                }
+            }
+            _ => {}
+        })
+    }
 
     Ok(Content {
         schema: "https://schema.metaplex.com/nft1.0.json".to_string(),
@@ -210,10 +248,14 @@ pub fn v1_content_from_json(asset_data: &asset_data::Model) -> Result<Content, D
     })
 }
 
-pub fn get_content(asset: &asset::Model, data: &asset_data::Model) -> Result<Content, DbErr> {
+pub fn get_content(
+    asset: &asset::Model,
+    data: &asset_data::Model,
+    cdn_prefix: Option<String>,
+) -> Result<Content, DbErr> {
     match asset.specification_version {
-        SpecificationVersions::V1 => v1_content_from_json(data),
-        SpecificationVersions::V0 => v1_content_from_json(data),
+        SpecificationVersions::V1 => v1_content_from_json(data, cdn_prefix),
+        SpecificationVersions::V0 => v1_content_from_json(data, cdn_prefix),
         _ => Err(DbErr::Custom("Version Not Implemented".to_string())),
     }
 }
@@ -257,7 +299,7 @@ pub fn get_interface(asset: &asset::Model) -> Interface {
 }
 
 //TODO -> impl custom erro type
-pub fn asset_to_rpc(asset: FullAsset) -> Result<RpcAsset, DbErr> {
+pub fn asset_to_rpc(asset: FullAsset, transform: &AssetTransform) -> Result<RpcAsset, DbErr> {
     let FullAsset {
         asset,
         data,
@@ -269,7 +311,7 @@ pub fn asset_to_rpc(asset: FullAsset) -> Result<RpcAsset, DbErr> {
     let rpc_creators = to_creators(creators);
     let rpc_groups = to_grouping(groups);
     let interface = get_interface(&asset);
-    let content = get_content(&asset, &data)?;
+    let content = get_content(&asset, &data, transform.cdn_prefix.clone())?;
     let mut chain_data_selector_fn = jsonpath_lib::selector(&data.chain_data);
     let chain_data_selector = &mut chain_data_selector_fn;
     let basis_points = safe_select(chain_data_selector, "$.primary_sale_happened")
@@ -347,12 +389,15 @@ pub fn asset_to_rpc(asset: FullAsset) -> Result<RpcAsset, DbErr> {
     })
 }
 
-pub fn asset_list_to_rpc(asset_list: Vec<FullAsset>) -> (Vec<RpcAsset>, Vec<AssetError>) {
+pub fn asset_list_to_rpc(
+    asset_list: Vec<FullAsset>,
+    transform: &AssetTransform,
+) -> (Vec<RpcAsset>, Vec<AssetError>) {
     asset_list
         .into_iter()
         .fold((vec![], vec![]), |(mut assets, mut errors), asset| {
             let id = bs58::encode(asset.asset.id.clone()).into_string();
-            match asset_to_rpc(asset) {
+            match asset_to_rpc(asset, transform) {
                 Ok(rpc_asset) => assets.push(rpc_asset),
                 Err(e) => errors.push(AssetError {
                     id,
