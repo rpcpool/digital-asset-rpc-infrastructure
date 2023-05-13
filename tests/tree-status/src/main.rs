@@ -5,9 +5,9 @@ use {
     digital_asset_types::dao::cl_items,
     futures::future::{try_join, try_join_all, BoxFuture, FutureExt, TryFutureExt},
     sea_orm::{
-        sea_query::Expr, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr,
-        EntityTrait, FromQueryResult, QueryFilter, QuerySelect, QueryTrait, SqlxPostgresConnector,
-        Statement,
+        sea_query::{Expr, Value},
+        ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr, EntityTrait,
+        FromQueryResult, QueryFilter, QuerySelect, QueryTrait, SqlxPostgresConnector, Statement,
     },
     // plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
     // solana_client::rpc_client::GetConfirmedSignaturesForAddress2Config,
@@ -70,6 +70,12 @@ struct MaxSeqItem {
 #[derive(Debug, FromQueryResult, Clone)]
 struct MissingSeq {
     missing_seq: i64,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct AssetMaxSeq {
+    leaf: Vec<u8>,
+    seq: i64,
 }
 
 #[derive(Parser)]
@@ -230,35 +236,6 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn check_tree_leafs(
-    pubkey: Pubkey,
-    client_url: &str,
-    concurrency: NonZeroUsize,
-    max_retries: u8,
-    conn: &DatabaseConnection,
-) -> anyhow::Result<()> {
-    let (fetch_fut, mut leafs_rx) = read_tree_start(pubkey, client_url, concurrency, max_retries);
-    try_join(fetch_fut, async move {
-        // collect max seq per leaf from transactions
-        let mut leafs = HashMap::new();
-        while let Some((_id, _signature, Some(vec))) = leafs_rx.recv().await {
-            for (seq, maybe_leaf) in vec {
-                if let Some(leaf) = maybe_leaf {
-                    let entry = leafs.entry(leaf).or_insert(seq);
-                    if *entry < seq {
-                        *entry = seq;
-                    }
-                }
-            }
-        }
-
-        //
-        Ok(())
-    })
-    .await
-    .map(|_| ())
-}
-
 async fn check_tree(
     pubkey: Pubkey,
     client: &RpcClient,
@@ -378,6 +355,82 @@ WHERE
         .collect())
 }
 
+async fn check_tree_leafs(
+    pubkey: Pubkey,
+    client_url: &str,
+    concurrency: NonZeroUsize,
+    max_retries: u8,
+    conn: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let (fetch_fut, mut leafs_rx) = read_tree_start(pubkey, client_url, concurrency, max_retries);
+    try_join(fetch_fut, async move {
+        // collect max seq per leaf from transactions
+        let mut leafs = HashMap::new();
+        while let Some((_id, _signature, vec)) = leafs_rx.recv().await {
+            for (seq, maybe_leaf) in vec.unwrap_or_default() {
+                if let Some((leaf_idx, leaf)) = maybe_leaf {
+                    let entry = leafs.entry(leaf).or_insert((seq, leaf_idx));
+                    if entry.0 < seq {
+                        *entry = (seq, leaf_idx);
+                    }
+                }
+            }
+        }
+
+        // fetch from database in chunks
+        let query = Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "
+SELECT
+    leaf, MAX(seq) AS seq
+FROM
+    asset
+WHERE
+    tree_id = $1
+GROUP BY
+    leaf
+",
+            [Value::Bytes(Some(Box::new(pubkey.as_ref().to_vec())))],
+        );
+
+        let leafs_db = conn.query_all(query).await?;
+        for leaf_db in leafs_db.iter() {
+            let leaf_db = AssetMaxSeq::from_query_result(leaf_db, "").unwrap();
+            match leafs.remove(&leaf_db.leaf) {
+                Some(leaf) => {
+                    if leaf_db.seq != leaf.0 as i64 {
+                        eprintln!(
+                            "{} {}: invalid seq {} vs {} (db vs blockchain)",
+                            hex::encode(leaf_db.leaf),
+                            leaf.1,
+                            leaf_db.seq,
+                            leaf.0
+                        );
+                    }
+                }
+                None => {
+                    eprintln!(
+                        "{} {{unknown leaf index}}: not found blockchain",
+                        hex::encode(leaf_db.leaf)
+                    );
+                }
+            }
+        }
+        for (leaf, (seq, leaf_idx)) in leafs.into_iter() {
+            eprintln!(
+                "{} {}: not found in db, seq {}",
+                hex::encode(leaf),
+                leaf_idx,
+                seq
+            );
+        }
+
+        Ok(())
+    })
+    .await
+    .map(|_| ())
+}
+
 // Fetches all the transactions referencing a specific trees
 async fn read_tree(
     pubkey: Pubkey,
@@ -385,9 +438,10 @@ async fn read_tree(
     concurrency: NonZeroUsize,
     max_retries: u8,
 ) -> anyhow::Result<()> {
-    fn print_seqs(id: usize, sig: Signature, seqs: Option<Vec<(u64, Option<i64>)>>) {
+    #[allow(clippy::type_complexity)]
+    fn print_seqs(id: usize, sig: Signature, seqs: Option<Vec<(u64, Option<(i64, Vec<u8>)>)>>) {
         for (seq, leaf_idx) in seqs.unwrap_or_default() {
-            let leaf_idx = leaf_idx.map(|v| v.to_string()).unwrap_or_default();
+            let leaf_idx = leaf_idx.map(|v| v.0.to_string()).unwrap_or_default();
             println!("{seq} {leaf_idx} {sig} {id}");
         }
     }
@@ -418,6 +472,7 @@ async fn read_tree(
     .map(|_| ())
 }
 
+#[allow(clippy::type_complexity)]
 fn read_tree_start(
     pubkey: Pubkey,
     client_url: &str,
@@ -425,7 +480,7 @@ fn read_tree_start(
     max_retries: u8,
 ) -> (
     BoxFuture<'static, anyhow::Result<()>>,
-    mpsc::UnboundedReceiver<(usize, Signature, Option<Vec<(u64, Option<i64>)>>)>,
+    mpsc::UnboundedReceiver<(usize, Signature, Option<Vec<(u64, Option<(i64, Vec<u8>)>)>>)>,
 ) {
     let sig_id = Arc::new(AtomicUsize::new(0));
     let rx_sig = Arc::new(Mutex::new(find_signatures(
@@ -471,7 +526,7 @@ async fn process_txn(
     sig: Signature,
     client: &RpcClient,
     mut retries: u8,
-) -> anyhow::Result<HashMap<Pubkey, Vec<(u64, Option<i64>)>>> {
+) -> anyhow::Result<HashMap<Pubkey, Vec<(u64, Option<(i64, Vec<u8>)>)>>> {
     let mut delay = Duration::from_millis(100);
     loop {
         let config = RpcTransactionConfig {
@@ -496,8 +551,8 @@ async fn process_txn(
 #[allow(clippy::type_complexity)]
 fn parse_txn_sequence(
     tx: EncodedConfirmedTransactionWithStatusMeta,
-) -> Result<HashMap<Pubkey, Vec<(u64, Option<i64>)>>, ParseError> {
-    let mut seq_updates = HashMap::<Pubkey, Vec<(u64, Option<i64>)>>::new();
+) -> Result<HashMap<Pubkey, Vec<(u64, Option<(i64, Vec<u8>)>)>>, ParseError> {
+    let mut seq_updates = HashMap::<Pubkey, Vec<(u64, Option<(i64, Vec<u8>)>)>>::new();
 
     // Get `UiTransaction` out of `EncodedTransactionWithStatusMeta`.
     let meta: UiTransactionStatusMeta = tx.transaction.meta.ok_or(ParseError::TransactionMeta)?;
@@ -534,16 +589,19 @@ fn parse_txn_sequence(
                                 AccountCompressionEvent::try_from_slice(&data)
                             {
                                 let ChangeLogEvent::V1(cl_data) = cl_data;
-                                let leaf_idx = cl_data.path.get(0).map(|node| {
-                                    node_idx_to_leaf_idx(
-                                        node.index as i64,
-                                        cl_data.path.len() as u32 - 1,
+                                let leaf = cl_data.path.get(0).map(|node| {
+                                    (
+                                        node_idx_to_leaf_idx(
+                                            node.index as i64,
+                                            cl_data.path.len() as u32 - 1,
+                                        ),
+                                        node.node.to_vec(),
                                     )
                                 });
                                 seq_updates
                                     .entry(cl_data.id)
                                     .or_default()
-                                    .push((cl_data.seq, leaf_idx));
+                                    .push((cl_data.seq, leaf));
                             }
                         }
                     }
