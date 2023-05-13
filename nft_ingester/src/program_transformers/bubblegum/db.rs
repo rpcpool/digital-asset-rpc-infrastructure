@@ -66,7 +66,7 @@ where
         };
 
         let mut audit_item : cl_audits::ActiveModel = item.clone().into();
-        audit_item.tx = Set(String::from(txn_id));
+        audit_item.tx = Set(txn_id.to_string());
 
         i += 1;
         let mut query = cl_items::Entity::insert(item)
