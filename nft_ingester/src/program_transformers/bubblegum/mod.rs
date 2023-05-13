@@ -37,27 +37,21 @@ where
     // or wrapping it into something that can display it more neatly.
     let ix_str = match ix_type {
         InstructionName::Unknown => {
-            debug!("Unknown instruction:");
             "Unknown"
         }
         InstructionName::MintV1 => {
-            debug!("MintV1 instruction:");
             "MintV1"
         }
         InstructionName::MintToCollectionV1 => {
-            debug!("MintToCollectionV1 instruction:");
             "MintToCollectionV1"
         }
         InstructionName::Redeem => {
-            debug!("Redeem instruction:");
             "Redeem"
         }
         InstructionName::CancelRedeem => {
-            debug!("CancelRedeem instruction:");
             "CancelRedeem"
         }
         InstructionName::Transfer => {
-            debug!("Transfer instruction:");
             "Transfer"
         }
         InstructionName::Delegate => {
@@ -65,43 +59,34 @@ where
             "Delegate"
         }
         InstructionName::DecompressV1 => {
-            debug!("DecompressV1 instruction:");
             "DecompressV1"
         }
         InstructionName::Compress => {
-            debug!("Compress instruction:");
             "Compress"
         }
         InstructionName::Burn => {
-            debug!("Burn instruction:");
             "Burn"
         }
         InstructionName::CreateTree => {
-            debug!("CreateTree instruction:");
             "CreateTree"
         }
         InstructionName::VerifyCreator => {
-            debug!("VerifyCreator instruction:");
             "VerifyCreator"
         }
         InstructionName::UnverifyCreator => {
-            debug!("UnverifyCreator instruction:");
             "UnverifyCreator"
         }
         InstructionName::VerifyCollection => {
-            debug!("VerifyCollection instruction:");
             "VerifyCollection"
         }
         InstructionName::UnverifyCollection => {
-            debug!("UnverifyCollection instruction:");
             "UnverifyCollection"
         }
         InstructionName::SetAndVerifyCollection => {
-            debug!("SetAndVerifyCollection instruction:");
             "SetAndVerifyCollection"
         }
     };
-    info!("Parsing instruction from transaction {:?}: {:?}", ix_str, bundle.txn_id);
+    info!("BGUM instruction txn={:?}: {:?}", ix_str, bundle.txn_id);
 
     match ix_type {
         InstructionName::Transfer => {
