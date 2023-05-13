@@ -55,7 +55,6 @@ where
             "Transfer"
         }
         InstructionName::Delegate => {
-            debug!("Delegate instruction:");
             "Delegate"
         }
         InstructionName::DecompressV1 => {
