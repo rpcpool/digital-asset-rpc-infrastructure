@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
 use crate::{
-    config::rand_string, error::IngesterError, metric, metrics::capture_result,
-    program_transformers::ProgramTransformer, tasks::TaskData,
+    metric, metrics::capture_result, program_transformers::ProgramTransformer, tasks::TaskData,
 };
-use cadence_macros::{is_global_default_set, statsd_count, statsd_gauge, statsd_time};
+use cadence_macros::{is_global_default_set, statsd_count, statsd_time};
 use chrono::Utc;
-use futures::{stream::FuturesUnordered, StreamExt};
-use log::{debug, error, info};
+use log::{debug, error};
 use plerkle_messenger::{
     ConsumptionType, Messenger, MessengerConfig, RecvData, TRANSACTION_STREAM,
 };
@@ -15,7 +13,7 @@ use plerkle_serialization::root_as_transaction_info;
 
 use sqlx::{Pool, Postgres};
 use tokio::{
-    sync::{mpsc::UnboundedSender, Semaphore},
+    sync::mpsc::UnboundedSender,
     task::{JoinHandle, JoinSet},
     time::Instant,
 };
@@ -85,11 +83,13 @@ async fn handle_transaction(manager: Arc<ProgramTransformer>, item: RecvData) ->
             statsd_count!("ingester.seen", 1, "stream" => TRANSACTION_STREAM);
         }
         let seen_at = Utc::now();
-        statsd_time!(
-            "ingester.bus_ingest_time",
-            (seen_at.timestamp_millis() - tx.seen_at()) as u64,
-            "stream" => TRANSACTION_STREAM
-        );
+        metric! {
+            statsd_time!(
+                "ingester.bus_ingest_time",
+                (seen_at.timestamp_millis() - tx.seen_at()) as u64,
+                "stream" => TRANSACTION_STREAM
+            );
+        }
         let begin = Instant::now();
         let res = manager.handle_transaction(&tx).await;
         ret_id = capture_result(
