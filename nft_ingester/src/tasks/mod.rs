@@ -117,9 +117,9 @@ impl TaskManager {
                     IngesterError::UnrecoverableTaskError(_) => {
                         task.attempts = Set(task_def.max_attempts() + 1);
                         task.locked_by = Set(Some("permanent failure".to_string()));
-                    },
+                    }
                     _ => {
-                    task.locked_by = Set(None);
+                        task.locked_by = Set(None);
                     }
                 }
                 task.status = Set(TaskStatus::Failed);
@@ -133,21 +133,29 @@ impl TaskManager {
                         metric! {
                             statsd_count!("ingester.bgtask.network_error", 1, "type" => task_name);
                         }
-                        warn!("Task failed due to network error: {}",  e);
-                    },
+                        warn!("Task failed due to network error: {}", e);
+                    }
+                    IngesterError::HttpError { ref status_code } => {
+                        metric! {
+                            statsd_count!("ingester.bgtask.http_error", 1,
+                                "status" => status_code,
+                                "type" => task_name);
+                        }
+                        warn!("Task failed due to HTTP error: {}", e);
+                    }
                     IngesterError::UnrecoverableTaskError(_) => {
                         // Unrecoverable errors are always going to be off-chain parsing failures at the moment.
                         // We can't do anything about malformed JSONs.
                         metric! {
                             statsd_count!("ingester.bgtask.unrecoverable_error", 1, "type" => task_name);
                         }
-                        warn!("{}",  e);
-                    },
+                        warn!("{}", e);
+                    }
                     _ => {
                         metric! {
                             statsd_count!("ingester.bgtask.error", 1, "type" => task_name);
                         }
-                        error!("Task Run Error: {}",  e);
+                        error!("Task Run Error: {}", e);
                     }
                 }
             }
@@ -169,10 +177,11 @@ impl TaskManager {
                     )
                     .add(
                         Expr::col(tasks::Column::Attempts)
-                            .less_or_equal(Expr::col(tasks::Column::MaxAttempts)),
+                            .less_than(Expr::col(tasks::Column::MaxAttempts)),
                     ),
             )
-            .order_by_desc(tasks::Column::CreatedAt)
+            .order_by(tasks::Column::Attempts, Order::Asc)
+            .order_by(tasks::Column::CreatedAt, Order::Desc)
             .limit(MAX_TASK_BATCH_SIZE)
             .all(conn)
             .await

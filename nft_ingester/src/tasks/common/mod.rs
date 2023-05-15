@@ -51,16 +51,21 @@ impl FromTaskData<DownloadMetadata> for DownloadMetadata {
 pub struct DownloadMetadataTask {}
 
 impl DownloadMetadataTask {
-    async fn request_metadata(uri: String) -> Result<serde_json::Value, IngesterError> {
-        let client = ClientBuilder::new()
-            .timeout(Duration::from_secs(3))
-            .build()?;
-        let val: serde_json::Value = Client::get(&client, uri) // Need to check for malicious sites ?
-            .send()
-            .await?
-            .json()
-            .await?;
-        Ok(val)
+    async fn request_metadata(
+        uri: String,
+        timeout: Duration,
+    ) -> Result<serde_json::Value, IngesterError> {
+        let client = ClientBuilder::new().timeout(timeout).build()?;
+        let response = Client::get(&client, uri).send().await?;
+
+        if response.status() != reqwest::StatusCode::OK {
+            Err(IngesterError::HttpError {
+                status_code: response.status().as_str().to_string(),
+            })
+        } else {
+            let val: serde_json::Value = response.json().await?;
+            Ok(val)
+        }
     }
 }
 
@@ -86,7 +91,13 @@ impl BgTask for DownloadMetadataTask {
         let download_metadata: DownloadMetadata = serde_json::from_value(data)?;
         let meta_url = Url::parse(&download_metadata.uri);
         let body = match meta_url {
-            Ok(_) => DownloadMetadataTask::request_metadata(download_metadata.uri.clone()).await?,
+            Ok(_) => {
+                DownloadMetadataTask::request_metadata(
+                    download_metadata.uri.clone(),
+                    Duration::from_secs(10),
+                )
+                .await?
+            }
             _ => serde_json::Value::String("Invalid Uri".to_string()), //TODO -> enumize this.
         };
         let model = asset_data::ActiveModel {
@@ -110,6 +121,7 @@ impl BgTask for DownloadMetadataTask {
                     db
                 ))
             })?;
+
         if meta_url.is_err() {
             return Err(IngesterError::UnrecoverableTaskError(format!(
                 "Failed to parse URI: {}",
