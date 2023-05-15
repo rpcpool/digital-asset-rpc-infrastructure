@@ -1,5 +1,5 @@
 use crate::dao::scopes;
-use crate::dao::FullAsset;
+
 use crate::rpc::filter::AssetSorting;
 use crate::rpc::response::AssetList;
 use crate::rpc::transform::AssetTransform;

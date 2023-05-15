@@ -1,7 +1,7 @@
-use crate::dao::sea_orm_active_enums::{SpecificationAssetClass, SpecificationVersions};
+use crate::dao::sea_orm_active_enums::SpecificationVersions;
+use crate::dao::FullAsset;
 use crate::dao::Pagination;
 use crate::dao::{asset, asset_authority, asset_creators, asset_data, asset_grouping};
-use crate::dao::{FullAsset, FullAssetList};
 
 use crate::rpc::filter::{AssetSortBy, AssetSortDirection, AssetSorting};
 use crate::rpc::response::{AssetError, AssetList};
@@ -13,15 +13,15 @@ use crate::rpc::{
 
 use jsonpath_lib::JsonPathError;
 use mime_guess::Mime;
-use sea_orm::DatabaseConnection;
-use sea_orm::{entity::*, query::*, DbErr};
+
+use sea_orm::DbErr;
 use serde_json::Value;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::Path;
 use url::Url;
 
-use log::{debug, info, warn};
+use log::warn;
 
 pub fn to_uri(uri: String) -> Option<Url> {
     Url::parse(&*uri).ok()
@@ -224,7 +224,7 @@ pub fn v1_content_from_json(
     if let Some(cdn_prefix) = &cdn_prefix {
         // Use default options for now.
         let cdn_options = "";
-        files.iter_mut().for_each(|mut f| match (&f.uri, &f.mime) {
+        files.iter_mut().for_each(|f| match (&f.uri, &f.mime) {
             (Some(uri), Some(mime)) => {
                 if mime.starts_with("image/") {
                     f.uri = Some(format!(

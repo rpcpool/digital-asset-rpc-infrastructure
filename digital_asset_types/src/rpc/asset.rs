@@ -26,6 +26,7 @@ pub enum Interface {
     V1NFT,
     #[serde(rename = "V1_PRINT")]
     V1PRINT,
+    #[allow(non_camel_case_types)]
     #[serde(rename = "LEGACY_NFT")]
     LEGACY_NFT,
     #[serde(rename = "V2_NFT")]

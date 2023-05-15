@@ -1,7 +1,7 @@
 use super::common::{build_asset_response, create_pagination, create_sorting};
 use crate::{
-    dao::{scopes, FullAsset, SearchAssetsQuery},
-    rpc::{filter::AssetSorting, response::AssetList, transform::AssetTransform, Asset},
+    dao::{scopes, SearchAssetsQuery},
+    rpc::{filter::AssetSorting, response::AssetList, transform::AssetTransform},
 };
 use sea_orm::{DatabaseConnection, DbErr};
 
