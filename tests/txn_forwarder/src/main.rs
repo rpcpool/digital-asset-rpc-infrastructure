@@ -95,7 +95,6 @@ async fn main() {
                         &addr,
                         cli_url.clone(),
                         messenger,
-                        false,
                         cli.max_retries,
                     )
                     .await;
