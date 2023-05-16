@@ -1,21 +1,23 @@
 use crate::error::IngesterError;
-use digital_asset_types::dao::{asset, asset_creators, backfill_items, cl_items};
-use log::{info, debug};
+use digital_asset_types::dao::{asset, asset_creators, backfill_items, cl_items, cl_audits};
+use log::{debug, info};
 use sea_orm::{
-    entity::*, query::*, sea_query::OnConflict, ColumnTrait, DbBackend, DbErr,
-    EntityTrait,
+    entity::*, query::*, sea_query::OnConflict, ColumnTrait, DbBackend, DbErr, EntityTrait,
 };
 use spl_account_compression::events::ChangeLogEventV1;
+
+use std::convert::From;
 
 pub async fn save_changelog_event<'c, T>(
     change_log_event: &ChangeLogEventV1,
     slot: u64,
+    txn_id: &str,
     txn: &T,
 ) -> Result<u64, IngesterError>
 where
     T: ConnectionTrait + TransactionTrait,
 {
-    insert_change_log(change_log_event, slot, txn, false).await?;
+    insert_change_log(change_log_event, slot, txn_id, txn).await?;
     Ok(change_log_event.seq)
 }
 
@@ -26,8 +28,8 @@ fn node_idx_to_leaf_idx(index: i64, tree_height: u32) -> i64 {
 pub async fn insert_change_log<'c, T>(
     change_log_event: &ChangeLogEventV1,
     slot: u64,
+    txn_id: &str,
     txn: &T,
-    filling: bool,
 ) -> Result<(), IngesterError>
 where
     T: ConnectionTrait + TransactionTrait,
@@ -38,11 +40,12 @@ where
     for p in change_log_event.path.iter() {
         let node_idx = p.index as i64;
         debug!(
-            "seq {}, index {} level {}, node {:?}",
+            "seq {}, index {} level {}, node {:?}, txn: {:?}",
             change_log_event.seq,
             p.index,
             i,
-            bs58::encode(p.node).into_string()
+            bs58::encode(p.node).into_string(),
+            txn_id,
         );
         let leaf_idx = if i == 0 {
             Some(node_idx_to_leaf_idx(node_idx, depth as u32))
@@ -50,6 +53,7 @@ where
             None
         };
 
+        
         let item = cl_items::ActiveModel {
             tree: Set(tree_id.to_vec()),
             level: Set(i),
@@ -59,8 +63,12 @@ where
             leaf_idx: Set(leaf_idx),
             ..Default::default()
         };
+
+        let mut audit_item : cl_audits::ActiveModel = item.clone().into();
+        audit_item.tx = Set(txn_id.to_string());
+
         i += 1;
-        let mut query = cl_items::Entity::insert(item)
+        let query = cl_items::Entity::insert(item)
             .on_conflict(
                 OnConflict::columns([cl_items::Column::Tree, cl_items::Column::NodeIdx])
                     .update_columns([
@@ -72,12 +80,18 @@ where
                     .to_owned(),
             )
             .build(DbBackend::Postgres);
-        if !filling {
+        /* LK: Removing the filling param for now because it's not used anywhere and gives
+         * an incorrect view of what might be going on.
+         * if !filling {
             query.sql = format!("{} WHERE excluded.seq > cl_items.seq", query.sql);
-        }
+        } */
         txn.execute(query)
             .await
             .map_err(|db_err| IngesterError::StorageWriteError(db_err.to_string()))?;
+
+
+        // Insert the audit item after the insert into cl_items have been completed
+        cl_audits::Entity::insert(audit_item).exec(txn).await?;
     }
 
     // If and only if the entire path of nodes was inserted into the `cl_items` table, then insert

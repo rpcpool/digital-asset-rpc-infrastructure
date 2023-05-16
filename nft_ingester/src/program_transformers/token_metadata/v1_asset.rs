@@ -22,7 +22,6 @@ use sea_orm::{
     entity::*, query::*, sea_query::OnConflict, ActiveValue::Set, ConnectionTrait, DbBackend,
     DbErr, EntityTrait, JsonValue,
 };
-use std::collections::HashSet;
 
 use crate::tasks::{DownloadMetadata, IntoTaskData};
 
@@ -93,18 +92,24 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
     let (token, token_account): (Option<tokens::Model>, Option<token_accounts::Model>) =
         match ownership_type {
             OwnerType::Single => {
-                let token: Option<tokens::Model> =
-                    tokens::Entity::find_by_id(mint.clone()).one(conn).await?;
+                let token: Option<tokens::Model> = tokens::Entity::find_by_id(mint.clone())
+                    .order_by_desc(tokens::Column::SlotUpdated)
+                    .one(conn)
+                    .await?;
                 // query for token account associated with mint with positive balance
                 let token_account: Option<token_accounts::Model> = token_accounts::Entity::find()
                     .filter(token_accounts::Column::Mint.eq(mint.clone()))
                     .filter(token_accounts::Column::Amount.gt(0))
+                    .order_by_desc(token_accounts::Column::SlotUpdated)
                     .one(conn)
                     .await?;
                 Ok((token, token_account))
             }
             _ => {
-                let token = tokens::Entity::find_by_id(mint.clone()).one(conn).await?;
+                let token = tokens::Entity::find_by_id(mint.clone())
+                    .order_by_desc(tokens::Column::SlotUpdated)
+                    .one(conn)
+                    .await?;
                 Ok((token, None))
             }
         }
@@ -148,6 +153,7 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         metadata: Set(JsonValue::String("processing".to_string())),
         metadata_mutability: Set(Mutability::Mutable),
         slot_updated: Set(slot_i),
+        reindex: Set(Some(true)),
         id: Set(id.to_vec()),
     };
     let txn = conn.begin().await?;
@@ -158,9 +164,9 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
                     asset_data::Column::ChainDataMutability,
                     asset_data::Column::ChainData,
                     asset_data::Column::MetadataUrl,
-                    asset_data::Column::Metadata,
                     asset_data::Column::MetadataMutability,
                     asset_data::Column::SlotUpdated,
+                    asset_data::Column::Reindex,
                 ])
                 .to_owned(),
         )

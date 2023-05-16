@@ -8,7 +8,6 @@ use digital_asset_types::rpc::Content;
 use digital_asset_types::rpc::File;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
-use tokio;
 
 pub async fn test_json(uri: String) -> Content {
     let body: serde_json::Value = reqwest::get(&uri).await.unwrap().json().await.unwrap();
@@ -29,6 +28,7 @@ pub async fn test_json(uri: String) -> Content {
         metadata_mutability: Mutability::Mutable,
         metadata: body,
         slot_updated: 0,
+        reindex: None,
     };
 
     v1_content_from_json(&asset_data).unwrap()

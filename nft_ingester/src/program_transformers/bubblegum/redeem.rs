@@ -1,7 +1,4 @@
-use crate::{
-    program_transformers::bubblegum::{update_asset},
-    error::IngesterError,
-};
+use crate::{error::IngesterError, program_transformers::bubblegum::update_asset};
 
 use super::save_changelog_event;
 use blockbuster::{
@@ -20,7 +17,7 @@ where
     T: ConnectionTrait + TransactionTrait,
 {
     if let (Some(le), Some(cl)) = (&parsing_result.leaf_update, &parsing_result.tree_update) {
-        let seq = save_changelog_event(cl, bundle.slot, txn).await?;
+        let seq = save_changelog_event(cl, bundle.slot, bundle.txn_id, txn).await?;
         return match le.schema {
             LeafSchema::V1 {
                 id,
@@ -44,8 +41,7 @@ where
                     ..Default::default()
                 };
                 update_asset(txn, id_bytes, Some(seq), asset_to_update).await
-            }
-            _ => Err(IngesterError::NotImplemented),
+            } // _ => Err(IngesterError::NotImplemented),
         };
     }
     Err(IngesterError::ParsingError(

@@ -1,25 +1,16 @@
-mod utils;
-
-use std::{str::FromStr, sync::Arc};
-
-use clap::Parser;
-use figment::{util::map, value::Value};
-
-use async_recursion::async_recursion;
-
-use plerkle_messenger::MessengerConfig;
-use plerkle_serialization::serializer::seralize_encoded_transaction_with_status;
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{
-    commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Signature,
+use {
+    async_recursion::async_recursion,
+    clap::Parser,
+    figment::{util::map, value::Value},
+    plerkle_messenger::MessengerConfig,
+    plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
+    solana_client::nonblocking::rpc_client::RpcClient,
+    solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Signature},
+    solana_transaction_status::{EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding},
+    std::{str::FromStr, sync::Arc},
+    tokio::sync::Mutex,
+    txn_forwarder::find_signatures,
 };
-use solana_transaction_status::{
-    EncodedConfirmedTransactionWithStatusMeta,
-    UiTransactionEncoding,
-};
-use tokio::sync::Mutex;
-use tokio_stream::StreamExt;
-use utils::Siggrabbenheimer;
 
 #[derive(Parser)]
 #[command(next_line_help = true)]
@@ -33,6 +24,7 @@ struct Cli {
     #[command(subcommand)]
     action: Action,
 }
+
 #[derive(clap::Subcommand, Clone)]
 enum Action {
     Single {
@@ -54,6 +46,7 @@ enum Action {
         scenario_file: String,
     },
 }
+
 const STREAM: &str = "TXN";
 
 #[tokio::main]
@@ -84,18 +77,11 @@ async fn main() {
     match cmd {
         Action::Single { txn } => send_txn(&txn, &client, cli.max_retries, messenger).await,
         Action::Address {
-            include_failed,
+            include_failed: _include_failed,
             address,
         } => {
             println!("Sending address");
-            send_address(
-                &address,
-                cli.rpc_url,
-                messenger,
-                include_failed.unwrap_or(false),
-                cli.max_retries,
-            )
-            .await;
+            send_address(&address, cli.rpc_url, messenger, cli.max_retries).await;
         }
         Action::Addresses { file } => {
             let addresses = std::fs::read_to_string(file).unwrap();
@@ -142,21 +128,21 @@ pub async fn send_address(
     address: &str,
     client_url: String,
     messenger: Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
-    failed: bool,
     max_retries: u8,
 ) {
     let client1 = RpcClient::new(client_url.clone());
     let pub_addr = Pubkey::from_str(address).unwrap();
     // This takes a param failed but it excludes all failed TXs
-    let mut sig = Siggrabbenheimer::new(client1, pub_addr, failed);
+    let mut sig = find_signatures(pub_addr, client1, 2_000);
     let mut tasks = Vec::new();
-    while let Some(s) = sig.next().await {
+    while let Some(s) = sig.recv().await {
+        let s = s.unwrap();
         let client_url = client_url.clone();
         let messenger = Arc::clone(&messenger);
         tasks.push(tokio::spawn(async move {
             let client2 = RpcClient::new(client_url.clone());
             let messenger = Arc::clone(&messenger);
-            send_txn(&s, &client2, max_retries, messenger).await;
+            send_txn(&s.to_string(), &client2, max_retries, messenger).await;
         }))
     }
     for task in tasks {
