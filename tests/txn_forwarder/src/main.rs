@@ -91,19 +91,12 @@ async fn main() {
                 let messenger = Arc::clone(&messenger);
                 let cli_url = cli.rpc_url.clone();
                 tasks.push(tokio::spawn(async move {
-                    send_address(
-                        &addr,
-                        cli_url.clone(),
-                        messenger,
-                        cli.max_retries,
-                    )
-                    .await;
+                    send_address(&addr, cli_url.clone(), messenger, cli.max_retries).await;
                 }));
             }
             for task in tasks {
                 task.await.unwrap();
             }
-
         }
         Action::Scenario { scenario_file } => {
             let scenario = std::fs::read_to_string(scenario_file).unwrap();
