@@ -74,7 +74,7 @@ struct MissingSeq {
 
 #[derive(Debug, FromQueryResult)]
 struct AssetMaxSeq {
-    leaf: Vec<u8>,
+    leaf_idx: i64,
     seq: i64,
 }
 
@@ -369,7 +369,7 @@ async fn check_tree_leafs(
         while let Some((_id, _signature, vec)) = leafs_rx.recv().await {
             for (seq, maybe_leaf) in vec.unwrap_or_default() {
                 if let Some((leaf_idx, leaf)) = maybe_leaf {
-                    let entry = leafs.entry(leaf).or_insert((seq, leaf_idx));
+                    let entry = leafs.entry(leaf_idx).or_insert((seq, leaf_idx));
                     if entry.0 < seq {
                         *entry = (seq, leaf_idx);
                     }
@@ -382,13 +382,21 @@ async fn check_tree_leafs(
             DbBackend::Postgres,
             "
 SELECT
-    leaf, MAX(seq) AS seq
+    leaf_idx, MAX(asset.seq) AS seq
 FROM
     asset
+INNER JOIN
+    cl_items 
+    ON 
+    cl_items.tree = asset.tree_id 
+    AND
+    cl_items.seq = asset.seq
 WHERE
     tree_id = $1
+    AND
+    leaf_idx IS NOT NULL
 GROUP BY
-    leaf
+    leaf_idx
 ",
             [Value::Bytes(Some(Box::new(pubkey.as_ref().to_vec())))],
         );
@@ -396,12 +404,12 @@ GROUP BY
         let leafs_db = conn.query_all(query).await?;
         for leaf_db in leafs_db.iter() {
             let leaf_db = AssetMaxSeq::from_query_result(leaf_db, "").unwrap();
-            match leafs.remove(&leaf_db.leaf) {
+            match leafs.remove(&leaf_db.leaf_idx) {
                 Some(leaf) => {
                     if leaf_db.seq != leaf.0 as i64 {
                         eprintln!(
                             "{} {}: invalid seq {} vs {} (db vs blockchain)",
-                            hex::encode(leaf_db.leaf),
+                            leaf_db.leaf_idx,
                             leaf.1,
                             leaf_db.seq,
                             leaf.0
@@ -411,7 +419,7 @@ GROUP BY
                 None => {
                     eprintln!(
                         "{} {{unknown leaf index}}: not found blockchain",
-                        hex::encode(leaf_db.leaf)
+                        leaf_db.leaf_idx
                     );
                 }
             }
@@ -419,7 +427,7 @@ GROUP BY
         for (leaf, (seq, leaf_idx)) in leafs.into_iter() {
             eprintln!(
                 "{} {}: not found in db, seq {}",
-                hex::encode(leaf),
+                leaf,
                 leaf_idx,
                 seq
             );
