@@ -138,10 +138,9 @@ async fn main() -> anyhow::Result<()> {
 
                 match maybe_fut {
                     Some(fut) => fut.await?,
-                    None => break,
+                    None => return Ok(()),
                 }
             }
-            Ok(())
         }
     }))
     .await
