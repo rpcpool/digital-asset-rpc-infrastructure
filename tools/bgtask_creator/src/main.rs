@@ -65,7 +65,7 @@ pub async fn main() {
                 .required(false)
                 .action(ArgAction::Set)
                 .value_parser(value_parser!(u64))
-                .default_value("100"),
+                .default_value("1000"),
         )
         .arg(
             Arg::new("authority")
@@ -176,7 +176,11 @@ pub async fn main() {
                         .to(asset_data::Column::Id)
                         .into(),
                 )
-                .filter(Condition::all().add(asset_authority::Column::Authority.eq(pubkey_bytes)))
+                .filter(
+                    Condition::all()
+                        .add(asset_authority::Column::Authority.eq(pubkey_bytes))
+                        .add(asset_data::Column::Reindex.eq(false)),
+                )
                 .order_by(asset_data::Column::Id, Order::Asc)
                 .paginate(&conn, *batch_size)
                 .into_stream(),
@@ -199,7 +203,8 @@ pub async fn main() {
                 )
                 .filter(
                     Condition::all()
-                        .add(asset_grouping::Column::GroupValue.eq(collection.as_str())),
+                        .add(asset_grouping::Column::GroupValue.eq(collection.as_str()))
+                        .add(asset_data::Column::Reindex.eq(false)),
                 )
                 .order_by(asset_data::Column::Id, Order::Asc)
                 .paginate(&conn, *batch_size)
@@ -225,7 +230,11 @@ pub async fn main() {
                         .to(asset::Column::SupplyMint)
                         .into(),
                 )
-                .filter(Condition::all().add(tokens::Column::MintAuthority.eq(pubkey_bytes)))
+                .filter(
+                    Condition::all()
+                        .add(tokens::Column::MintAuthority.eq(pubkey_bytes))
+                        .add(asset_data::Column::Reindex.eq(false)),
+                )
                 .order_by(asset_data::Column::Id, Order::Asc)
                 .paginate(&conn, *batch_size)
                 .into_stream(),
@@ -249,7 +258,11 @@ pub async fn main() {
                         .to(asset_data::Column::Id)
                         .into(),
                 )
-                .filter(Condition::all().add(asset_creators::Column::Creator.eq(pubkey_bytes)))
+                .filter(
+                    Condition::all()
+                        .add(asset_creators::Column::Creator.eq(pubkey_bytes))
+                        .add(asset_data::Column::Reindex.eq(false)),
+                )
                 .order_by(asset_data::Column::Id, Order::Asc)
                 .paginate(&conn, *batch_size)
                 .into_stream(),
@@ -445,10 +458,7 @@ pub async fn main() {
 
                             match res {
                                 Ok(_) => {
-                                    info!(
-                                        "Task completed: {:?} {:?}",
-                                        task_hash, task.asset_data_id
-                                    );
+                                    info!("Task Created: {:?} {:?}", task_hash, task.asset_data_id);
                                 }
                                 Err(e) => {
                                     error!("Task failed: {}", e);

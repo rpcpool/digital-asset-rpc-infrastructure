@@ -17,6 +17,7 @@ mod m20230224_093722_performance_improvements;
 mod m20230310_162227_add_indexes_to_bg;
 mod m20230317_121944_remove_indexes_for_perf;
 mod m20230510_183736_add_indices_to_assets;
+mod m20230516_185005_add_reindex_to_assets;
 
 pub struct Migrator;
 
@@ -41,6 +42,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20230310_162227_add_indexes_to_bg::Migration),
             Box::new(m20230317_121944_remove_indexes_for_perf::Migration),
             Box::new(m20230510_183736_add_indices_to_assets::Migration),
+            Box::new(m20230516_185005_add_reindex_to_assets::Migration),
         ]
     }
 }

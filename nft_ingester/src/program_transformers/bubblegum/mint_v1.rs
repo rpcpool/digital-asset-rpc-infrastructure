@@ -3,13 +3,13 @@ use crate::{
     error::IngesterError,
     tasks::{DownloadMetadata, IntoTaskData, TaskData},
 };
-use blockbuster::token_metadata::{
-    pda::find_master_edition_account,
-    state::{TokenStandard, UseMethod, Uses},
-};
 use blockbuster::{
     instruction::InstructionBundle,
     programs::bubblegum::{BubblegumInstruction, LeafSchema, Payload},
+    token_metadata::{
+        pda::find_master_edition_account,
+        state::{TokenStandard, UseMethod, Uses},
+    },
 };
 use chrono::Utc;
 use digital_asset_types::{
@@ -92,6 +92,7 @@ where
                     metadata: Set(JsonValue::String("processing".to_string())),
                     metadata_mutability: Set(Mutability::Mutable),
                     slot_updated: Set(slot_i),
+                    reindex: Set(Some(true)),
                     ..Default::default()
                 };
 
@@ -102,9 +103,9 @@ where
                                 asset_data::Column::ChainDataMutability,
                                 asset_data::Column::ChainData,
                                 asset_data::Column::MetadataUrl,
-                                asset_data::Column::Metadata,
                                 asset_data::Column::MetadataMutability,
                                 asset_data::Column::SlotUpdated,
+                                asset_data::Column::Reindex,
                             ])
                             .to_owned(),
                     )
