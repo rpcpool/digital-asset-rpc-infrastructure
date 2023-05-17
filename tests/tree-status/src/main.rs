@@ -37,7 +37,7 @@ use {
         collections::HashMap,
         env,
         num::NonZeroUsize,
-        path::PathBuf,
+        pin::Pin,
         str::FromStr,
         sync::{
             atomic::{AtomicUsize, Ordering},
@@ -45,8 +45,8 @@ use {
         },
     },
     tokio::{
-        fs::{File, OpenOptions},
-        io::AsyncWriteExt,
+        fs::OpenOptions,
+        io::{stdout, AsyncWrite, AsyncWriteExt},
         sync::{mpsc, Mutex},
         time::{sleep, Duration},
     },
@@ -157,7 +157,7 @@ enum Action {
         #[arg(short, long)]
         pg_url: String,
         #[arg(short, long)]
-        output: Option<PathBuf>,
+        output: Option<String>,
         #[arg(short, long, help = "Tree pubkey")]
         tree: String,
     },
@@ -166,7 +166,7 @@ enum Action {
         #[arg(short, long)]
         pg_url: String,
         #[arg(short, long)]
-        output: Option<PathBuf>,
+        output: Option<String>,
         #[arg(short, long, help = "Path to file with trees pubkeys")]
         file: String,
     },
@@ -177,7 +177,7 @@ enum Action {
     },
     /// Shows a list of trees
     ShowTrees {
-        #[arg(short, long, help = "Takes a single tree as a parameter to check")]
+        #[arg(short, long, help = "Path to file with trees pubkeys")]
         file: String,
     },
 }
@@ -236,17 +236,22 @@ async fn main() -> anyhow::Result<()> {
         }
         Action::CheckTreeLeafs { output, .. } | Action::CheckTreesLeafs { output, .. } => {
             let conn = args.get_pg_conn().await?;
-            let mut file = None;
-            if let Some(output) = output {
-                file = Some(
-                    OpenOptions::new()
-                        .write(true)
-                        .create(true)
-                        .truncate(true)
-                        .open(output)
-                        .await?,
-                );
-            }
+            let mut output: Option<Pin<Box<dyn AsyncWrite>>> = if let Some(output) = output {
+                Some(if output == "-" {
+                    Box::pin(stdout())
+                } else {
+                    Box::pin(
+                        OpenOptions::new()
+                            .write(true)
+                            .create(true)
+                            .truncate(true)
+                            .open(output)
+                            .await?,
+                    )
+                })
+            } else {
+                None
+            };
             for pubkey in pubkeys {
                 info!("checking tree leafs {pubkey}, hex: {}", hex::encode(pubkey));
                 if let Err(error) = check_tree_leafs(
@@ -255,15 +260,15 @@ async fn main() -> anyhow::Result<()> {
                     concurrency,
                     args.max_retries,
                     &conn,
-                    file.as_mut(),
+                    output.as_mut(),
                 )
                 .await
                 {
                     error!("{:?}", error);
                 }
             }
-            if let Some(mut file) = file {
-                file.flush().await?;
+            if let Some(mut output) = output {
+                output.flush().await?;
             }
         }
         Action::ShowTree { .. } | Action::ShowTrees { .. } => {
@@ -406,7 +411,7 @@ async fn check_tree_leafs(
     concurrency: NonZeroUsize,
     max_retries: u8,
     conn: &DatabaseConnection,
-    mut output: Option<&mut File>,
+    mut output: Option<&mut Pin<Box<dyn AsyncWrite>>>,
 ) -> anyhow::Result<()> {
     let (fetch_fut, mut leafs_rx) = read_tree_start(pubkey, client_url, concurrency, max_retries);
     try_join(fetch_fut, async move {
@@ -469,8 +474,8 @@ GROUP BY
         }
         for (leaf_idx, (signature, seq)) in leafs.into_iter() {
             error!("leaf index {leaf_idx}: not found in db, seq {seq} tx={signature:?}");
-            if let Some(file) = output.as_mut() {
-                let _ = file.write(format!("{signature}\n").as_bytes()).await?;
+            if let Some(output) = output.as_mut() {
+                let _ = output.write(format!("{signature}\n").as_bytes()).await?;
             }
         }
 
