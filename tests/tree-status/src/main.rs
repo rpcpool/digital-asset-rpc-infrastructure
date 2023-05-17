@@ -439,7 +439,10 @@ GROUP BY
             }
         }
         for (leaf_idx, seq) in leafs.into_iter() {
-            error!("leaf index {leaf_idx}: not found in db, seq {} tx={:?}", seq.1, seq.0);
+            error!(
+                "leaf index {leaf_idx}: not found in db, seq {} tx={:?}",
+                seq.1, seq.0
+            );
             info!("{}", seq.0);
         }
 
