@@ -390,8 +390,10 @@ async fn check_tree_leafs(
                     leaf: _leaf,
                 }) = maybe_leaf
                 {
-                    let entry_seq = leafs.entry(leaf_idx).or_insert((signature, seq));
-                    *entry_seq = (signature, seq.max((*entry_seq).1));
+                    let entry = leafs.entry(leaf_idx).or_insert((signature, seq));
+                    if entry.1 < seq {
+                        *entry = (signature, seq);
+                    }
                 }
             }
         }
@@ -438,7 +440,7 @@ GROUP BY
         }
         for (leaf_idx, seq) in leafs.into_iter() {
             error!("leaf index {leaf_idx}: not found in db, seq {} tx={:?}", seq.1, seq.0);
-            println!("{}", seq.0);
+            info!("{}", seq.0);
         }
 
         Ok(())
