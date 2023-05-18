@@ -1,17 +1,20 @@
-use std::fmt::{Display, Formatter};
-
-use figment::{
-    providers::{Env, Format, Yaml},
-    value::Value,
-    Figment,
+use {
+    crate::{error::IngesterError, tasks::BackgroundTaskRunnerConfig},
+    figment::{
+        providers::{Env, Format, Yaml},
+        value::Value,
+        Figment,
+    },
+    plerkle_messenger::MessengerConfig,
+    rand::{distributions::Alphanumeric, thread_rng, Rng},
+    serde::Deserialize,
+    std::{
+        env,
+        fmt::{Display, Formatter},
+        path::PathBuf,
+    },
+    tracing_subscriber::fmt,
 };
-use plerkle_messenger::MessengerConfig;
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use serde::Deserialize;
-use std::{env, path::PathBuf};
-use tracing_subscriber::fmt;
-
-use crate::{error::IngesterError, tasks::BackgroundTaskRunnerConfig};
 
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct IngesterConfig {
