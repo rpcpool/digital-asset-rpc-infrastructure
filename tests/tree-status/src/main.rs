@@ -48,13 +48,12 @@ use {
         },
     },
     tokio::{
-        fs::{File, OpenOptions},
-        io::{stdin, stdout, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader},
+        fs::OpenOptions,
+        io::{stdout, AsyncWrite, AsyncWriteExt},
         sync::{mpsc, Mutex},
         time::{sleep, Duration},
     },
-    tokio_stream::wrappers::LinesStream,
-    txn_forwarder::find_signatures,
+    txn_forwarder::{find_signatures, read_lines},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -210,28 +209,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Action::CheckTrees { file, .. }
         | Action::CheckTreesLeafs { file, .. }
-        | Action::ShowTrees { file } => {
-            let stream = if file == "-" {
-                LinesStream::new(BufReader::new(stdin()).lines()).boxed()
-            } else {
-                let file = File::open(file)
-                    .await
-                    .with_context(|| format!("failed to read file with keys: {:?}", file))?;
-                LinesStream::new(BufReader::new(file).lines()).boxed()
-            };
-
-            stream
-                .filter_map(|line| async move {
-                    match line {
-                        Ok(line) => {
-                            let line = line.trim();
-                            (!line.is_empty()).then(|| Ok(line.to_string()))
-                        }
-                        Err(error) => Some(Err(error)),
-                    }
-                })
-                .boxed()
-        }
+        | Action::ShowTrees { file } => read_lines(file).await?.boxed(),
     };
 
     let mut pubkeys = pubkeys_str.map(|maybe_pubkey_str| {

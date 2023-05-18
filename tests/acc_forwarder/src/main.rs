@@ -1,6 +1,7 @@
 use {
     clap::Parser,
     figment::{map, value::Value},
+    futures::stream::StreamExt,
     mpl_token_metadata::pda::find_metadata_account,
     plerkle_messenger::{MessengerConfig, ACCOUNT_STREAM},
     plerkle_serialization::{
@@ -10,6 +11,7 @@ use {
     solana_client::nonblocking::rpc_client::RpcClient,
     solana_sdk::{account::Account, commitment_config::CommitmentConfig, pubkey::Pubkey},
     std::str::FromStr,
+    txn_forwarder::read_lines,
 };
 
 #[derive(Parser)]
@@ -41,7 +43,7 @@ enum Action {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let config_wrapper = Value::from(map! {
         "redis_connection_str" => cli.redis_url,
@@ -65,9 +67,9 @@ async fn main() {
     match cli.action {
         Action::Single { account } => send_account(&account, &client, &mut messenger).await,
         Action::Scenario { scenario_file } => {
-            let scenario = std::fs::read_to_string(scenario_file).unwrap();
-            let scenario: Vec<String> = scenario.lines().map(|s| s.to_string()).collect();
-            for account in scenario {
+            let mut accounts = read_lines(&scenario_file).await?;
+            while let Some(maybe_account) = accounts.next().await {
+                let account = maybe_account?;
                 send_account(&account, &client, &mut messenger).await;
             }
         }
@@ -82,6 +84,8 @@ async fn main() {
             }
         }
     }
+
+    Ok(())
 }
 
 // returns token account belonging to mint
