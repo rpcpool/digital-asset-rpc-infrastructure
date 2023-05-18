@@ -1,31 +1,28 @@
 name: Build & Test
 on:
-  push:
-  pull_request:
-    branches:
-      - main
+    pull_request:
+        branches:
+            - main
+            - helius
 env:
-  RUST_TOOLCHAIN: stable
+    RUST_TOOLCHAIN: stable
 jobs:
-  build-api:
-    runs-on: buildjet-4vcpu-ubuntu-2204
-    steps:
-      - uses: actions/checkout@v3
-      - name: Build
-        run: |
-          cd das_api
-          cargo build
-        shell: bash
-  build-ingest:
-    runs-on: buildjet-8vcpu-ubuntu-2204
-    steps:
-      - uses: actions/checkout@v3
-      - name: Build
-        run: |
-          cd nft_ingester
-          cargo build
-        shell: bash
-
-
-
-
+    test-asset-types:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+            - name: Build
+              run: |
+                  cd digital_asset_types
+                  cargo build
+                  cargo test
+              shell: bash
+    build-api:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+            - name: Build
+              run: |
+                  cd das_api
+                  cargo build
+              shell: bash

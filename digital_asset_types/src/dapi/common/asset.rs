@@ -39,6 +39,7 @@ pub fn file_from_str(str: String) -> File {
     let mime = get_mime_type_from_uri(str.clone());
     File {
         uri: Some(str),
+        cdn_uri: None,
         mime,
         quality: None,
         contexts: None,
@@ -181,6 +182,7 @@ pub fn v1_content_from_json(
                             let file = if let Some(str_mime) = m.as_str() {
                                 File {
                                     uri: Some(str_uri.to_string()),
+                                    cdn_uri: None,
                                     mime: Some(str_mime.to_string()),
                                     quality: None,
                                     contexts: None,
@@ -231,7 +233,7 @@ pub fn v1_content_from_json(
         files.iter_mut().for_each(|f| match (&f.uri, &f.mime) {
             (Some(uri), Some(mime)) => {
                 if mime.starts_with("image/") {
-                    f.uri = Some(format!(
+                    f.cdn_uri = Some(format!(
                         "{}/{}/{}",
                         cdn_prefix.trim_end_matches('/'),
                         cdn_options,

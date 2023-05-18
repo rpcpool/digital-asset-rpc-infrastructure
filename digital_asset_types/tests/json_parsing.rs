@@ -34,6 +34,7 @@ pub async fn parse_offchain_json(json: serde_json::Value, cdn_prefix: Option<Str
         metadata_mutability: Mutability::Mutable,
         metadata: json,
         slot_updated: 0,
+        reindex: None,
     };
 
     v1_content_from_json(&asset_data, cdn_prefix).unwrap()
@@ -49,6 +50,7 @@ async fn simple_content() {
         Some(vec![
             File {
                 uri: Some("https://madlads.s3.us-west-2.amazonaws.com/images/1.png".to_string()),
+                cdn_uri: None,
                 mime: Some("image/png".to_string()),
                 quality: None,
                 contexts: None,
@@ -58,6 +60,7 @@ async fn simple_content() {
                     "https://arweave.net/qJ5B6fx5hEt4P7XbicbJQRyTcbyLaV-OQNA1KjzdqOQ/1.png"
                         .to_string(),
                 ),
+                cdn_uri: None,
                 mime: Some("image/png".to_string()),
                 quality: None,
                 contexts: None,
@@ -75,16 +78,18 @@ async fn simple_content_with_cdn() {
         parsed.files,
         Some(vec![
             File {
-                uri: Some("https://cdn.foobar.blah//https://madlads.s3.us-west-2.amazonaws.com/images/1.png".to_string()),
+                uri: Some("https://madlads.s3.us-west-2.amazonaws.com/images/1.png".to_string()),
+                cdn_uri: Some("https://cdn.foobar.blah//https://madlads.s3.us-west-2.amazonaws.com/images/1.png".to_string()),
                 mime: Some("image/png".to_string()),
                 quality: None,
                 contexts: None,
             },
             File {
                 uri: Some(
-                    "https://cdn.foobar.blah//https://arweave.net/qJ5B6fx5hEt4P7XbicbJQRyTcbyLaV-OQNA1KjzdqOQ/1.png"
+                    "https://arweave.net/qJ5B6fx5hEt4P7XbicbJQRyTcbyLaV-OQNA1KjzdqOQ/1.png"
                         .to_string(),
                 ),
+                cdn_uri: Some("https://cdn.foobar.blah//https://arweave.net/qJ5B6fx5hEt4P7XbicbJQRyTcbyLaV-OQNA1KjzdqOQ/1.png".to_string()),
                 mime: Some("image/png".to_string()),
                 quality: None,
                 contexts: None,
@@ -106,6 +111,7 @@ async fn complex_content() {
                     "https://arweave.net/_a4sXT6fOHI-5VHFOHLEF73wqKuZtJgE518Ciq9DGyI?ext=gif"
                         .to_string(),
                 ),
+                cdn_uri: None,
                 mime: Some("image/gif".to_string()),
                 quality: None,
                 contexts: None,
@@ -115,6 +121,7 @@ async fn complex_content() {
                     "https://arweave.net/HVOJ3bTpqMJJJtd5nW2575vPTekLa_SSDsQc7AqV_Ho?ext=mp4"
                         .to_string()
                 ),
+                cdn_uri: None,
                 mime: Some("video/mp4".to_string()),
                 quality: None,
                 contexts: None,
@@ -133,6 +140,10 @@ async fn complex_content_with_cdn() {
         Some(vec![
             File {
                 uri: Some(
+                    "https://arweave.net/_a4sXT6fOHI-5VHFOHLEF73wqKuZtJgE518Ciq9DGyI?ext=gif"
+                        .to_string(),
+                ),
+                cdn_uri: Some(
                     "https://cdn.foobar.blah//https://arweave.net/_a4sXT6fOHI-5VHFOHLEF73wqKuZtJgE518Ciq9DGyI?ext=gif"
                         .to_string(),
                 ),
@@ -142,6 +153,7 @@ async fn complex_content_with_cdn() {
             },
             File {
                 uri: Some("https://arweave.net/HVOJ3bTpqMJJJtd5nW2575vPTekLa_SSDsQc7AqV_Ho?ext=mp4".to_string()),
+                cdn_uri: None,
                 mime: Some("video/mp4".to_string()),
                 quality: None,
                 contexts: None,
