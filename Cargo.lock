@@ -5924,6 +5924,7 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "txn_forwarder",
 ]
 

@@ -3,7 +3,10 @@ use {
     anyhow::Context,
     clap::{arg, Parser, Subcommand},
     digital_asset_types::dao::cl_items,
-    futures::future::{try_join, try_join_all, BoxFuture, FutureExt, TryFutureExt},
+    futures::{
+        future::{try_join, try_join_all, BoxFuture, FutureExt, TryFutureExt},
+        stream::{self, StreamExt},
+    },
     log::{debug, error, info},
     sea_orm::{
         sea_query::{Expr, Value},
@@ -45,11 +48,12 @@ use {
         },
     },
     tokio::{
-        fs::OpenOptions,
-        io::{stdout, AsyncWrite, AsyncWriteExt},
+        fs::{File, OpenOptions},
+        io::{stdin, stdout, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader},
         sync::{mpsc, Mutex},
         time::{sleep, Duration},
     },
+    tokio_stream::wrappers::LinesStream,
     txn_forwarder::find_signatures,
 };
 
@@ -200,34 +204,50 @@ async fn main() -> anyhow::Result<()> {
     let pubkeys_str = match &args.action {
         Action::CheckTree { tree, .. }
         | Action::CheckTreeLeafs { tree, .. }
-        | Action::ShowTree { tree } => vec![tree.to_string()],
+        | Action::ShowTree { tree } => {
+            let tree = tree.to_string();
+            stream::once(async move { Ok(tree) }).boxed()
+        }
         Action::CheckTrees { file, .. }
         | Action::CheckTreesLeafs { file, .. }
-        | Action::ShowTrees { file } => tokio::fs::read_to_string(&file)
-            .await
-            .with_context(|| format!("failed to read file with keys: {:?}", file))?
-            .lines()
-            .filter_map(|x| {
-                let x = x.trim();
-                (!x.is_empty()).then(|| x.to_string())
-            })
-            .collect(),
+        | Action::ShowTrees { file } => {
+            let stream = if file == "-" {
+                LinesStream::new(BufReader::new(stdin()).lines()).boxed()
+            } else {
+                let file = File::open(file)
+                    .await
+                    .with_context(|| format!("failed to read file with keys: {:?}", file))?;
+                LinesStream::new(BufReader::new(file).lines()).boxed()
+            };
+
+            stream
+                .filter_map(|line| async move {
+                    match line {
+                        Ok(line) => {
+                            let line = line.trim();
+                            (!line.is_empty()).then(|| Ok(line.to_string()))
+                        }
+                        Err(error) => Some(Err(error)),
+                    }
+                })
+                .boxed()
+        }
     };
 
-    let mut pubkeys: Vec<Pubkey> = vec![];
-    for pubkey_str in pubkeys_str {
-        pubkeys.push(
+    let mut pubkeys = pubkeys_str.map(|maybe_pubkey_str| {
+        maybe_pubkey_str.map_err(Into::into).and_then(|pubkey_str| {
             pubkey_str
-                .parse()
-                .with_context(|| format!("failed to parse pubkey: {}", &pubkey_str))?,
-        );
-    }
+                .parse::<Pubkey>()
+                .with_context(|| format!("failed to parse pubkey: {}", &pubkey_str))
+        })
+    });
 
     match &args.action {
         Action::CheckTree { .. } | Action::CheckTrees { .. } => {
             let client = RpcClient::new(args.rpc.clone());
             let conn = args.get_pg_conn().await?;
-            for pubkey in pubkeys {
+            while let Some(maybe_pubkey) = pubkeys.next().await {
+                let pubkey = maybe_pubkey?;
                 info!("checking tree {pubkey}, hex: {}", hex::encode(pubkey));
                 if let Err(error) = check_tree(pubkey, &client, &conn).await {
                     error!("{:?}", error);
@@ -252,7 +272,8 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 None
             };
-            for pubkey in pubkeys {
+            while let Some(maybe_pubkey) = pubkeys.next().await {
+                let pubkey = maybe_pubkey?;
                 info!("checking tree leafs {pubkey}, hex: {}", hex::encode(pubkey));
                 if let Err(error) = check_tree_leafs(
                     pubkey,
@@ -272,7 +293,8 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Action::ShowTree { .. } | Action::ShowTrees { .. } => {
-            for pubkey in pubkeys {
+            while let Some(maybe_pubkey) = pubkeys.next().await {
+                let pubkey = maybe_pubkey?;
                 info!("showing tree {pubkey}, hex: {}", hex::encode(pubkey));
                 if let Err(error) =
                     read_tree(pubkey, &args.rpc, concurrency, args.max_retries).await
