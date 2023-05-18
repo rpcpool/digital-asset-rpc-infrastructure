@@ -191,6 +191,7 @@ impl GapInfo {
 
 /// Main struct used for backfiller task.
 struct Backfiller<'a, T: Messenger> {
+    config: IngesterConfig,
     db: DatabaseConnection,
     rpc_client: RpcClient,
     rpc_block_config: RpcBlockConfig,
@@ -270,6 +271,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
             .await;
 
         Self {
+            config,
             db,
             rpc_client,
             rpc_block_config,
@@ -462,6 +464,19 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
         let mut all_trees: HashMap<Pubkey, SlotSeq> = self.fetch_trees_by_gpa().await?;
         info!("Number of Trees on Chain {}", all_trees.len());
 
+        if let Some(only_trees) = &self.config.backfiller_trees {
+            let mut trees = HashSet::with_capacity(only_trees.len());
+            for tree in only_trees {
+                trees.insert(Pubkey::try_from(tree.as_str()).expect("backfiller tree is invalid"));
+            }
+
+            all_trees.retain(|key, _value| trees.contains(key));
+            info!(
+                "Number of Trees to backfill (with only filter): {}",
+                all_trees.len()
+            );
+        }
+
         // Find all trees in local backfill_items DB that are either failed or locked and remove them from all trees
         let get_locked_or_failed_trees = Statement::from_string(
             DbBackend::Postgres,
@@ -476,6 +491,10 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
             let key = Pubkey::try_from(tree.tree.as_slice()).unwrap();
             all_trees.remove(&key);
         }
+        info!(
+            "Number of Trees to backfill (with failed/locked filter): {}",
+            all_trees.len()
+        );
 
         // Get all the local trees already in cl_items and remove them
         let get_all_local_trees = Statement::from_string(
@@ -488,6 +507,10 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
             let key = Pubkey::try_from(tree.tree.as_slice()).unwrap();
             all_trees.remove(&key);
         }
+        info!(
+            "Number of Trees to backfill (with cl_items existed filter): {}",
+            all_trees.len()
+        );
 
         // After removing all the tres in backfill_itemsa nd the trees already in CL Items then return the list
         // of missing trees
