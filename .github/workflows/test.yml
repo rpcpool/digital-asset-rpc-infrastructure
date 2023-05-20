@@ -11,10 +11,6 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
-      - name: install rust
-        uses: actions-rs/toolchain@v1
-        with:
-            components: rustfmt, clippy
       - name: Fmt
         run: cargo fmt --check
       - name: Clippy
@@ -28,10 +24,6 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
-      - name: install rust
-        uses: actions-rs/toolchain@v1
-        with:
-            components: rustfmt, clippy
       - name: Fmt
         run: cargo fmt --check
       - name: Clippy
@@ -45,10 +37,6 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
-      - name: install rust
-        uses: actions-rs/toolchain@v1
-        with:
-            components: rustfmt, clippy
       - name: Fmt
         run: cargo fmt --check
       - name: Clippy
