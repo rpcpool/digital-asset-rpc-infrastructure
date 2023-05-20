@@ -67,7 +67,7 @@ where
         audit_item.tx = Set(txn_id.to_string());
 
         i += 1;
-        let query = cl_items::Entity::insert(item)
+        let mut query = cl_items::Entity::insert(item)
             .on_conflict(
                 OnConflict::columns([cl_items::Column::Tree, cl_items::Column::NodeIdx])
                     .update_columns([
