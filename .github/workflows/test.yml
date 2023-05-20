@@ -8,7 +8,7 @@ env:
   RUST_TOOLCHAIN: stable
 jobs:
   build-api:
-    runs-on: buildjet-4vcpu-ubuntu-2204
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
       - name: Build
@@ -16,16 +16,22 @@ jobs:
           cd das_api
           cargo build
         shell: bash
-  build-ingest:
-    runs-on: buildjet-8vcpu-ubuntu-2204
+  build-migration:
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
       - name: Build
         run: |
-          cd nft_ingester
+          cd migration
           cargo build
         shell: bash
-
-
+  build-ingest:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: |
+          cargo build
+        shell: bash
 
 
