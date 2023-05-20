@@ -81,9 +81,9 @@ where
             .build(DbBackend::Postgres);
         /* LK: Removing the filling param for now because it's not used anywhere and gives
          * an incorrect view of what might be going on.
-         * if !filling {
-            query.sql = format!("{} WHERE excluded.seq > cl_items.seq", query.sql);
-        } */
+         * if !filling {*/
+        query.sql = format!("{} WHERE excluded.seq > cl_items.seq", query.sql);
+        /*} */
         txn.execute(query)
             .await
             .map_err(|db_err| IngesterError::StorageWriteError(db_err.to_string()))?;
