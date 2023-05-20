@@ -11,27 +11,39 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
+      - name: Fmt
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets --tests
       - name: Build
         run: |
           cd das_api
-          cargo build
+          cargo build  --all-targets --tests
         shell: bash
   build-migration:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
+      - name: Fmt
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets --tests
       - name: Build
         run: |
           cd migration
-          cargo build
+          cargo build --all-targets --tests
         shell: bash
   build-ingest:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
+      - name: Fmt
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets --tests
       - name: Build
         run: |
-          cargo build
+          cargo build  --all-targets --tests
         shell: bash
 
 
