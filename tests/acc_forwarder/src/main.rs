@@ -169,7 +169,7 @@ async fn main() -> anyhow::Result<()> {
                         drop(locked);
 
                         if inserted {
-                            fetch_metadata_and_send_account(account, &client, &messenger).await?;
+                            fetch_metadata_and_send_accounts(account, &client, &messenger).await?;
                         }
                     }
                 }
@@ -266,7 +266,7 @@ async fn collection_get_tx_info(
 }
 
 // fetch metadata account and send mint account to redis
-async fn fetch_metadata_and_send_account(
+async fn fetch_metadata_and_send_accounts(
     pubkey: Pubkey,
     client: &RpcClient,
     messenger: &Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
@@ -300,7 +300,11 @@ async fn fetch_metadata_and_send_account(
     let metadata: Metadata = try_from_slice_unchecked(&account.data)
         .with_context(|| anyhow::anyhow!("failed to parse data for metadata account {pubkey}"))?;
 
-    fetch_and_send_account(metadata.mint, client, messenger).await
+    let token_account = get_token_largest_account(client, metadata.mint).await?;
+    for pubkey in &[metadata.mint, pubkey, token_account] {
+        fetch_and_send_account(*pubkey, client, messenger).await?;
+    }
+    Ok(())
 }
 
 // returns largest (NFT related) token account belonging to mint
