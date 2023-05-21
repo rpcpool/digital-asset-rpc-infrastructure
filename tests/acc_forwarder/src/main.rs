@@ -17,8 +17,11 @@ use {
         rpc_response::{Response as RpcResponse, RpcTokenAccountBalance},
     },
     solana_sdk::{
-        account::Account, borsh::try_from_slice_unchecked, commitment_config::CommitmentConfig,
-        pubkey::Pubkey, signature::Signature,
+        account::Account,
+        borsh::try_from_slice_unchecked,
+        commitment_config::{CommitmentConfig, CommitmentLevel},
+        pubkey::Pubkey,
+        signature::Signature,
     },
     solana_transaction_status::{
         EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction, UiInstruction, UiMessage,
@@ -187,19 +190,18 @@ async fn collection_get_tx_info(
     client: &RpcClient,
     signature: Signature,
 ) -> anyhow::Result<Option<CollectionTransactionInfo>> {
-    let mut txinfo = None;
+    const CONFIG: RpcTransactionConfig = RpcTransactionConfig {
+        encoding: Some(UiTransactionEncoding::JsonParsed),
+        commitment: Some(CommitmentConfig {
+            commitment: CommitmentLevel::Confirmed,
+        }),
+        max_supported_transaction_version: Some(u8::MAX),
+    };
 
     let tx: EncodedConfirmedTransactionWithStatusMeta = rpc_send_with_retries(
         client,
         RpcRequest::GetTransaction,
-        serde_json::json!([
-            signature.to_string(),
-            RpcTransactionConfig {
-                encoding: Some(UiTransactionEncoding::JsonParsed),
-                commitment: Some(CommitmentConfig::confirmed()),
-                max_supported_transaction_version: Some(u8::MAX),
-            }
-        ]),
+        serde_json::json!([signature.to_string(), CONFIG]),
         3,
         signature,
     )
@@ -211,6 +213,7 @@ async fn collection_get_tx_info(
         _ => anyhow::bail!("invalid encoded tx: {signature}"),
     };
 
+    let mut txinfo = None;
     match tx.message {
         UiMessage::Parsed(value) => {
             for ix in value.instructions {
@@ -258,7 +261,6 @@ async fn collection_get_tx_info(
             }
         }
     };
-
     Ok(match txinfo {
         Some(txinfo) if txinfo.is_valid() => Some(txinfo),
         _ => None,
@@ -271,36 +273,12 @@ async fn fetch_metadata_and_send_accounts(
     client: &RpcClient,
     messenger: &Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
 ) -> anyhow::Result<()> {
-    let response: RpcResponse<Option<UiAccount>> = rpc_send_with_retries(
-        client,
-        RpcRequest::GetAccountInfo,
-        serde_json::json!([
-            pubkey.to_string(),
-            RpcAccountInfoConfig {
-                encoding: Some(UiAccountEncoding::Base64Zstd),
-                commitment: Some(CommitmentConfig::confirmed()),
-                data_slice: None,
-                min_context_slot: None,
-            }
-        ]),
-        3,
-        pubkey,
-    )
-    .await
-    .with_context(|| format!("failed to get account {pubkey}"))?;
-
-    let account = response
-        .value
-        .ok_or_else(|| anyhow::anyhow!("failed to get account {pubkey}"))?;
-
-    let account: Account = account
-        .decode()
-        .ok_or_else(|| anyhow::anyhow!("failed to parse account {pubkey}"))?;
-
+    let (account, _slot) = fetch_account(pubkey, client).await?;
     let metadata: Metadata = try_from_slice_unchecked(&account.data)
         .with_context(|| anyhow::anyhow!("failed to parse data for metadata account {pubkey}"))?;
 
     let token_account = get_token_largest_account(client, metadata.mint).await?;
+
     for pubkey in &[metadata.mint, pubkey, token_account] {
         fetch_and_send_account(*pubkey, client, messenger).await?;
     }
@@ -309,14 +287,16 @@ async fn fetch_metadata_and_send_accounts(
 
 // returns largest (NFT related) token account belonging to mint
 async fn get_token_largest_account(client: &RpcClient, mint: Pubkey) -> anyhow::Result<Pubkey> {
-    let response: RpcResponse<Vec<RpcTokenAccountBalance>> = client
-        .send(
-            RpcRequest::Custom {
-                method: "getTokenLargestAccounts",
-            },
-            serde_json::json!([mint.to_string(),]),
-        )
-        .await?;
+    let response: RpcResponse<Vec<RpcTokenAccountBalance>> = rpc_send_with_retries(
+        client,
+        RpcRequest::Custom {
+            method: "getTokenLargestAccounts",
+        },
+        serde_json::json!([mint.to_string(),]),
+        3,
+        mint,
+    )
+    .await?;
 
     match response.value.first() {
         Some(account) => Pubkey::from_str(&account.address)
@@ -325,40 +305,43 @@ async fn get_token_largest_account(client: &RpcClient, mint: Pubkey) -> anyhow::
     }
 }
 
-// fetch account from node and send it to redis
-async fn fetch_and_send_account(
-    pubkey: Pubkey,
-    client: &RpcClient,
-    messenger: &Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
-) -> anyhow::Result<()> {
+// fetch account and slot with retries
+async fn fetch_account(pubkey: Pubkey, client: &RpcClient) -> anyhow::Result<(Account, u64)> {
+    const CONFIG: RpcAccountInfoConfig = RpcAccountInfoConfig {
+        encoding: Some(UiAccountEncoding::Base64Zstd),
+        commitment: Some(CommitmentConfig {
+            commitment: CommitmentLevel::Confirmed,
+        }),
+        data_slice: None,
+        min_context_slot: None,
+    };
+
     let response: RpcResponse<Option<UiAccount>> = rpc_send_with_retries(
         client,
         RpcRequest::GetAccountInfo,
-        serde_json::json!([
-            pubkey.to_string(),
-            RpcAccountInfoConfig {
-                encoding: Some(UiAccountEncoding::Base64Zstd),
-                commitment: Some(CommitmentConfig::confirmed()),
-                data_slice: None,
-                min_context_slot: None,
-            }
-        ]),
+        serde_json::json!([pubkey.to_string(), CONFIG]),
         3,
         pubkey,
     )
     .await
     .with_context(|| format!("failed to get account {pubkey}"))?;
 
-    let account = response
+    let account: Account = response
         .value
-        .ok_or_else(|| anyhow::anyhow!("failed to get account {pubkey}"))?;
-
-    let account: Account = account
+        .ok_or_else(|| anyhow::anyhow!("failed to get account {pubkey}"))?
         .decode()
         .ok_or_else(|| anyhow::anyhow!("failed to parse account {pubkey}"))?;
 
-    let slot = response.context.slot;
+    Ok((account, response.context.slot))
+}
 
+// fetch account from node and send it to redis
+async fn fetch_and_send_account(
+    pubkey: Pubkey,
+    client: &RpcClient,
+    messenger: &Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
+) -> anyhow::Result<()> {
+    let (account, slot) = fetch_account(pubkey, client).await?;
     send_account(pubkey, account, slot, messenger).await
 }
 
@@ -388,5 +371,6 @@ async fn send_account(
 
     messenger.lock().await.send(ACCOUNT_STREAM, bytes).await?;
     info!("sent account {} to stream", pubkey);
+
     Ok(())
 }

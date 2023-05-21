@@ -5926,6 +5926,7 @@ dependencies = [
  "hex",
  "log",
  "sea-orm",
+ "serde_json",
  "solana-client",
  "solana-sdk",
  "solana-transaction-status",
