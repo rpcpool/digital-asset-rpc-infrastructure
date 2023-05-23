@@ -1,7 +1,7 @@
 use {
     anyhow::Context,
     futures::stream::{BoxStream, StreamExt},
-    log::{info, error},
+    log::{error, info},
     serde::de::DeserializeOwned,
     solana_client::{
         client_error::ClientError, client_error::Result as RpcClientResult,
@@ -39,7 +39,10 @@ pub fn find_signatures(
     tokio::spawn(async move {
         let mut last_signature = None;
         loop {
-            info!("fetching signatures for {} before {:?}", address, last_signature);
+            info!(
+                "fetching signatures for {} before {:?}",
+                address, last_signature
+            );
             let config = GetConfirmedSignaturesForAddress2Config {
                 before: last_signature,
                 until: None,
@@ -50,7 +53,12 @@ pub fn find_signatures(
                 .await
             {
                 Ok(vec) => {
-                    info!("fetched {} signatures for address {:?} before {:?}", vec.len(), address, last_signature);
+                    info!(
+                        "fetched {} signatures for address {:?} before {:?}",
+                        vec.len(),
+                        address,
+                        last_signature
+                    );
                     for tx in vec.iter() {
                         match Signature::from_str(&tx.signature) {
                             Ok(signature) => {
