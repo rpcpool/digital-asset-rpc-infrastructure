@@ -129,13 +129,14 @@ async fn main() -> anyhow::Result<()> {
             let token_account = get_token_largest_account(&client, mint).await;
 
             match token_account {
-              Ok(token_account) => 
-                for pubkey in &[mint, metadata_account, token_account] {
-                    fetch_and_send_account(*pubkey, &client, &messenger).await?;
-                },
-              Err(e) => warn!("Failed to find mint account: {:?}", e)
+                Ok(token_account) => {
+                    for pubkey in &[mint, metadata_account, token_account] {
+                        fetch_and_send_account(*pubkey, &client, &messenger).await?;
+                    }
+                }
+                Err(e) => warn!("Failed to find mint account: {:?}", e),
             }
-          }
+        }
         Action::Collection {
             collection,
             concurrency,
@@ -176,9 +177,11 @@ async fn main() -> anyhow::Result<()> {
                         drop(locked);
 
                         if inserted {
-                            match fetch_metadata_and_send_accounts(account, &client, &messenger).await {
-                              Ok(_) => info!("Uploaded {:?}", account),
-                              Err(e) => warn!("Could not insert {:?}: {:?}", account, e)
+                            match fetch_metadata_and_send_accounts(account, &client, &messenger)
+                                .await
+                            {
+                                Ok(_) => info!("Uploaded {:?}", account),
+                                Err(e) => warn!("Could not insert {:?}: {:?}", account, e),
                             }
                         }
                     }
