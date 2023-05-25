@@ -1,19 +1,29 @@
-mod utils;
-use std::{collections::BTreeMap, str::FromStr, sync::Arc};
-
-use clap::Parser;
-use figment::{util::map, value::Value};
-
-use plerkle_messenger::MessengerConfig;
-use plerkle_serialization::serializer::seralize_encoded_transaction_with_status;
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Signature};
-use solana_transaction_status::{
-    EncodedConfirmedTransactionWithStatusMeta, EncodedTransactionWithStatusMeta,
-    UiTransactionEncoding,
+use {
+    anyhow::Context,
+    clap::Parser,
+    figment::{util::map, value::Value},
+    futures::{
+        future::{try_join_all, BoxFuture, FutureExt},
+        stream::StreamExt,
+    },
+    log::info,
+    plerkle_messenger::{MessengerConfig, ACCOUNT_STREAM, TRANSACTION_STREAM},
+    plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
+    solana_client::{
+        nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig,
+        rpc_request::RpcRequest,
+    },
+    solana_sdk::{
+        commitment_config::{CommitmentConfig, CommitmentLevel},
+        pubkey::Pubkey,
+        signature::Signature,
+    },
+    solana_transaction_status::{EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding},
+    std::{env, str::FromStr, sync::Arc},
+    tokio::sync::{mpsc, Mutex},
+    txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries},
 };
-use tokio_stream::StreamExt;
-use utils::Siggrabbenheimer;
+
 #[derive(Parser)]
 #[command(next_line_help = true)]
 struct Cli {
@@ -21,133 +31,197 @@ struct Cli {
     redis_url: String,
     #[arg(long)]
     rpc_url: String,
+    #[arg(long, short, default_value_t = 25)]
+    concurrency: usize,
+    #[arg(long, short, default_value_t = 2)]
+    max_retries: u8,
     #[command(subcommand)]
     action: Action,
 }
+
 #[derive(clap::Subcommand, Clone)]
 enum Action {
-    Single {
-        #[arg(long)]
-        txn: String,
-    },
     Address {
         #[arg(long)]
         address: String,
         #[arg(long)]
         include_failed: Option<bool>,
+    },
+    Addresses {
         #[arg(long)]
-        before: Option<Signature>,
+        file: String,
+    },
+    Single {
+        #[arg(long)]
+        txn: String,
     },
     Scenario {
         #[arg(long)]
         scenario_file: String,
     },
 }
-const STREAM: &str = "TXN";
-const MAX_CACHE_COST: i64 = 32;
-const BLOCK_CACHE_DURATION: u64 = 172800;
-const BLOCK_CACHE_SIZE: usize = 300_000;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
+    env::set_var(
+        env_logger::DEFAULT_FILTER_ENV,
+        env::var_os(env_logger::DEFAULT_FILTER_ENV).unwrap_or_else(|| "info".into()),
+    );
+    env_logger::init();
+
     let cli = Cli::parse();
     let config_wrapper = Value::from(map! {
-    "redis_connection_str" => cli.redis_url,
-    "pipeline_size_bytes" => 1u128.to_string(),
-     });
+        "redis_connection_str" => cli.redis_url,
+        "pipeline_size_bytes" => 1u128.to_string(),
+    });
     let config = config_wrapper.into_dict().unwrap();
+
     let messenenger_config = MessengerConfig {
         messenger_type: plerkle_messenger::MessengerType::Redis,
         connection_config: config,
     };
-    let mut messenger = plerkle_messenger::select_messenger(messenenger_config)
-        .await
-        .unwrap();
-    messenger.add_stream(STREAM).await.unwrap();
-    messenger.add_stream("ACC").await.unwrap();
-    messenger.set_buffer_size(STREAM, 10000000000000000).await;
+    let mut messenger = plerkle_messenger::select_messenger(messenenger_config).await?;
+    messenger.add_stream(TRANSACTION_STREAM).await?;
+    messenger.add_stream(ACCOUNT_STREAM).await?;
+    messenger
+        .set_buffer_size(TRANSACTION_STREAM, 10000000000000000)
+        .await;
+    let messenger = Arc::new(Mutex::new(messenger));
 
-    // TODO allow txn piping to stdin
-    let client = RpcClient::new(cli.rpc_url.clone());
+    let (tx, rx) = mpsc::unbounded_channel();
 
-    let cmd = cli.action;
-
-    match cmd {
-        Action::Single { txn } => send_txn(&txn, &client, &mut messenger).await,
+    match cli.action {
         Action::Address {
-            include_failed,
+            include_failed: _include_failed,
             address,
-            before,
         } => {
-            println!("Sending address (before: {:?})", before);
-            send_address(
-                &address,
-                cli.rpc_url,
-                &mut messenger,
-                include_failed.unwrap_or(false),
-                before,
+            let pubkey = Pubkey::from_str(&address).context("failed to parse address")?;
+            tx.send(
+                send_address(pubkey, cli.rpc_url, messenger, cli.max_retries, tx.clone()).boxed(),
             )
-            .await;
+            .map_err(|_| anyhow::anyhow!("failed to send job"))?;
+        }
+        Action::Addresses { file } => {
+            let mut lines = read_lines(&file).await?;
+            while let Some(maybe_line) = lines.next().await {
+                let line = maybe_line?;
+                let pubkey = Pubkey::from_str(&line).context("failed to parse address")?;
+                let rpc_url = cli.rpc_url.clone();
+                let messenger = Arc::clone(&messenger);
+                tx.send(
+                    send_address(pubkey, rpc_url, messenger, cli.max_retries, tx.clone()).boxed(),
+                )
+                .map_err(|_| anyhow::anyhow!("failed to send job"))?;
+            }
+        }
+        Action::Single { txn } => {
+            let sig = Signature::from_str(&txn).context("failed to parse signature")?;
+            tx.send(send_tx(sig, cli.rpc_url, cli.max_retries, messenger).boxed())
+                .map_err(|_| anyhow::anyhow!("failed to send job"))?;
         }
         Action::Scenario { scenario_file } => {
-            let scenario = std::fs::read_to_string(scenario_file).unwrap();
-            let scenario: Vec<String> = scenario.lines().map(|s| s.to_string()).collect();
-            for txn in scenario {
-                send_txn(&txn, &client, &mut messenger).await;
+            let mut lines = read_lines(&scenario_file).await?;
+            while let Some(maybe_line) = lines.next().await {
+                let line = maybe_line?;
+                let sig = Signature::from_str(&line).context("failed to parse signature")?;
+                let rpc_url = cli.rpc_url.clone();
+                let messenger = Arc::clone(&messenger);
+                tx.send(send_tx(sig, rpc_url, cli.max_retries, messenger).boxed())
+                    .map_err(|_| anyhow::anyhow!("failed to send job"))?;
             }
         }
     }
-}
+    drop(tx);
 
-pub async fn send_address(
-    address: &str,
-    client_url: String,
-    messenger: &mut Box<dyn plerkle_messenger::Messenger>,
-    failed: bool,
-    before: Option<Signature>,
-) {
-    let client1 = RpcClient::new(client_url.clone());
-    let pub_addr = Pubkey::from_str(address).unwrap();
-    let mut sig = Siggrabbenheimer::new(client1, pub_addr, before);
-    let client2 = RpcClient::new(client_url);
-    while let Some(s) = sig.next().await {
-        send_txn(&s, &client2, messenger).await;
-    }
-}
+    let rx = Arc::new(Mutex::new(rx));
+    try_join_all((0..cli.concurrency).map(|_| {
+        let rx = Arc::clone(&rx);
+        async move {
+            loop {
+                let mut locked = rx.lock().await;
+                let maybe_fut = locked.recv().await;
+                drop(locked);
 
-pub async fn send_txn(
-    txn: &str,
-    client: &RpcClient,
-    messenger: &mut Box<dyn plerkle_messenger::Messenger>,
-) {
-    let sig = Signature::from_str(txn).unwrap();
-    for _ in 0..10 {
-        let txn = client
-            .get_transaction_with_config(
-                &sig,
-                solana_client::rpc_config::RpcTransactionConfig {
-                    encoding: Some(UiTransactionEncoding::Base64),
-                    commitment: Some(CommitmentConfig::confirmed()),
-                    max_supported_transaction_version: Some(0),
-                },
-            )
-            .await;
-        if let Ok(t) = txn {
-            send(t, messenger).await;
-            // log sent txn  with signature
-            println!("Sent txn: {}", sig);
-            break;
+                match maybe_fut {
+                    Some(fut) => fut.await?,
+                    None => return Ok(()),
+                }
+            }
         }
-    }
+    }))
+    .await
+    .map(|_| ())
 }
 
-pub async fn send(
-    txn: EncodedConfirmedTransactionWithStatusMeta,
-    messenger: &mut Box<dyn plerkle_messenger::Messenger>,
-) {
+async fn send_address(
+    pubkey: Pubkey,
+    rpc_url: String,
+    messenger: Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
+    max_retries: u8,
+    tasks_tx: mpsc::UnboundedSender<BoxFuture<'static, anyhow::Result<()>>>,
+) -> anyhow::Result<()> {
+    let client = RpcClient::new(rpc_url.clone());
+    let mut all_sig = find_signatures(pubkey, client, 2_000);
+    while let Some(sig) = all_sig.recv().await {
+        let rpc_url = rpc_url.clone();
+        let messenger = Arc::clone(&messenger);
+        tasks_tx
+            .send(send_tx(sig?, rpc_url, max_retries, messenger).boxed())
+            .map_err(|_| anyhow::anyhow!("failed to send job"))?;
+    }
+    Ok(())
+}
+
+async fn send_tx(
+    signature: Signature,
+    rpc_url: String,
+    max_retries: u8,
+    messenger: Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
+) -> anyhow::Result<()> {
+    const CONFIG: RpcTransactionConfig = RpcTransactionConfig {
+        encoding: Some(UiTransactionEncoding::Base64),
+        commitment: Some(CommitmentConfig {
+            commitment: CommitmentLevel::Finalized,
+        }),
+        max_supported_transaction_version: Some(0),
+    };
+
+    let client = RpcClient::new(rpc_url);
+    let tx: EncodedConfirmedTransactionWithStatusMeta = rpc_send_with_retries(
+        &client,
+        RpcRequest::GetTransaction,
+        serde_json::json!([signature.to_string(), CONFIG,]),
+        max_retries,
+        signature,
+    )
+    .await?;
+    send(signature, tx, Arc::clone(&messenger)).await
+}
+
+async fn send(
+    signature: Signature,
+    tx: EncodedConfirmedTransactionWithStatusMeta,
+    messenger: Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
+) -> anyhow::Result<()> {
+    // ignore if tx failed or meta is missed
+    let meta = tx.transaction.meta.as_ref();
+    if meta.map(|meta| meta.status.is_err()).unwrap_or(true) {
+        return Ok(());
+    }
+
     let fbb = flatbuffers::FlatBufferBuilder::new();
-    let fbb = seralize_encoded_transaction_with_status(fbb, txn).unwrap();
+    let fbb = match seralize_encoded_transaction_with_status(fbb, tx) {
+        Ok(fbb) => fbb,
+        Err(err) => {
+            eprintln!("Error serializing transaction with {signature}: {}", err);
+            return Ok(());
+        },
+    };
     let bytes = fbb.finished_data();
 
-    messenger.send(STREAM, bytes).await.unwrap();
+    let mut locked = messenger.lock().await;
+    locked.send(TRANSACTION_STREAM, bytes).await?;
+    info!("Sent transaction to stream {signature}");
+
+    Ok(())
 }
