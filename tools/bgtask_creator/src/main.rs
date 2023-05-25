@@ -68,6 +68,14 @@ pub async fn main() {
                 .default_value("1000"),
         )
         .arg(
+            Arg::new("ignore-ipfs")
+                .long("ignore-ipfs")
+                .short('i')
+                .help("ignore ipfs URLs when creating tasks")
+                .required(false)
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("authority")
                 .long("authority")
                 .short('a')
@@ -156,6 +164,7 @@ pub async fn main() {
     let collection = matches.get_one::<String>("collection");
     let mint = matches.get_one::<String>("mint");
     let creator = matches.get_one::<String>("creator");
+    let ignore_ipfs = matches.get_flag("ignore-ipfs");
 
     let all = "all".to_string();
     let mut asset_data_missing = if let Some(authority) = authority {
@@ -273,16 +282,25 @@ pub async fn main() {
             "Creating new tasks for all assets with missing metadata, batch size={}",
             batch_size
         );
-        (
+
+        let mut query =
             asset_data::Entity::find()
                 .filter(Condition::all().add(
                     asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())),
                 ))
-                .order_by(asset_data::Column::Id, Order::Asc)
-                .paginate(&conn, *batch_size)
-                .into_stream(),
-            &all,
-        )
+                .order_by(asset_data::Column::Id, Order::Asc);
+
+        if ignore_ipfs {
+            query = query.filter(
+                Condition::all()
+                    .add(asset_data::Column::MetadataUrl.not_like("https://nftstorage.link/ipfs%"))
+                    .add(asset_data::Column::MetadataUrl.not_like("https://api.stepn.com%")),
+            );
+        }
+
+        let stream = query.paginate(&conn, *batch_size).into_stream();
+
+        (stream, &all)
     };
 
     let mut tasks = Vec::new();
@@ -444,7 +462,6 @@ pub async fn main() {
                             }
 
                             let task_hash = task_data.hash();
-                            info!("Created task: {:?}", task_hash);
 
                             let res = TaskManager::new_task_handler(
                                 database_pool.clone(),

@@ -127,13 +127,13 @@ impl TaskManager {
                 task.locked_until = Set(None);
 
                 match e {
-                    IngesterError::BatchInitNetworkingError => {
+                    IngesterError::BatchInitNetworkingError(msg) => {
                         // Network errors are common for off-chain JSONs.
                         // Logging these as errors is far too noisy.
                         metric! {
                             statsd_count!("ingester.bgtask.network_error", 1, "type" => task_name);
                         }
-                        warn!("Task failed due to network error: {}", e);
+                        warn!("Task failed due to network error: {}", msg);
                     }
                     IngesterError::HttpError { ref status_code } => {
                         metric! {
