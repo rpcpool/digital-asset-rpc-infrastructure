@@ -33,7 +33,7 @@ struct Cli {
     rpc_url: String,
     #[arg(long, short, default_value_t = 25)]
     concurrency: usize,
-    #[arg(long, short, default_value_t = 2)]
+    #[arg(long, short, default_value_t = 3)]
     max_retries: u8,
     #[command(subcommand)]
     action: Action,
@@ -210,13 +210,8 @@ async fn send(
     }
 
     let fbb = flatbuffers::FlatBufferBuilder::new();
-    let fbb = match seralize_encoded_transaction_with_status(fbb, tx) {
-        Ok(fbb) => fbb,
-        Err(err) => {
-            eprintln!("Error serializing transaction with {signature}: {}", err);
-            return Ok(());
-        },
-    };
+    let fbb = seralize_encoded_transaction_with_status(fbb, tx)
+        .with_context(|| format!("failed to serialize transaction with {signature}"))?;
     let bytes = fbb.finished_data();
 
     let mut locked = messenger.lock().await;
