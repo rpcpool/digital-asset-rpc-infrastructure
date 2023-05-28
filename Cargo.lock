@@ -618,11 +618,14 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 name = "bgtask_creator"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap 4.2.7",
  "digital_asset_types",
  "futures",
+ "lazy_static",
  "log",
  "nft_ingester",
+ "prometheus",
  "sea-orm",
  "sea-query 0.28.4",
  "solana-sdk",

@@ -1,4 +1,5 @@
 use {
+    anyhow::Context,
     clap::{value_parser, Arg, ArgAction, Command},
     digital_asset_types::dao::{
         asset, asset_authority, asset_creators, asset_data, asset_grouping,
@@ -13,13 +14,24 @@ use {
         metrics::setup_metrics,
         tasks::{BgTask, DownloadMetadata, DownloadMetadataTask, IntoTaskData, TaskManager},
     },
+    prometheus::{IntGaugeVec, Opts, Registry, TextEncoder},
     sea_orm::{
         entity::*, query::*, DbBackend, DeleteResult, EntityTrait, JsonValue, SqlxPostgresConnector,
     },
     solana_sdk::pubkey::Pubkey,
     sqlx::types::chrono::Utc,
     std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc, time},
+    tokio::fs,
 };
+
+lazy_static::lazy_static! {
+    pub static ref REGISTRY: Registry = Registry::new();
+
+    pub static ref ASSETS: IntGaugeVec = IntGaugeVec::new(
+        Opts::new("assets", "Number of assets in tasks"),
+        &["type"]
+    ).unwrap();
+}
 
 /**
  * The bgtask creator is intended to be use as a tool to handle assets that have not been indexed.
@@ -29,9 +41,12 @@ use {
  */
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     init_logger();
     info!("Starting bgtask creator");
+
+    REGISTRY.register(Box::new(ASSETS.clone())).unwrap();
+    ASSETS.with_label_values(&["total"]).set(0);
 
     let matches = Command::new("bgtaskcreator")
         .arg(
@@ -86,14 +101,23 @@ async fn main() {
                 .action(ArgAction::Set),
         )
         .subcommand(
-            Command::new("show").about("Show tasks").arg(
-                Arg::new("print")
-                    .long("print")
-                    .short('p')
-                    .help("Print the tasks to stdout")
-                    .required(false)
-                    .action(clap::ArgAction::SetTrue),
-            ),
+            Command::new("show")
+                .about("Show tasks")
+                .arg(
+                    Arg::new("print")
+                        .long("print")
+                        .short('p')
+                        .help("Print the tasks to stdout")
+                        .required(false)
+                        .action(clap::ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("prom")
+                        .long("prom")
+                        .help("Output file for prometheus metrics")
+                        .required(false)
+                        .action(ArgAction::Set),
+                ),
         )
         .subcommand(
             Command::new("reindex").about("Set reindex=true on all assets where metadata=pending"),
@@ -226,6 +250,24 @@ WHERE
                 i,
                 total_assets
             );
+
+            ASSETS
+                .with_label_values(&["reindexing"])
+                .set(asset_reindex_count.map(|v| v as i64).unwrap_or(-1));
+            ASSETS
+                .with_label_values(&["finished"])
+                .set(total_finished as i64);
+            ASSETS.with_label_values(&["missing"]).set(i as i64);
+            ASSETS
+                .with_label_values(&["total"])
+                .set(total_assets as i64);
+
+            if let Some(prom) = matches.get_one::<String>("prom") {
+                let metrics = TextEncoder::new()
+                    .encode_to_string(&REGISTRY.gather())
+                    .context("could not encode custom metrics")?;
+                fs::write(prom, metrics).await?;
+            }
         }
         Some("delete") => {
             println!("Deleting all existing tasks");
@@ -344,6 +386,8 @@ WHERE
             println!("Please provide an action")
         }
     }
+
+    Ok(())
 }
 
 fn find_by_type<'a>(
