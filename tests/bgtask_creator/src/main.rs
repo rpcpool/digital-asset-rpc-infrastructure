@@ -218,7 +218,14 @@ WHERE
 
             let total_finished = asset_data_count.unwrap_or(0);
             let total_assets = i + total_finished as usize;
-            println!("{}, reindexing assets: {:?}, total finished assets: {}, missing assets: {}, total assets: {}", asset_data_processing.1, asset_reindex_count, total_finished, i, total_assets);
+            println!(
+                "{}, reindexing assets: {:?}, total finished assets: {}, missing assets: {}, total assets: {}",
+                asset_data_processing.1,
+                asset_reindex_count,
+                total_finished,
+                i,
+                total_assets
+            );
         }
         Some("delete") => {
             println!("Deleting all existing tasks");

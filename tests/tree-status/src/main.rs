@@ -8,13 +8,12 @@ use {
         stream::{self, StreamExt},
     },
     log::{debug, error, info},
+    prometheus::{IntGaugeVec, Opts, Registry, TextEncoder},
     sea_orm::{
         sea_query::{Expr, Value},
         ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr, EntityTrait,
         FromQueryResult, QueryFilter, QuerySelect, QueryTrait, SqlxPostgresConnector, Statement,
     },
-    // plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
-    // solana_client::rpc_client::GetConfirmedSignaturesForAddress2Config,
     solana_client::{
         nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig,
         rpc_request::RpcRequest,
@@ -29,8 +28,6 @@ use {
         option_serializer::OptionSerializer, EncodedConfirmedTransactionWithStatusMeta,
         UiTransactionEncoding, UiTransactionStatusMeta,
     },
-    // solana_sdk::signature::Signature,
-    // solana_transaction_status::UiTransactionEncoding,
     spl_account_compression::{
         state::{
             merkle_tree_get_size, ConcurrentMerkleTreeHeader, CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1,
@@ -51,12 +48,21 @@ use {
         },
     },
     tokio::{
-        fs::OpenOptions,
+        fs::{self, OpenOptions},
         io::{stdout, AsyncWrite, AsyncWriteExt},
         sync::{mpsc, Mutex},
     },
     txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries},
 };
+
+lazy_static::lazy_static! {
+    pub static ref REGISTRY: Registry = Registry::new();
+
+    pub static ref LEAVES: IntGaugeVec = IntGaugeVec::new(
+        Opts::new("leaves", "Number of missed leaves"),
+        &["pubkey"]
+    ).unwrap();
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ParseError {
@@ -110,6 +116,10 @@ struct Args {
     /// Maximum number of retries for transaction fetching.
     #[arg(long, short, default_value_t = 3)]
     max_retries: u8,
+
+    /// Path to prometheus output
+    #[arg(long)]
+    prom: Option<String>,
 
     #[command(subcommand)]
     action: Action,
@@ -196,6 +206,9 @@ async fn main() -> anyhow::Result<()> {
     );
     env_logger::init();
 
+    REGISTRY.register(Box::new(LEAVES.clone())).unwrap();
+    LEAVES.with_label_values(&["total"]).set(0);
+
     let args = Args::parse();
 
     let concurrency = NonZeroUsize::new(args.concurrency)
@@ -206,7 +219,7 @@ async fn main() -> anyhow::Result<()> {
         Action::CheckTree { tree, .. }
         | Action::CheckTreeLeafs { tree, .. }
         | Action::ShowTree { tree } => {
-            let tree = tree.to_string();
+            let tree = tree.clone();
             stream::once(async move { Ok(tree) }).boxed()
         }
         Action::CheckTrees { file, .. }
@@ -283,6 +296,13 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+    }
+
+    if let Some(prom) = args.prom {
+        let metrics = TextEncoder::new()
+            .encode_to_string(&REGISTRY.gather())
+            .context("could not encode custom metrics")?;
+        fs::write(prom, metrics).await?;
     }
 
     Ok(())
@@ -481,6 +501,7 @@ GROUP BY
             if let Some(output) = output.as_mut() {
                 let _ = output.write(format!("{signature}\n").as_bytes()).await?;
             }
+            LEAVES.with_label_values(&[&pubkey.to_string()]).inc();
         }
 
         Ok(())
