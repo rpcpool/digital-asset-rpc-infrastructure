@@ -5,15 +5,14 @@ use blockbuster::{
 use digital_asset_types::dao::{asset, asset_grouping};
 use sea_orm::{entity::*, query::*, sea_query::OnConflict, DbBackend, Set, Unchanged};
 
-use crate::{
-    error::IngesterError,
-};
-use super::{update_asset, save_changelog_event};
+use super::{save_changelog_event, update_asset};
+use crate::error::IngesterError;
 pub async fn process<'c, T>(
     parsing_result: &BubblegumInstruction,
     bundle: &InstructionBundle<'c>,
     txn: &'c T,
     verify: bool,
+    instruction: &str,
 ) -> Result<(), IngesterError>
 where
     T: ConnectionTrait + TransactionTrait,
@@ -21,7 +20,7 @@ where
     if let (Some(le), Some(cl)) = (&parsing_result.leaf_update, &parsing_result.tree_update) {
         // Do we need to update the `slot_updated` field as well as part of the table
         // updates below?
-        let seq = save_changelog_event(cl, bundle.slot, txn).await?;
+        let seq = save_changelog_event(cl, bundle.slot, bundle.txn_id, txn, instruction).await?;
         match le.schema {
             LeafSchema::V1 { id, .. } => {
                 let id_bytes = id.to_bytes().to_vec();

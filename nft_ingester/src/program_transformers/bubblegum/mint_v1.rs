@@ -37,6 +37,7 @@ pub async fn mint_v1<'c, T>(
     parsing_result: &BubblegumInstruction,
     bundle: &InstructionBundle<'c>,
     txn: &'c T,
+    instruction: &str,
 ) -> Result<TaskData, IngesterError>
 where
     T: ConnectionTrait + TransactionTrait,
@@ -46,7 +47,7 @@ where
         &parsing_result.tree_update,
         &parsing_result.payload,
     ) {
-        let seq = save_changelog_event(cl, bundle.slot, txn).await?;
+        let seq = save_changelog_event(cl, bundle.slot, bundle.txn_id, txn, instruction).await?;
         let metadata = args;
         return match le.schema {
             LeafSchema::V1 {

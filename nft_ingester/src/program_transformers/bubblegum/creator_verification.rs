@@ -6,8 +6,8 @@ use digital_asset_types::dao::{asset, asset_creators};
 use sea_orm::{ConnectionTrait, Set, TransactionTrait, Unchanged};
 
 use crate::{
-    program_transformers::bubblegum::{update_asset, update_creator},
     error::IngesterError,
+    program_transformers::bubblegum::{update_asset, update_creator},
 };
 
 use super::save_changelog_event;
@@ -17,6 +17,7 @@ pub async fn process<'c, T>(
     bundle: &InstructionBundle<'c>,
     txn: &'c T,
     value: bool,
+    instruction: &str,
 ) -> Result<(), IngesterError>
 where
     T: ConnectionTrait + TransactionTrait,
@@ -35,7 +36,7 @@ where
         // Do we need to update the `slot_updated` field as well as part of the table
         // updates below?
 
-        let seq = save_changelog_event(cl, bundle.slot, txn).await?;
+        let seq = save_changelog_event(cl, bundle.slot, bundle.txn_id, txn, instruction).await?;
         let asset_id_bytes = match le.schema {
             LeafSchema::V1 { id, .. } => {
                 let id_bytes = id.to_bytes().to_vec();

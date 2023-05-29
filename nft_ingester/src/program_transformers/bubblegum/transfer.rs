@@ -1,7 +1,4 @@
-use crate::{
-    program_transformers::bubblegum::{update_asset},
-    error::IngesterError,
-};
+use crate::{error::IngesterError, program_transformers::bubblegum::update_asset};
 
 use super::save_changelog_event;
 use blockbuster::{
@@ -15,12 +12,13 @@ pub async fn transfer<'c, T>(
     parsing_result: &BubblegumInstruction,
     bundle: &InstructionBundle<'c>,
     txn: &'c T,
+    instruction: &str,
 ) -> Result<(), IngesterError>
 where
     T: ConnectionTrait + TransactionTrait,
 {
     if let (Some(le), Some(cl)) = (&parsing_result.leaf_update, &parsing_result.tree_update) {
-        let seq = save_changelog_event(cl, bundle.slot, txn).await?;
+        let seq = save_changelog_event(cl, bundle.slot, bundle.txn_id, txn, instruction).await?;
         return match le.schema {
             LeafSchema::V1 {
                 id,

@@ -3,7 +3,7 @@ use blockbuster::{
     instruction::InstructionBundle,
     programs::bubblegum::{BubblegumInstruction, InstructionName},
 };
-use log::debug;
+use log::{debug, info};
 use sea_orm::{ConnectionTrait, TransactionTrait};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -32,95 +32,67 @@ where
     T: ConnectionTrait + TransactionTrait,
 {
     let ix_type = &parsing_result.instruction;
-    match ix_type {
-        InstructionName::Unknown => {
-            debug!("Unknown instruction:");
-        }
-        InstructionName::MintV1 => {
-            debug!("MintV1 instruction:");
-        }
-        InstructionName::MintToCollectionV1 => {
-            debug!("MintToCollectionV1 instruction:");
-        }
-        InstructionName::Redeem => {
-            debug!("Redeem instruction:");
-        }
-        InstructionName::CancelRedeem => {
-            debug!("CancelRedeem instruction:");
-        }
-        InstructionName::Transfer => {
-            debug!("Transfer instruction:");
-        }
-        InstructionName::Delegate => {
-            debug!("Delegate instruction:");
-        }
-        InstructionName::DecompressV1 => {
-            debug!("DecompressV1 instruction:");
-        }
-        InstructionName::Compress => {
-            debug!("Compress instruction:");
-        }
-        InstructionName::Burn => {
-            debug!("Burn instruction:");
-        }
-        InstructionName::CreateTree => {
-            debug!("CreateTree instruction:");
-        }
-        InstructionName::VerifyCreator => {
-            debug!("VerifyCreator instruction:");
-        }
-        InstructionName::UnverifyCreator => {
-            debug!("UnverifyCreator instruction:");
-        }
-        InstructionName::VerifyCollection => {
-            debug!("VerifyCollection instruction:");
-        }
-        InstructionName::UnverifyCollection => {
-            debug!("UnverifyCollection instruction:");
-        }
-        InstructionName::SetAndVerifyCollection => {
-            debug!("SetAndVerifyCollection instruction:");
-        }
-    }
+
+    // @TODO this would be much better served by implemneting Debug trait on the InstructionName
+    // or wrapping it into something that can display it more neatly.
+    let ix_str = match ix_type {
+        InstructionName::Unknown => "Unknown",
+        InstructionName::MintV1 => "MintV1",
+        InstructionName::MintToCollectionV1 => "MintToCollectionV1",
+        InstructionName::Redeem => "Redeem",
+        InstructionName::CancelRedeem => "CancelRedeem",
+        InstructionName::Transfer => "Transfer",
+        InstructionName::Delegate => "Delegate",
+        InstructionName::DecompressV1 => "DecompressV1",
+        InstructionName::Compress => "Compress",
+        InstructionName::Burn => "Burn",
+        InstructionName::CreateTree => "CreateTree",
+        InstructionName::VerifyCreator => "VerifyCreator",
+        InstructionName::UnverifyCreator => "UnverifyCreator",
+        InstructionName::VerifyCollection => "VerifyCollection",
+        InstructionName::UnverifyCollection => "UnverifyCollection",
+        InstructionName::SetAndVerifyCollection => "SetAndVerifyCollection",
+    };
+    info!("BGUM instruction txn={:?}: {:?}", ix_str, bundle.txn_id);
 
     match ix_type {
         InstructionName::Transfer => {
-            transfer::transfer(parsing_result, bundle, txn).await?;
+            transfer::transfer(parsing_result, bundle, txn, ix_str).await?;
         }
         InstructionName::Burn => {
-            burn::burn(parsing_result, bundle, txn).await?;
+            burn::burn(parsing_result, bundle, txn, ix_str).await?;
         }
         InstructionName::Delegate => {
-            delegate::delegate(parsing_result, bundle, txn).await?;
+            delegate::delegate(parsing_result, bundle, txn, ix_str).await?;
         }
         InstructionName::MintV1 | InstructionName::MintToCollectionV1 => {
-            let task = mint_v1::mint_v1(parsing_result, bundle, txn).await?;
+            let task = mint_v1::mint_v1(parsing_result, bundle, txn, ix_str).await?;
 
             task_manager.send(task)?;
         }
         InstructionName::Redeem => {
-            redeem::redeem(parsing_result, bundle, txn).await?;
+            redeem::redeem(parsing_result, bundle, txn, ix_str).await?;
         }
         InstructionName::CancelRedeem => {
-            cancel_redeem::cancel_redeem(parsing_result, bundle, txn).await?;
+            cancel_redeem::cancel_redeem(parsing_result, bundle, txn, ix_str).await?;
         }
         InstructionName::DecompressV1 => {
             decompress::decompress(parsing_result, bundle, txn).await?;
         }
         InstructionName::VerifyCreator => {
-            creator_verification::process(parsing_result, bundle, txn, true).await?;
+            creator_verification::process(parsing_result, bundle, txn, true, ix_str).await?;
         }
         InstructionName::UnverifyCreator => {
-            creator_verification::process(parsing_result, bundle, txn, false).await?;
+            creator_verification::process(parsing_result, bundle, txn, false, ix_str).await?;
         }
         InstructionName::VerifyCollection => {
-            collection_verification::process(parsing_result, bundle, txn, true).await?;
+            collection_verification::process(parsing_result, bundle, txn, true, ix_str).await?;
         }
         InstructionName::UnverifyCollection => {
-            collection_verification::process(parsing_result, bundle, txn, false).await?;
+            collection_verification::process(parsing_result, bundle, txn, false, ix_str).await?;
         }
         InstructionName::SetAndVerifyCollection => {
-            collection_verification::process(parsing_result, bundle, txn, true).await?;
+            collection_verification::process(parsing_result, bundle, txn, true, ix_str).await?;
         }
         _ => debug!("Bubblegum: Not Implemented Instruction"),
     }
