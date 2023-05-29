@@ -6,7 +6,7 @@ use {
         future::{try_join_all, BoxFuture, FutureExt},
         stream::StreamExt,
     },
-    log::info,
+    log::{debug, info},
     plerkle_messenger::{MessengerConfig, ACCOUNT_STREAM, TRANSACTION_STREAM},
     plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
     solana_client::{
@@ -203,7 +203,7 @@ async fn send(
     tx: EncodedConfirmedTransactionWithStatusMeta,
     messenger: Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
 ) -> anyhow::Result<()> {
-    // ignore if tx failed or meta is missed
+    // Ignore if tx failed or meta is missed
     let meta = tx.transaction.meta.as_ref();
     if meta.map(|meta| meta.status.is_err()).unwrap_or(true) {
         return Ok(());
@@ -211,12 +211,12 @@ async fn send(
 
     let fbb = flatbuffers::FlatBufferBuilder::new();
     let fbb = seralize_encoded_transaction_with_status(fbb, tx)
-        .with_context(|| format!("failed to serialize transaction with {signature}"))?;
+        .with_context(|| format!("failed to serialize transaction with {}", signature))?;
     let bytes = fbb.finished_data();
 
     let mut locked = messenger.lock().await;
     locked.send(TRANSACTION_STREAM, bytes).await?;
-    info!("Sent transaction to stream {signature}");
+    debug!("Sent transaction to stream {}", signature);
 
     Ok(())
 }

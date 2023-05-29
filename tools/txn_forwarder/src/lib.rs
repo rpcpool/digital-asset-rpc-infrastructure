@@ -1,7 +1,7 @@
 use {
     anyhow::Context,
     futures::stream::{BoxStream, StreamExt},
-    log::{error, info},
+    log::{debug, error, info},
     serde::de::DeserializeOwned,
     solana_client::{
         client_error::ClientError, client_error::Result as RpcClientResult,
@@ -38,8 +38,10 @@ pub fn find_signatures(
     let (chan, rx) = mpsc::channel(buffer);
     tokio::spawn(async move {
         let mut last_signature = None;
+        let mut all_signatures: Vec<Signature> = Vec::new();
+
         loop {
-            info!(
+            debug!(
                 "fetching signatures for {} before {:?}",
                 address, last_signature
             );
@@ -48,41 +50,54 @@ pub fn find_signatures(
                 until: None,
                 ..Default::default()
             };
-            match client
+
+            let batch = match client
                 .get_signatures_for_address_with_config(&address, config)
                 .await
             {
                 Ok(vec) => {
-                    info!(
+                    debug!(
                         "fetched {} signatures for address {:?} before {:?}",
                         vec.len(),
                         address,
                         last_signature
                     );
-                    for tx in vec.iter() {
-                        match Signature::from_str(&tx.signature) {
-                            Ok(signature) => {
-                                last_signature = Some(signature);
-                                if tx.confirmation_status.is_some() && tx.err.is_none() {
-                                    chan.send(Ok(signature)).await.map_err(|_| ())?;
-                                }
-                            }
-                            Err(error) => {
-                                chan.send(Err(error.into())).await.map_err(|_| ())?;
-                            }
-                        }
-                    }
-                    if vec.is_empty() {
-                        break;
-                    }
+                    vec
                 }
                 Err(error) => {
                     chan.send(Err(error.into())).await.map_err(|_| ())?;
+                    break;
                 }
+            };
+
+            // Collect all the signatures in the batch
+            let signatures: Vec<Signature> = batch
+                .into_iter()
+                .filter_map(|tx| Signature::from_str(&tx.signature).ok())
+                .collect();
+
+            if signatures.is_empty() {
+                break;
             }
+
+            last_signature = signatures.last().cloned();
+            all_signatures.extend(signatures);
         }
+
+        info!(
+            "sending {} signatures for address {:?}",
+            all_signatures.len(),
+            address
+        );
+
+        // Send the reversed signatures to the channel
+        for signature in all_signatures.into_iter().rev() {
+            chan.send(Ok(signature)).await.map_err(|_| ())?;
+        }
+
         Ok::<(), ()>(())
     });
+
     rx
 }
 
