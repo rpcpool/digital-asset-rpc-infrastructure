@@ -28,7 +28,12 @@ lazy_static::lazy_static! {
     pub static ref REGISTRY: Registry = Registry::new();
 
     pub static ref ASSETS: IntGaugeVec = IntGaugeVec::new(
-        Opts::new("assets", "Number of assets in tasks"),
+        Opts::new("bgtask_show", "Number of assets in tasks"),
+        &["type", "kind"]
+    ).unwrap();
+
+    pub static ref TASKS_CREATED: IntGaugeVec = IntGaugeVec::new(
+        Opts::new("bgtask_create", "Number of created tasks"),
         &["type"]
     ).unwrap();
 }
@@ -46,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
     info!("Starting bgtask creator");
 
     REGISTRY.register(Box::new(ASSETS.clone())).unwrap();
-    ASSETS.with_label_values(&["total"]).set(0);
+    REGISTRY.register(Box::new(TASKS_CREATED.clone())).unwrap();
 
     let matches = Command::new("bgtaskcreator")
         .arg(
@@ -100,24 +105,22 @@ async fn main() -> anyhow::Result<()> {
                 .required(false)
                 .action(ArgAction::Set),
         )
+        .arg(
+            Arg::new("prom")
+                .long("prom")
+                .help("Output file for prometheus metrics")
+                .required(false)
+                .action(ArgAction::Set),
+        )
         .subcommand(
-            Command::new("show")
-                .about("Show tasks")
-                .arg(
-                    Arg::new("print")
-                        .long("print")
-                        .short('p')
-                        .help("Print the tasks to stdout")
-                        .required(false)
-                        .action(clap::ArgAction::SetTrue),
-                )
-                .arg(
-                    Arg::new("prom")
-                        .long("prom")
-                        .help("Output file for prometheus metrics")
-                        .required(false)
-                        .action(ArgAction::Set),
-                ),
+            Command::new("show").about("Show tasks").arg(
+                Arg::new("print")
+                    .long("print")
+                    .short('p')
+                    .help("Print the tasks to stdout")
+                    .required(false)
+                    .action(clap::ArgAction::SetTrue),
+            ),
         )
         .subcommand(
             Command::new("reindex").about("Set reindex=true on all assets where metadata=pending"),
@@ -251,23 +254,17 @@ WHERE
                 total_assets
             );
 
+            let tp = &asset_data_finished.1;
             ASSETS
-                .with_label_values(&["reindexing"])
+                .with_label_values(&[tp, "reindexing"])
                 .set(asset_reindex_count.map(|v| v as i64).unwrap_or(-1));
             ASSETS
-                .with_label_values(&["finished"])
+                .with_label_values(&[tp, "finished"])
                 .set(total_finished as i64);
-            ASSETS.with_label_values(&["missing"]).set(i as i64);
+            ASSETS.with_label_values(&[tp, "missing"]).set(i as i64);
             ASSETS
-                .with_label_values(&["total"])
+                .with_label_values(&[tp, "total"])
                 .set(total_assets as i64);
-
-            if let Some(prom) = matches.get_one::<String>("prom") {
-                let metrics = TextEncoder::new()
-                    .encode_to_string(&REGISTRY.gather())
-                    .context("could not encode custom metrics")?;
-                fs::write(prom, metrics).await?;
-            }
         }
         Some("delete") => {
             println!("Deleting all existing tasks");
@@ -319,6 +316,7 @@ WHERE
                         let database_pool = database_pool.clone();
                         let task_map = task_map.clone();
                         let name = name.clone();
+                        let tp = asset_data.1.clone();
                         let new_task = tokio::task::spawn(async move {
                             let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(
                                 database_pool.clone(),
@@ -333,6 +331,8 @@ WHERE
                                 debug!("Found duplicate task: {:?} {:?}", e, hash.clone());
                                 return;
                             }
+
+                            TASKS_CREATED.with_label_values(&[&tp]).inc();
 
                             let task_hash = task_data.hash();
                             info!("Created task: {:?}", task_hash);
@@ -385,6 +385,13 @@ WHERE
         _ => {
             println!("Please provide an action")
         }
+    }
+
+    if let Some(prom) = matches.get_one::<String>("prom") {
+        let metrics = TextEncoder::new()
+            .encode_to_string(&REGISTRY.gather())
+            .context("could not encode custom metrics")?;
+        fs::write(prom, metrics).await?;
     }
 
     Ok(())
