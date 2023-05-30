@@ -33,11 +33,13 @@ pub enum FindSignaturesError {
 pub fn find_signatures(
     address: Pubkey,
     client: RpcClient,
+    before: Option<Signature>,
+    after: Option<Signature>,
     buffer: usize,
 ) -> mpsc::Receiver<Result<Signature, FindSignaturesError>> {
     let (chan, rx) = mpsc::channel(buffer);
     tokio::spawn(async move {
-        let mut last_signature = None;
+        let mut last_signature = before;
         let mut all_signatures: Vec<Signature> = Vec::new();
 
         loop {
@@ -47,7 +49,7 @@ pub fn find_signatures(
             );
             let config = GetConfirmedSignaturesForAddress2Config {
                 before: last_signature,
-                until: None,
+                until: after,
                 ..Default::default()
             };
 

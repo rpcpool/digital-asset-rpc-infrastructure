@@ -6,7 +6,7 @@ use {
         future::{try_join_all, BoxFuture, FutureExt},
         stream::StreamExt,
     },
-    log::{debug, info},
+    log::info,
     plerkle_messenger::{MessengerConfig, ACCOUNT_STREAM, TRANSACTION_STREAM},
     plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
     solana_client::{
@@ -37,6 +37,10 @@ struct Cli {
     max_retries: u8,
     #[command(subcommand)]
     action: Action,
+    #[arg(long)]
+    before: Option<String>,
+    #[arg(long)]
+    after: Option<String>,
 }
 
 #[derive(clap::Subcommand, Clone)]
@@ -90,6 +94,9 @@ async fn main() -> anyhow::Result<()> {
 
     let (tx, rx) = mpsc::unbounded_channel();
 
+    let before = cli.before.map(|x| Signature::from_str(&x).unwrap());
+    let after = cli.after.map(|x| Signature::from_str(&x).unwrap());
+
     match cli.action {
         Action::Address {
             include_failed: _include_failed,
@@ -97,7 +104,16 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let pubkey = Pubkey::from_str(&address).context("failed to parse address")?;
             tx.send(
-                send_address(pubkey, cli.rpc_url, messenger, cli.max_retries, tx.clone()).boxed(),
+                send_address(
+                    pubkey,
+                    cli.rpc_url,
+                    messenger,
+                    cli.max_retries,
+                    before,
+                    after,
+                    tx.clone(),
+                )
+                .boxed(),
             )
             .map_err(|_| anyhow::anyhow!("failed to send job"))?;
         }
@@ -109,7 +125,16 @@ async fn main() -> anyhow::Result<()> {
                 let rpc_url = cli.rpc_url.clone();
                 let messenger = Arc::clone(&messenger);
                 tx.send(
-                    send_address(pubkey, rpc_url, messenger, cli.max_retries, tx.clone()).boxed(),
+                    send_address(
+                        pubkey,
+                        rpc_url,
+                        messenger,
+                        cli.max_retries,
+                        before,
+                        after,
+                        tx.clone(),
+                    )
+                    .boxed(),
                 )
                 .map_err(|_| anyhow::anyhow!("failed to send job"))?;
             }
@@ -158,10 +183,12 @@ async fn send_address(
     rpc_url: String,
     messenger: Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
     max_retries: u8,
+    before: Option<Signature>,
+    after: Option<Signature>,
     tasks_tx: mpsc::UnboundedSender<BoxFuture<'static, anyhow::Result<()>>>,
 ) -> anyhow::Result<()> {
     let client = RpcClient::new(rpc_url.clone());
-    let mut all_sig = find_signatures(pubkey, client, 2_000);
+    let mut all_sig = find_signatures(pubkey, client, before, after, 2_000);
     while let Some(sig) = all_sig.recv().await {
         let rpc_url = rpc_url.clone();
         let messenger = Arc::clone(&messenger);
@@ -216,7 +243,7 @@ async fn send(
 
     let mut locked = messenger.lock().await;
     locked.send(TRANSACTION_STREAM, bytes).await?;
-    debug!("Sent transaction to stream {}", signature);
+    info!("Sent transaction to stream {}", signature);
 
     Ok(())
 }

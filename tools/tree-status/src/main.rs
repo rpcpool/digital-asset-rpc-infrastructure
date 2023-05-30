@@ -1,3 +1,5 @@
+use digital_asset_types::dao::cl_audits;
+
 use {
     anchor_client::anchor_lang::AnchorDeserialize,
     anyhow::Context,
@@ -301,7 +303,64 @@ async fn check_tree(
 
     let indexed_seq = get_tree_max_seq(pubkey, conn)
         .await
-        .with_context(|| format!("[{pubkey:?}] coundn't query tree from index"))?
+        .with_context(|| format!("[{pubkey:?}] counldn't query tree from index"))?
+        .ok_or_else(|| anyhow::anyhow!("[{pubkey}] tree missing from index"))?;
+
+    // Check tip
+    match indexed_seq.max_seq.cmp(&seq) {
+        cmp::Ordering::Less => {
+            error!(
+                "[{pubkey}] tree not fully indexed: {} < {seq}",
+                indexed_seq.max_seq
+            );
+        }
+        cmp::Ordering::Equal => {}
+        cmp::Ordering::Greater => {
+            error!("[{pubkey}] indexer error: {} > {seq}", indexed_seq.max_seq);
+        }
+    }
+
+    // Check completeness
+    if indexed_seq.max_seq != indexed_seq.cnt_seq {
+        error!(
+            "[{pubkey}] tree has gaps {} != {}",
+            indexed_seq.max_seq, indexed_seq.cnt_seq
+        );
+    }
+
+    if indexed_seq.max_seq == seq && indexed_seq.max_seq == indexed_seq.cnt_seq {
+        info!("[{:?}] indexing is complete, seq={:?}", pubkey, seq)
+    } else {
+        error!("[{pubkey}] indexing is failed, seq={seq} max_seq={indexed_seq:?}");
+        match get_missing_seq(pubkey, seq, conn).await {
+            Ok(seqs) => error!("[{pubkey}] missing seq: {seqs:?}"),
+            Err(error) => error!("[{pubkey}] failed to query missing seq: {error:?}"),
+        }
+    }
+
+    Ok(())
+}
+
+// The original check tree impl did for factor in that transfers will lead to cl_items getting out of date.
+// We have two options:
+//   1 – Update the indexer to insert CL for every seq instead of upserting (overriding).
+//       This is probably optimal but will require more space. If we take this option we could likely delete the cl_audits table.
+//   2 – Query from the cl_audits table for missing seqs instead.
+// For now, we go with option2.
+async fn check_tree_v2(
+    pubkey: Pubkey,
+    client: &RpcClient,
+    conn: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    let seq = get_tree_latest_seq(pubkey, client)
+        .await
+        .with_context(|| format!("[{pubkey}] tree is missing from chain or error occured"))?
+        .try_into()
+        .unwrap();
+
+    let indexed_seq = get_tree_max_seq(pubkey, conn)
+        .await
+        .with_context(|| format!("[{pubkey:?}] counldn't query tree from index"))?
         .ok_or_else(|| anyhow::anyhow!("[{pubkey}] tree missing from index"))?;
 
     // Check tip
@@ -367,7 +426,7 @@ async fn get_tree_max_seq(
     tree: Pubkey,
     conn: &DatabaseConnection,
 ) -> Result<Option<MaxSeqItem>, DbErr> {
-    let query = cl_items::Entity::find()
+    let query = cl_audits::Entity::find()
         .select_only()
         .filter(cl_items::Column::Tree.eq(tree.as_ref()))
         .column_as(Expr::col(cl_items::Column::Seq).max(), "max_seq")
@@ -543,6 +602,8 @@ fn read_tree_start(
     let rx_sig = Arc::new(Mutex::new(find_signatures(
         pubkey,
         RpcClient::new(client_url.to_owned()),
+        None,
+        None,
         2_000,
     )));
 

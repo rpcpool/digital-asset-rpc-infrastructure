@@ -145,7 +145,9 @@ async fn main() -> anyhow::Result<()> {
 
             let collection = Pubkey::from_str(&collection)
                 .with_context(|| format!("failed to parse collection {collection}"))?;
-            let stream = Arc::new(Mutex::new(find_signatures(collection, client, 2_000)));
+            let stream = Arc::new(Mutex::new(find_signatures(
+                collection, client, None, None, 2_000,
+            )));
 
             try_join_all((0..concurrency).map(|_| {
                 let metadata_accounts = Arc::clone(&metadata_accounts);
