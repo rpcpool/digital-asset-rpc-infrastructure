@@ -35,6 +35,8 @@ struct Cli {
     concurrency: usize,
     #[arg(long, short, default_value_t = 3)]
     max_retries: u8,
+    #[arg(long, short, default_value_t = false)]
+    replay_backward: bool,
     #[command(subcommand)]
     action: Action,
     #[arg(long)]
@@ -93,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
     let messenger = Arc::new(Mutex::new(messenger));
 
     let (tx, rx) = mpsc::unbounded_channel();
+    let replay_backward = cli.replay_backward;
 
     let before = cli.before.map(|x| Signature::from_str(&x).unwrap());
     let after = cli.after.map(|x| Signature::from_str(&x).unwrap());
@@ -112,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
                     before,
                     after,
                     tx.clone(),
+                    replay_backward,
                 )
                 .boxed(),
             )
@@ -133,6 +137,7 @@ async fn main() -> anyhow::Result<()> {
                         before,
                         after,
                         tx.clone(),
+                        replay_backward,
                     )
                     .boxed(),
                 )
@@ -186,9 +191,10 @@ async fn send_address(
     before: Option<Signature>,
     after: Option<Signature>,
     tasks_tx: mpsc::UnboundedSender<BoxFuture<'static, anyhow::Result<()>>>,
+    replay_backward: bool,
 ) -> anyhow::Result<()> {
     let client = RpcClient::new(rpc_url.clone());
-    let mut all_sig = find_signatures(pubkey, client, before, after, 2_000);
+    let mut all_sig = find_signatures(pubkey, client, before, after, 2_000, replay_backward);
     while let Some(sig) = all_sig.recv().await {
         let rpc_url = rpc_url.clone();
         let messenger = Arc::clone(&messenger);

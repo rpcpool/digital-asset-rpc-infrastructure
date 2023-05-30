@@ -35,3 +35,6 @@ cargo run -- \
 ```
 
 This will push all transactions that are newer than `4DbGBhhcNRar1tL12VWciqAGUsZNaeom9iuWDbza7cE4d3VR9BbD5wkbnu44b4sDkjiqT14nPCxVLzRAqtjhkkWj`.
+
+If we want to ensure the transactions are sent in an order we want, ensure that concurrency is set to 1. When there's concurrency, the ordering is
+not guranteed.

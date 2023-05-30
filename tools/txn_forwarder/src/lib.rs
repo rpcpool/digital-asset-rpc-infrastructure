@@ -1,3 +1,5 @@
+use solana_client::client_error::ClientErrorKind;
+
 use {
     anyhow::Context,
     futures::stream::{BoxStream, StreamExt},
@@ -6,12 +8,13 @@ use {
     solana_client::{
         client_error::ClientError, client_error::Result as RpcClientResult,
         nonblocking::rpc_client::RpcClient, rpc_client::GetConfirmedSignaturesForAddress2Config,
-        rpc_request::RpcRequest,
+        rpc_request::RpcError::RpcRequestError, rpc_request::RpcRequest,
     },
     solana_sdk::{
         pubkey::Pubkey,
         signature::{ParseSignatureError, Signature},
     },
+    solana_transaction_status::{EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding},
     std::{fmt, io::Result as IoResult, str::FromStr},
     tokio::{
         fs::File,
@@ -36,6 +39,7 @@ pub fn find_signatures(
     before: Option<Signature>,
     after: Option<Signature>,
     buffer: usize,
+    replay_backward: bool,
 ) -> mpsc::Receiver<Result<Signature, FindSignaturesError>> {
     let (chan, rx) = mpsc::channel(buffer);
     tokio::spawn(async move {
@@ -92,9 +96,15 @@ pub fn find_signatures(
             address
         );
 
-        // Send the reversed signatures to the channel
-        for signature in all_signatures.into_iter().rev() {
-            chan.send(Ok(signature)).await.map_err(|_| ())?;
+        if replay_backward {
+            // Send the reversed signatures to the channel
+            for signature in all_signatures.into_iter() {
+                chan.send(Ok(signature)).await.map_err(|_| ())?;
+            }
+        } else {
+            for signature in all_signatures.into_iter().rev() {
+                chan.send(Ok(signature)).await.map_err(|_| ())?;
+            }
         }
 
         Ok::<(), ()>(())
@@ -103,31 +113,52 @@ pub fn find_signatures(
     rx
 }
 
-pub async fn rpc_send_with_retries<T, E>(
+pub async fn rpc_send_with_retries<E>(
     client: &RpcClient,
     request: RpcRequest,
     value: serde_json::Value,
     max_retries: u8,
     error_key: E,
-) -> RpcClientResult<T>
+) -> Result<EncodedConfirmedTransactionWithStatusMeta, ClientError>
 where
-    T: DeserializeOwned,
     E: fmt::Debug,
 {
     let mut retries = 0;
     let mut delay = Duration::from_millis(500);
+
     loop {
-        match client.send(request, value.clone()).await {
-            Ok(value) => return Ok(value),
-            Err(error) => {
-                if retries < max_retries {
-                    error!("retrying {request} {error_key:?}: {error}");
-                    sleep(delay).await;
-                    delay *= 2;
-                    retries += 1;
-                } else {
-                    return Err(error);
-                }
+        let response = client.send(request.clone(), value.clone()).await;
+
+        if let Err(error) = response {
+            if retries < max_retries {
+                error!("retrying {:?} {:?}: {:?}", request, error_key, error);
+                sleep(delay).await;
+                delay *= 2;
+                retries += 1;
+                continue;
+            } else {
+                return Err(error);
+            }
+        }
+
+        let value = response.unwrap();
+        let tx: EncodedConfirmedTransactionWithStatusMeta = value;
+
+        if let Some(_) = tx.transaction.transaction.decode() {
+            return Ok(tx);
+        } else {
+            if retries < max_retries {
+                error!(
+                    "retrying {:?} {:?}: Transaction could not be decoded",
+                    request, error_key
+                );
+                sleep(delay).await;
+                delay *= 2;
+                retries += 1;
+            } else {
+                return Err(ClientError::from(RpcRequestError(
+                    "Transaction could not be decoded".to_string(),
+                )));
             }
         }
     }
