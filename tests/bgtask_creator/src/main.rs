@@ -27,12 +27,12 @@ use {
 lazy_static::lazy_static! {
     pub static ref REGISTRY: Registry = Registry::new();
 
-    pub static ref ASSETS: IntGaugeVec = IntGaugeVec::new(
+    pub static ref BGTASK_SHOW: IntGaugeVec = IntGaugeVec::new(
         Opts::new("bgtask_show", "Number of assets in tasks"),
         &["type", "kind"]
     ).unwrap();
 
-    pub static ref TASKS_CREATED: IntGaugeVec = IntGaugeVec::new(
+    pub static ref BGTASK_CREATE: IntGaugeVec = IntGaugeVec::new(
         Opts::new("bgtask_create", "Number of created tasks"),
         &["type"]
     ).unwrap();
@@ -50,8 +50,8 @@ async fn main() -> anyhow::Result<()> {
     init_logger();
     info!("Starting bgtask creator");
 
-    REGISTRY.register(Box::new(ASSETS.clone())).unwrap();
-    REGISTRY.register(Box::new(TASKS_CREATED.clone())).unwrap();
+    REGISTRY.register(Box::new(BGTASK_SHOW.clone())).unwrap();
+    REGISTRY.register(Box::new(BGTASK_CREATE.clone())).unwrap();
 
     let matches = Command::new("bgtaskcreator")
         .arg(
@@ -255,14 +255,16 @@ WHERE
             );
 
             let tp = &asset_data_finished.1;
-            ASSETS
+            BGTASK_SHOW
                 .with_label_values(&[tp, "reindexing"])
                 .set(asset_reindex_count.map(|v| v as i64).unwrap_or(-1));
-            ASSETS
+            BGTASK_SHOW
                 .with_label_values(&[tp, "finished"])
                 .set(total_finished as i64);
-            ASSETS.with_label_values(&[tp, "missing"]).set(i as i64);
-            ASSETS
+            BGTASK_SHOW
+                .with_label_values(&[tp, "missing"])
+                .set(i as i64);
+            BGTASK_SHOW
                 .with_label_values(&[tp, "total"])
                 .set(total_assets as i64);
         }
@@ -332,7 +334,7 @@ WHERE
                                 return;
                             }
 
-                            TASKS_CREATED.with_label_values(&[&tp]).inc();
+                            BGTASK_CREATE.with_label_values(&[&tp]).inc();
 
                             let task_hash = task_data.hash();
                             info!("Created task: {:?}", task_hash);
