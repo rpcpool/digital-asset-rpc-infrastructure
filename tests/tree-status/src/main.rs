@@ -131,6 +131,10 @@ struct Args {
     #[arg(long, short, default_value_t = 25)]
     concurrency: usize,
 
+    /// Size of signatures queue
+    #[arg(long, default_value_t = 25_000)]
+    signatures_history_queue: usize,
+
     /// Maximum number of retries for transaction fetching.
     #[arg(long, short, default_value_t = 3)]
     max_retries: u8,
@@ -299,6 +303,7 @@ async fn main() -> anyhow::Result<()> {
                 if let Err(error) = check_tree_leafs(
                     pubkey,
                     &args.rpc,
+                    args.signatures_history_queue,
                     concurrency,
                     args.max_retries,
                     &conn,
@@ -317,8 +322,14 @@ async fn main() -> anyhow::Result<()> {
             while let Some(maybe_pubkey) = pubkeys.next().await {
                 let pubkey = maybe_pubkey?;
                 info!("showing tree {pubkey}, hex: {}", hex::encode(pubkey));
-                if let Err(error) =
-                    read_tree(pubkey, &args.rpc, concurrency, args.max_retries).await
+                if let Err(error) = read_tree(
+                    pubkey,
+                    &args.rpc,
+                    args.signatures_history_queue,
+                    concurrency,
+                    args.max_retries,
+                )
+                .await
                 {
                     error!("{:?}", error);
                 }
@@ -467,12 +478,19 @@ WHERE
 async fn check_tree_leafs(
     pubkey: Pubkey,
     client_url: &str,
+    signatures_history_queue: usize,
     concurrency: NonZeroUsize,
     max_retries: u8,
     conn: &DatabaseConnection,
     mut output: Option<&mut Pin<Box<dyn AsyncWrite>>>,
 ) -> anyhow::Result<()> {
-    let (fetch_fut, mut leafs_rx) = read_tree_start(pubkey, client_url, concurrency, max_retries);
+    let (fetch_fut, mut leafs_rx) = read_tree_start(
+        pubkey,
+        client_url,
+        signatures_history_queue,
+        concurrency,
+        max_retries,
+    );
     try_join(fetch_fut, async move {
         // collect max seq per leaf index from transactions
         let mut leafs = HashMap::new();
@@ -560,6 +578,7 @@ GROUP BY
 async fn read_tree(
     pubkey: Pubkey,
     client_url: &str,
+    signatures_history_queue: usize,
     concurrency: NonZeroUsize,
     max_retries: u8,
 ) -> anyhow::Result<()> {
@@ -570,7 +589,13 @@ async fn read_tree(
         }
     }
 
-    let (fetch_fut, mut print_rx) = read_tree_start(pubkey, client_url, concurrency, max_retries);
+    let (fetch_fut, mut print_rx) = read_tree_start(
+        pubkey,
+        client_url,
+        signatures_history_queue,
+        concurrency,
+        max_retries,
+    );
     try_join(fetch_fut, async move {
         let mut next_id = 0;
         let mut map = HashMap::new();
@@ -600,6 +625,7 @@ async fn read_tree(
 fn read_tree_start(
     pubkey: Pubkey,
     client_url: &str,
+    signatures_history_queue: usize,
     concurrency: NonZeroUsize,
     max_retries: u8,
 ) -> (
@@ -610,7 +636,7 @@ fn read_tree_start(
     let rx_sig = Arc::new(Mutex::new(find_signatures(
         pubkey,
         RpcClient::new(client_url.to_owned()),
-        2_000,
+        signatures_history_queue,
     )));
 
     let (tx, rx) = mpsc::unbounded_channel();

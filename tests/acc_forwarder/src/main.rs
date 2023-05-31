@@ -48,6 +48,9 @@ struct Args {
     redis_url: String,
     #[arg(long)]
     rpc_url: String,
+    /// Size of signatures queue
+    #[arg(long, default_value_t = 25_000)]
+    signatures_history_queue: usize,
     /// Path to prometheus output
     #[arg(long)]
     prom: Option<String>,
@@ -161,7 +164,11 @@ async fn main() -> anyhow::Result<()> {
 
             let collection = Pubkey::from_str(&collection)
                 .with_context(|| format!("failed to parse collection {collection}"))?;
-            let stream = Arc::new(Mutex::new(find_signatures(collection, client, 2_000)));
+            let stream = Arc::new(Mutex::new(find_signatures(
+                collection,
+                client,
+                args.signatures_history_queue,
+            )));
 
             try_join_all((0..concurrency).map(|_| {
                 let metadata_accounts = Arc::clone(&metadata_accounts);
