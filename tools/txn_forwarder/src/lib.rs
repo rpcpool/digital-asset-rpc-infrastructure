@@ -39,7 +39,7 @@ pub fn find_signatures(
     before: Option<Signature>,
     after: Option<Signature>,
     buffer: usize,
-    replay_backward: bool,
+    replay_forward: bool,
 ) -> mpsc::Receiver<Result<Signature, FindSignaturesError>> {
     let (chan, rx) = mpsc::channel(buffer);
     tokio::spawn(async move {
@@ -62,7 +62,7 @@ pub fn find_signatures(
                 .await
             {
                 Ok(vec) => {
-                    debug!(
+                    info!(
                         "fetched {} signatures for address {:?} before {:?}",
                         vec.len(),
                         address,
@@ -87,21 +87,21 @@ pub fn find_signatures(
             }
 
             last_signature = signatures.last().cloned();
-            all_signatures.extend(signatures);
+            if replay_forward {
+                all_signatures.extend(signatures);
+            } else {
+                for signature in signatures.into_iter() {
+                    chan.send(Ok(signature)).await.map_err(|_| ())?;
+                }
+            }
         }
-
         info!(
             "sending {} signatures for address {:?}",
             all_signatures.len(),
             address
         );
 
-        if replay_backward {
-            // Send the reversed signatures to the channel
-            for signature in all_signatures.into_iter() {
-                chan.send(Ok(signature)).await.map_err(|_| ())?;
-            }
-        } else {
+        if replay_forward {
             for signature in all_signatures.into_iter().rev() {
                 chan.send(Ok(signature)).await.map_err(|_| ())?;
             }
