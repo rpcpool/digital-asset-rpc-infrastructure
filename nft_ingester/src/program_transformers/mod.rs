@@ -9,7 +9,7 @@ use blockbuster::{
 };
 use log::{debug, error, info};
 use plerkle_serialization::{AccountInfo, Pubkey as FBPubkey, TransactionInfo};
-use sea_orm::{DatabaseConnection, SqlxPostgresConnector, TransactionTrait};
+use sea_orm::{DatabaseConnection, SqlxPostgresConnector};
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -69,7 +69,8 @@ impl ProgramTransformer {
         &self,
         tx: &'a TransactionInfo<'a>,
     ) -> Result<(), IngesterError> {
-        info!("Handling Transaction: {:?}", tx.signature());
+        let sig: Option<&str> = tx.signature();
+        info!("Handling Transaction: {:?}", sig);
         let instructions = self.break_transaction(&tx);
         let accounts = tx.account_keys().unwrap_or_default();
         let slot = tx.slot();
@@ -125,7 +126,14 @@ impl ProgramTransformer {
                             &self.storage,
                             &self.task_sender,
                         )
-                        .await?;
+                        .await
+                        .map_err(|err| {
+                            error!(
+                                "Failed to handle bubblegum instruction for txn {:?}: {:?}",
+                                sig, err
+                            );
+                            return err;
+                        })?;
                     }
                     _ => {
                         not_impl += 1;

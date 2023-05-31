@@ -90,6 +90,7 @@ async fn handle_transaction(manager: Arc<ProgramTransformer>, item: RecvData) ->
                 "stream" => TRANSACTION_STREAM
             );
         }
+
         let begin = Instant::now();
         let res = manager.handle_transaction(&tx).await;
         ret_id = capture_result(
@@ -99,6 +100,7 @@ async fn handle_transaction(manager: Arc<ProgramTransformer>, item: RecvData) ->
             item.tries,
             res,
             begin,
+            tx.signature(),
         );
     }
     ret_id

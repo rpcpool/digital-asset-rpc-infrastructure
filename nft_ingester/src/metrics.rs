@@ -47,6 +47,7 @@ pub fn capture_result(
     tries: usize,
     res: Result<(), IngesterError>,
     proc: Instant,
+    txn_sig: Option<&str>,
 ) -> Option<String> {
     let mut ret_id = None;
     match res {
@@ -75,18 +76,30 @@ pub fn capture_result(
             metric! {
                 statsd_count!("ingester.ingest_error", 1, label.0 => &label.1, "stream" => stream, "error" => "de");
             }
-            warn!("{}", e);
+            if let Some(sig) = txn_sig {
+                warn!("Error deserializing txn {}: {:?}", sig, e);
+            } else {
+                warn!("{}", e);
+            }
             ret_id = Some(id);
         }
         Err(IngesterError::ParsingError(e)) => {
             metric! {
                 statsd_count!("ingester.ingest_error", 1, label.0 => &label.1, "stream" => stream, "error" => "parse");
             }
-            warn!("{}", e);
+            if let Some(sig) = txn_sig {
+                warn!("Error parsing txn {}: {:?}", sig, e);
+            } else {
+                warn!("{}", e);
+            }
             ret_id = Some(id);
         }
         Err(err) => {
-            error!("Error handling account update: {:?}", err);
+            if let Some(sig) = txn_sig {
+                error!("Error handling update for txn {}: {:?}", sig, err);
+            } else {
+                error!("Error handling account update: {:?}", err);
+            }
             metric! {
                 statsd_count!("ingester.ingest_update_error", 1, label.0 => &label.1, "stream" => stream, "error" => "u");
             }

@@ -30,10 +30,7 @@ use log::{error, info};
 use plerkle_messenger::{
     redis_messenger::RedisMessenger, ConsumptionType, ACCOUNT_STREAM, TRANSACTION_STREAM,
 };
-use tokio::{
-    signal,
-    task::{JoinSet},
-};
+use tokio::{signal, task::JoinSet};
 
 #[tokio::main(flavor = "multi_thread")]
 pub async fn main() -> Result<(), IngesterError> {

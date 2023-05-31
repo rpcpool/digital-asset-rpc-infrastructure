@@ -1,17 +1,28 @@
 # Transaction Forwarder
 
-## Run locally
+## Send single transaction
 
 ```
 cargo run -- \
  --redis-url 'redis://localhost:6379' \
  --rpc-url $RPC_URL \
  --max-retries 10 \
- --concurrency 3 \
+ --concurrency 10 \
+ single --txn 65MtykBysKAofpvKMkGPYotxQYFRHM47g99iCs6B9ZxfAbBmHKeLi2LSUA8KUcm4qYsot2z9AB4uREuUuEQNw8HA
+```
+
+## Backfill tree locally
+
+```
+cargo run -- \
+ --redis-url 'redis://localhost:6379' \
+ --rpc-url $RPC_URL \
+ --max-retries 10 \
+ --concurrency 10 \
  address --address Cu61XHSkbasbvBc3atv5NUMz6C8FYmocNkH7mtjLFjR7
 ```
 
-## Run against an env
+## Backfill tree against Dev/Prod
 
 ```
 cargo run -- \
