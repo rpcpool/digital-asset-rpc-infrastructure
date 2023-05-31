@@ -8,7 +8,7 @@ use {
         stream::{self, StreamExt},
     },
     log::{debug, error, info},
-    prometheus::{IntCounter, IntGaugeVec, Opts, Registry, TextEncoder},
+    prometheus::{IntCounter, IntGaugeVec, Opts, Registry},
     sea_orm::{
         sea_query::{Expr, Value},
         ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr, EntityTrait,
@@ -48,11 +48,12 @@ use {
         },
     },
     tokio::{
-        fs::{self, OpenOptions},
+        fs::OpenOptions,
         io::{stdout, AsyncWrite, AsyncWriteExt},
         sync::{mpsc, Mutex},
+        time::Duration,
     },
-    txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries},
+    txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries, save_metrics},
 };
 
 lazy_static::lazy_static! {
@@ -143,6 +144,10 @@ struct Args {
     #[arg(long)]
     prom: Option<String>,
 
+    /// Prometheus metrics file update interval
+    #[arg(long, default_value_t = 1_000)]
+    prom_save_interval: u64,
+
     #[command(subcommand)]
     action: Action,
 }
@@ -228,6 +233,9 @@ async fn main() -> anyhow::Result<()> {
     );
     env_logger::init();
 
+    let args = Args::parse();
+
+    // metrics
     macro_rules! register {
         ($collector:ident) => {
             REGISTRY
@@ -240,8 +248,11 @@ async fn main() -> anyhow::Result<()> {
     register!(TREE_STATUS_LEAVES_COMPLETED);
     register!(TREE_STATUS_LEAVES_INCOMPLETE);
     register!(TREE_STATUS_MISSED_LEAVES);
-
-    let args = Args::parse();
+    let metrics_jh = save_metrics(
+        &REGISTRY,
+        args.prom.clone(),
+        Duration::from_millis(args.prom_save_interval),
+    );
 
     let concurrency = NonZeroUsize::new(args.concurrency)
         .ok_or_else(|| anyhow::anyhow!("invalid concurrency: {}", args.concurrency))?;
@@ -337,14 +348,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    if let Some(prom) = args.prom {
-        let metrics = TextEncoder::new()
-            .encode_to_string(&REGISTRY.gather())
-            .context("could not encode custom metrics")?;
-        fs::write(prom, metrics).await?;
-    }
-
-    Ok(())
+    metrics_jh.await
 }
 
 async fn check_tree(

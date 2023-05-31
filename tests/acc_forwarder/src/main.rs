@@ -9,7 +9,7 @@ use {
     plerkle_serialization::{
         serializer::serialize_account, solana_geyser_plugin_interface_shims::ReplicaAccountInfoV2,
     },
-    prometheus::{IntCounter, Registry, TextEncoder},
+    prometheus::{IntCounter, Registry},
     solana_account_decoder::{UiAccount, UiAccountEncoding},
     solana_client::{
         nonblocking::rpc_client::RpcClient,
@@ -29,8 +29,8 @@ use {
         UiParsedInstruction, UiTransactionEncoding,
     },
     std::{collections::HashSet, env, str::FromStr, sync::Arc},
-    tokio::{fs, sync::Mutex},
-    txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries},
+    tokio::{sync::Mutex, time::Duration},
+    txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries, save_metrics},
 };
 
 lazy_static::lazy_static! {
@@ -54,6 +54,9 @@ struct Args {
     /// Path to prometheus output
     #[arg(long)]
     prom: Option<String>,
+    /// Prometheus metrics file update interval
+    #[arg(long, default_value_t = 1_000)]
+    prom_save_interval: u64,
     #[command(subcommand)]
     action: Action,
 }
@@ -103,10 +106,6 @@ async fn main() -> anyhow::Result<()> {
     );
     env_logger::init();
 
-    REGISTRY
-        .register(Box::new(ACC_FORWARDER_SENT.clone()))
-        .unwrap();
-
     let args = Args::parse();
     let config_wrapper = Value::from(map! {
         "redis_connection_str" => args.redis_url,
@@ -125,6 +124,12 @@ async fn main() -> anyhow::Result<()> {
         .set_buffer_size(ACCOUNT_STREAM, 10000000000000000)
         .await;
     let messenger = Arc::new(Mutex::new(messenger));
+
+    // metrics
+    REGISTRY
+        .register(Box::new(ACC_FORWARDER_SENT.clone()))
+        .unwrap();
+    let metrics_jh = save_metrics(&REGISTRY, args.prom, Duration::from_millis(1_000));
 
     let client = RpcClient::new(args.rpc_url.clone());
 
@@ -214,14 +219,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    if let Some(prom) = args.prom {
-        let metrics = TextEncoder::new()
-            .encode_to_string(&REGISTRY.gather())
-            .context("could not encode custom metrics")?;
-        fs::write(prom, metrics).await?;
-    }
-
-    Ok(())
+    metrics_jh.await
 }
 
 // https://github.com/metaplex-foundation/get-collection/blob/main/get-collection-rs/src/crawl.rs
