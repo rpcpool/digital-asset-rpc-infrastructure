@@ -9,7 +9,7 @@ use {
     log::info,
     plerkle_messenger::{MessengerConfig, ACCOUNT_STREAM, TRANSACTION_STREAM},
     plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
-    prometheus::{IntCounterVec, Opts, Registry, TextEncoder},
+    prometheus::{IntGaugeVec, Opts, Registry, TextEncoder},
     solana_client::{
         nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig,
         rpc_request::RpcRequest,
@@ -20,7 +20,7 @@ use {
         signature::Signature,
     },
     solana_transaction_status::{EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding},
-    std::{collections::BTreeMap, env, str::FromStr, sync::Arc},
+    std::{collections::{HashMap, BTreeMap}, env, str::FromStr, sync::Arc},
     tokio::{
         fs,
         sync::{mpsc, Mutex},
@@ -29,9 +29,7 @@ use {
 };
 
 lazy_static::lazy_static! {
-    pub static ref REGISTRY: Registry = Registry::new();
-
-    pub static ref TXN_FORWARDER_SENT: IntCounterVec = IntCounterVec::new(
+    pub static ref TXN_FORWARDER_SENT: IntGaugeVec = IntGaugeVec::new(
         Opts::new("txn_forwarder_sent", "Number of sent transactions"),
         &["tree"]
     ).unwrap();
@@ -50,6 +48,8 @@ struct Cli {
     concurrency_redis: usize,
     #[arg(long, short, default_value_t = 3)]
     max_retries: u8,
+    #[arg(long)]
+    group: Option<String>,
     /// Path to prometheus output
     #[arg(long)]
     prom: Option<String>,
@@ -162,11 +162,17 @@ async fn main() -> anyhow::Result<()> {
     );
     env_logger::init();
 
-    REGISTRY
+    let cli = Cli::parse();
+
+    let mut labels = HashMap::new();
+    if let Some(group) = cli.group {
+        labels.insert("group".to_string(), group);
+    }
+    let registry : Registry = Registry::new_custom(None, Some(labels)).unwrap();
+    registry
         .register(Box::new(TXN_FORWARDER_SENT.clone()))
         .unwrap();
 
-    let cli = Cli::parse();
     let config_wrapper = Value::from(map! {
         "redis_connection_str" => cli.redis_url,
         "pipeline_size_bytes" => 1u128.to_string(),
@@ -238,7 +244,7 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(prom) = cli.prom {
         let metrics = TextEncoder::new()
-            .encode_to_string(&REGISTRY.gather())
+            .encode_to_string(&registry.gather())
             .context("could not encode custom metrics")?;
         fs::write(prom, metrics).await?;
     }
