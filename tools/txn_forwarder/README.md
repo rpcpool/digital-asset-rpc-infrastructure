@@ -1,6 +1,6 @@
 # Transaction Forwarder
 
-## Send single transaction
+## Send single transaction locally
 
 ```
 cargo run -- \
@@ -9,6 +9,17 @@ cargo run -- \
  --max-retries 10 \
  --concurrency 10 \
  single --txn 65MtykBysKAofpvKMkGPYotxQYFRHM47g99iCs6B9ZxfAbBmHKeLi2LSUA8KUcm4qYsot2z9AB4uREuUuEQNw8HA
+```
+
+## Send single transaction to Dev/Prod
+
+```
+cargo run -- \
+ --redis-url $REDIS_URL \
+ --rpc-url $RPC_URL \
+ --max-retries 10 \
+ --concurrency 10 \
+ single --txn 2HzRtBYKPxRn17LJwYHUNALPJfLRwxwLsdZzfToCD2UoYgw5TCGcSEwkHTvVgrv4s6b9v9hr5tpV2tSjWGa76AWd
 ```
 
 ## Backfill tree locally
@@ -30,7 +41,7 @@ cargo run -- \
  --rpc-url $RPC_URL \
  --max-retries 10 \
  --concurrency 3 \
- address --address Cu61XHSkbasbvBc3atv5NUMz6C8FYmocNkH7mtjLFjR7
+ address --address GAnNkHUWwcC4s4jFgbPT491KtvVRuGBYefZ7Qahcmpqy
 ```
 
 If you want to run against a range, you can use the `before` and/or `after` parameters. Example:
@@ -39,10 +50,11 @@ If you want to run against a range, you can use the `before` and/or `after` para
 cargo run -- \
  --redis-url $REDIS_URL \
  --rpc-url $RPC_URL \
- --max-retries 10 \
- --concurrency 10 \
- --after '4DbGBhhcNRar1tL12VWciqAGUsZNaeom9iuWDbza7cE4d3VR9BbD5wkbnu44b4sDkjiqT14nPCxVLzRAqtjhkkWj' \
- address --address Cu61XHSkbasbvBc3atv5NUMz6C8FYmocNkH7mtjLFjR7
+ --max-retries 5 \
+ --concurrency 3 \
+ --after '4mhMTrXryz2o5cEEx8q7x8hYPpxQq1nJNEHGHu97mDXyvf9vUCUAGUBnfdBRhLcXUjaRLjy7RAKvHz7guT5z5PpW' \
+ --before '4zczHcDJ4Gpv4dMUpYVekzNTWk7Pxtz3mQfcYDcwfgcUAkvHmuht7fTEggz5oowBWmaHNBwgYnZsFtCsAXwCjFvA' \
+ address --address GAnNkHUWwcC4s4jFgbPT491KtvVRuGBYefZ7Qahcmpqy
 ```
 
 This will push all transactions that are newer than `4DbGBhhcNRar1tL12VWciqAGUsZNaeom9iuWDbza7cE4d3VR9BbD5wkbnu44b4sDkjiqT14nPCxVLzRAqtjhkkWj`.
