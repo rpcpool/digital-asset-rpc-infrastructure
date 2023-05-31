@@ -20,7 +20,12 @@ use {
         signature::Signature,
     },
     solana_transaction_status::{EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding},
-    std::{collections::{HashMap, BTreeMap}, env, str::FromStr, sync::Arc},
+    std::{
+        collections::{BTreeMap, HashMap},
+        env,
+        str::FromStr,
+        sync::Arc,
+    },
     tokio::{
         fs,
         sync::{mpsc, Mutex},
@@ -168,7 +173,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(group) = cli.group {
         labels.insert("group".to_string(), group);
     }
-    let registry : Registry = Registry::new_custom(None, Some(labels)).unwrap();
+    let registry: Registry = Registry::new_custom(None, Some(labels)).unwrap();
     registry
         .register(Box::new(TXN_FORWARDER_SENT.clone()))
         .unwrap();

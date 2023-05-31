@@ -238,7 +238,7 @@ async fn main() -> anyhow::Result<()> {
 
     macro_rules! register {
         ($collector:ident) => {
-           registry
+            registry
                 .register(Box::new($collector.clone()))
                 .expect("collector can't be registered");
         };
@@ -248,7 +248,6 @@ async fn main() -> anyhow::Result<()> {
     register!(TREE_STATUS_LEAVES_COMPLETED);
     register!(TREE_STATUS_LEAVES_INCOMPLETE);
     register!(TREE_STATUS_MISSED_LEAVES);
-
 
     let concurrency = NonZeroUsize::new(args.concurrency)
         .ok_or_else(|| anyhow::anyhow!("invalid concurrency: {}", args.concurrency))?;
