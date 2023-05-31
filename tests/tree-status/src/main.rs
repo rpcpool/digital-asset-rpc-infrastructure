@@ -56,7 +56,6 @@ use {
 };
 
 lazy_static::lazy_static! {
-    pub static ref REGISTRY: Registry = Registry::new();
 
     pub static ref TREE_STATUS_MAX_SEQ: IntGaugeVec = IntGaugeVec::new(
         Opts::new("tree_status_max_seq", "Maximum sequence of the tree"),
@@ -138,6 +137,10 @@ struct Args {
     /// Path to prometheus output
     #[arg(long)]
     prom: Option<String>,
+
+    // Optional prometheus group
+    #[arg(long)]
+    group: Option<String>,
 
     #[command(subcommand)]
     action: Action,
@@ -224,9 +227,18 @@ async fn main() -> anyhow::Result<()> {
     );
     env_logger::init();
 
+    let args = Args::parse();
+
+    let mut labels: HashMap<String, String> = HashMap::new();
+    if let Some(group) = args.group.clone() {
+        labels.insert("group".to_string(), group);
+    }
+
+    let registry: Registry = Registry::new_custom(None, Some(labels)).unwrap();
+
     macro_rules! register {
         ($collector:ident) => {
-            REGISTRY
+           registry
                 .register(Box::new($collector.clone()))
                 .expect("collector can't be registered");
         };
@@ -237,7 +249,6 @@ async fn main() -> anyhow::Result<()> {
     register!(TREE_STATUS_LEAVES_INCOMPLETE);
     register!(TREE_STATUS_MISSED_LEAVES);
 
-    let args = Args::parse();
 
     let concurrency = NonZeroUsize::new(args.concurrency)
         .ok_or_else(|| anyhow::anyhow!("invalid concurrency: {}", args.concurrency))?;
@@ -328,7 +339,7 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(prom) = args.prom {
         let metrics = TextEncoder::new()
-            .encode_to_string(&REGISTRY.gather())
+            .encode_to_string(&registry.gather())
             .context("could not encode custom metrics")?;
         fs::write(prom, metrics).await?;
     }
