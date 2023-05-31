@@ -8,7 +8,7 @@ use {
         stream::{self, StreamExt},
     },
     log::{debug, error, info},
-    prometheus::{IntCounter, IntGaugeVec, Opts, Registry, TextEncoder},
+    prometheus::{IntCounter, IntGaugeVec, Opts, Registry},
     sea_orm::{
         sea_query::{Expr, Value},
         ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr, EntityTrait,
@@ -48,11 +48,12 @@ use {
         },
     },
     tokio::{
-        fs::{self, OpenOptions},
+        fs::OpenOptions,
         io::{stdout, AsyncWrite, AsyncWriteExt},
         sync::{mpsc, Mutex},
+        time::Duration,
     },
-    txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries},
+    txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries, save_metrics},
 };
 
 lazy_static::lazy_static! {
@@ -130,6 +131,10 @@ struct Args {
     #[arg(long, short, default_value_t = 25)]
     concurrency: usize,
 
+    /// Size of signatures queue
+    #[arg(long, default_value_t = 25_000)]
+    signatures_history_queue: usize,
+
     /// Maximum number of retries for transaction fetching.
     #[arg(long, short, default_value_t = 3)]
     max_retries: u8,
@@ -141,6 +146,10 @@ struct Args {
     // Optional prometheus group
     #[arg(long)]
     group: Option<String>,
+
+    /// Prometheus metrics file update interval
+    #[arg(long, default_value_t = 1_000)]
+    prom_save_interval: u64,
 
     #[command(subcommand)]
     action: Action,
@@ -229,12 +238,13 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
+    // metrics
     let mut labels: HashMap<String, String> = HashMap::new();
     if let Some(group) = args.group.clone() {
         labels.insert("group".to_string(), group);
     }
 
-    let registry: Registry = Registry::new_custom(None, Some(labels)).unwrap();
+    let registry: Arc<Registry> = Arc::new(Registry::new_custom(None, Some(labels)).unwrap());
 
     macro_rules! register {
         ($collector:ident) => {
@@ -248,6 +258,12 @@ async fn main() -> anyhow::Result<()> {
     register!(TREE_STATUS_LEAVES_COMPLETED);
     register!(TREE_STATUS_LEAVES_INCOMPLETE);
     register!(TREE_STATUS_MISSED_LEAVES);
+
+    let metrics_jh = save_metrics(
+        registry.clone(),
+        args.prom.clone(),
+        Duration::from_millis(args.prom_save_interval),
+    );
 
     let concurrency = NonZeroUsize::new(args.concurrency)
         .ok_or_else(|| anyhow::anyhow!("invalid concurrency: {}", args.concurrency))?;
@@ -309,6 +325,7 @@ async fn main() -> anyhow::Result<()> {
                 if let Err(error) = check_tree_leafs(
                     pubkey,
                     &args.rpc,
+                    args.signatures_history_queue,
                     concurrency,
                     args.max_retries,
                     &conn,
@@ -327,8 +344,14 @@ async fn main() -> anyhow::Result<()> {
             while let Some(maybe_pubkey) = pubkeys.next().await {
                 let pubkey = maybe_pubkey?;
                 info!("showing tree {pubkey}, hex: {}", hex::encode(pubkey));
-                if let Err(error) =
-                    read_tree(pubkey, &args.rpc, concurrency, args.max_retries).await
+                if let Err(error) = read_tree(
+                    pubkey,
+                    &args.rpc,
+                    args.signatures_history_queue,
+                    concurrency,
+                    args.max_retries,
+                )
+                .await
                 {
                     error!("{:?}", error);
                 }
@@ -336,14 +359,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    if let Some(prom) = args.prom {
-        let metrics = TextEncoder::new()
-            .encode_to_string(&registry.gather())
-            .context("could not encode custom metrics")?;
-        fs::write(prom, metrics).await?;
-    }
-
-    Ok(())
+    metrics_jh.await
 }
 
 async fn check_tree(
@@ -477,12 +493,19 @@ WHERE
 async fn check_tree_leafs(
     pubkey: Pubkey,
     client_url: &str,
+    signatures_history_queue: usize,
     concurrency: NonZeroUsize,
     max_retries: u8,
     conn: &DatabaseConnection,
     mut output: Option<&mut Pin<Box<dyn AsyncWrite>>>,
 ) -> anyhow::Result<()> {
-    let (fetch_fut, mut leafs_rx) = read_tree_start(pubkey, client_url, concurrency, max_retries);
+    let (fetch_fut, mut leafs_rx) = read_tree_start(
+        pubkey,
+        client_url,
+        signatures_history_queue,
+        concurrency,
+        max_retries,
+    );
     try_join(fetch_fut, async move {
         // collect max seq per leaf index from transactions
         let mut leafs = HashMap::new();
@@ -570,6 +593,7 @@ GROUP BY
 async fn read_tree(
     pubkey: Pubkey,
     client_url: &str,
+    signatures_history_queue: usize,
     concurrency: NonZeroUsize,
     max_retries: u8,
 ) -> anyhow::Result<()> {
@@ -580,7 +604,13 @@ async fn read_tree(
         }
     }
 
-    let (fetch_fut, mut print_rx) = read_tree_start(pubkey, client_url, concurrency, max_retries);
+    let (fetch_fut, mut print_rx) = read_tree_start(
+        pubkey,
+        client_url,
+        signatures_history_queue,
+        concurrency,
+        max_retries,
+    );
     try_join(fetch_fut, async move {
         let mut next_id = 0;
         let mut map = HashMap::new();
@@ -610,6 +640,7 @@ async fn read_tree(
 fn read_tree_start(
     pubkey: Pubkey,
     client_url: &str,
+    signatures_history_queue: usize,
     concurrency: NonZeroUsize,
     max_retries: u8,
 ) -> (
@@ -620,7 +651,7 @@ fn read_tree_start(
     let rx_sig = Arc::new(Mutex::new(find_signatures(
         pubkey,
         RpcClient::new(client_url.to_owned()),
-        2_000,
+        signatures_history_queue,
     )));
 
     let (tx, rx) = mpsc::unbounded_channel();

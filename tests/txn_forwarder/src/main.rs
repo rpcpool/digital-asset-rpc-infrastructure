@@ -9,7 +9,7 @@ use {
     log::info,
     plerkle_messenger::{MessengerConfig, ACCOUNT_STREAM, TRANSACTION_STREAM},
     plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
-    prometheus::{IntGaugeVec, Opts, Registry, TextEncoder},
+    prometheus::{IntGaugeVec, Opts, Registry},
     solana_client::{
         nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig,
         rpc_request::RpcRequest,
@@ -27,10 +27,10 @@ use {
         sync::Arc,
     },
     tokio::{
-        fs,
         sync::{mpsc, Mutex},
+        time::Duration,
     },
-    txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries},
+    txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries, save_metrics},
 };
 
 lazy_static::lazy_static! {
@@ -49,8 +49,12 @@ struct Cli {
     rpc_url: String,
     #[arg(long, short, default_value_t = 25)]
     concurrency: usize,
-    #[arg(long, short, default_value_t = 25)]
+    /// Size of Redis connections pool
+    #[arg(long, default_value_t = 25)]
     concurrency_redis: usize,
+    /// Size of signatures queue
+    #[arg(long, default_value_t = 25_000)]
+    signatures_history_queue: usize,
     #[arg(long, short, default_value_t = 3)]
     max_retries: u8,
     #[arg(long)]
@@ -58,6 +62,9 @@ struct Cli {
     /// Path to prometheus output
     #[arg(long)]
     prom: Option<String>,
+    /// Prometheus metrics file update interval
+    #[arg(long, default_value_t = 1_000)]
+    prom_save_interval: u64,
     #[command(subcommand)]
     action: Action,
 }
@@ -173,7 +180,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(group) = cli.group {
         labels.insert("group".to_string(), group);
     }
-    let registry: Registry = Registry::new_custom(None, Some(labels)).unwrap();
+    let registry: Arc<Registry> = Arc::new(Registry::new_custom(None, Some(labels)).unwrap());
     registry
         .register(Box::new(TXN_FORWARDER_SENT.clone()))
         .unwrap();
@@ -186,6 +193,13 @@ async fn main() -> anyhow::Result<()> {
     let messenger = MessengerPool::new(cli.concurrency_redis, &config).await?;
     let (tx, rx) = mpsc::unbounded_channel();
 
+    // metrics
+    let metrics_jh = save_metrics(
+        registry.clone(),
+        cli.prom,
+        Duration::from_millis(cli.prom_save_interval),
+    );
+
     match cli.action {
         Action::Address {
             include_failed: _include_failed,
@@ -193,7 +207,15 @@ async fn main() -> anyhow::Result<()> {
         } => {
             let pubkey = Pubkey::from_str(&address).context("failed to parse address")?;
             tx.send(
-                send_address(pubkey, cli.rpc_url, messenger, cli.max_retries, tx.clone()).boxed(),
+                send_address(
+                    pubkey,
+                    cli.rpc_url,
+                    messenger,
+                    cli.signatures_history_queue,
+                    cli.max_retries,
+                    tx.clone(),
+                )
+                .boxed(),
             )
             .map_err(|_| anyhow::anyhow!("failed to send job"))?;
         }
@@ -205,7 +227,15 @@ async fn main() -> anyhow::Result<()> {
                 let rpc_url = cli.rpc_url.clone();
                 let messenger = messenger.clone();
                 tx.send(
-                    send_address(pubkey, rpc_url, messenger, cli.max_retries, tx.clone()).boxed(),
+                    send_address(
+                        pubkey,
+                        rpc_url,
+                        messenger,
+                        cli.signatures_history_queue,
+                        cli.max_retries,
+                        tx.clone(),
+                    )
+                    .boxed(),
                 )
                 .map_err(|_| anyhow::anyhow!("failed to send job"))?;
             }
@@ -247,25 +277,19 @@ async fn main() -> anyhow::Result<()> {
     }))
     .await?;
 
-    if let Some(prom) = cli.prom {
-        let metrics = TextEncoder::new()
-            .encode_to_string(&registry.gather())
-            .context("could not encode custom metrics")?;
-        fs::write(prom, metrics).await?;
-    }
-
-    Ok(())
+    metrics_jh.await
 }
 
 async fn send_address(
     pubkey: Pubkey,
     rpc_url: String,
     messenger: MessengerPool,
+    signatures_history_queue: usize,
     max_retries: u8,
     tasks_tx: mpsc::UnboundedSender<BoxFuture<'static, anyhow::Result<()>>>,
 ) -> anyhow::Result<()> {
     let client = RpcClient::new(rpc_url.clone());
-    let mut all_sig = find_signatures(pubkey, client, 2_000);
+    let mut all_sig = find_signatures(pubkey, client, signatures_history_queue);
     while let Some(sig) = all_sig.recv().await {
         let rpc_url = rpc_url.clone();
         let messenger = messenger.clone();

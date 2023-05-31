@@ -1,7 +1,11 @@
 use {
     anyhow::Context,
-    futures::stream::{BoxStream, StreamExt},
+    futures::{
+        future::{BoxFuture, FutureExt},
+        stream::{BoxStream, StreamExt},
+    },
     log::{error, info},
+    prometheus::{Registry, TextEncoder},
     serde::de::DeserializeOwned,
     solana_client::{
         client_error::ClientError, client_error::Result as RpcClientResult,
@@ -12,12 +16,12 @@ use {
         pubkey::Pubkey,
         signature::{ParseSignatureError, Signature},
     },
-    std::{fmt, io::Result as IoResult, str::FromStr},
+    std::{fmt, io::Result as IoResult, str::FromStr, sync::Arc},
     tokio::{
-        fs::File,
+        fs::{self, File},
         io::{stdin, AsyncBufReadExt, BufReader},
-        sync::mpsc,
-        time::{sleep, Duration},
+        sync::{mpsc, oneshot},
+        time::{interval, sleep, Duration},
     },
     tokio_stream::wrappers::LinesStream,
 };
@@ -135,4 +139,41 @@ pub async fn read_lines(path: &str) -> anyhow::Result<BoxStream<'static, IoResul
         }
     })
     .boxed())
+}
+
+pub fn save_metrics(
+    registry: Arc<Registry>,
+    path: Option<String>,
+    period: Duration,
+) -> BoxFuture<'static, anyhow::Result<()>> {
+    if let Some(path) = path {
+        let (tx, mut rx) = oneshot::channel();
+        let jh = tokio::spawn(async move {
+            let mut interval = interval(period);
+            let mut alive = true;
+            while alive {
+                tokio::select! {
+                    _ = interval.tick() => {},
+                    _ = &mut rx => {
+                        alive = false;
+                    }
+                };
+
+                let metrics = TextEncoder::new()
+                    .encode_to_string(&registry.gather())
+                    .context("failed to encode metrics")?;
+                fs::write(&path, metrics)
+                    .await
+                    .context("failed to save metrics")?;
+            }
+            Ok::<(), anyhow::Error>(())
+        });
+        async move {
+            let _ = tx.send(());
+            jh.await?
+        }
+        .boxed()
+    } else {
+        futures::future::ready(Ok(())).boxed()
+    }
 }
