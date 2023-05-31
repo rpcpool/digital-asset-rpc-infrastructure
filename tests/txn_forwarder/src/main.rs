@@ -58,7 +58,7 @@ struct Cli {
     #[arg(long, short, default_value_t = 3)]
     max_retries: u8,
     #[arg(long)]
-    group: Option<String>,
+    prom_group: Option<String>,
     /// Path to prometheus output
     #[arg(long)]
     prom: Option<String>,
@@ -177,7 +177,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let mut labels = HashMap::new();
-    if let Some(group) = cli.group {
+    if let Some(group) = cli.prom_group {
         labels.insert("group".to_string(), group);
     }
     let registry: Arc<Registry> = Arc::new(Registry::new_custom(None, Some(labels)).unwrap());

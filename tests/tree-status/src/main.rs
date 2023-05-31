@@ -145,7 +145,7 @@ struct Args {
 
     // Optional prometheus group
     #[arg(long)]
-    group: Option<String>,
+    prom_group: Option<String>,
 
     /// Prometheus metrics file update interval
     #[arg(long, default_value_t = 1_000)]
@@ -240,7 +240,7 @@ async fn main() -> anyhow::Result<()> {
 
     // metrics
     let mut labels: HashMap<String, String> = HashMap::new();
-    if let Some(group) = args.group.clone() {
+    if let Some(group) = args.prom_group.clone() {
         labels.insert("group".to_string(), group);
     }
 
