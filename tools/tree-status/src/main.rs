@@ -1,4 +1,4 @@
-use crossbeam::channel::{bounded, unbounded};
+use crossbeam::channel::{bounded, unbounded, Sender};
 use digital_asset_types::dao::cl_audits;
 use log::{trace, warn};
 use plerkle_messenger::{MessengerConfig, TRANSACTION_STREAM};
@@ -446,8 +446,8 @@ async fn find_and_forward_txns_for_missing_seqs(
 ) -> anyhow::Result<()> {
     // Concurrency config
     // TODO: Change to args
-    let batch_processing_concurrency = 5;
-    let get_txn_concurrency = 10;
+    let batch_processing_concurrency = 1;
+    let get_txn_concurrency = 20;
 
     // Extra signatures to send as a safety buffer.
     // E.g. if Seq 5 is missing and txn D produced Seq 6, we crawl back N signatures and send them all.
@@ -487,18 +487,16 @@ async fn find_and_forward_txns_for_missing_seqs(
             // Spawn workers in separate threads
             s.spawn(move |_| {
                 for range in r_recv.iter() {
-                    let sigs = runtime
+                    runtime
                         .block_on(find_signatures_for_missing_seq_range(
                             tree,
                             range,
                             &client,
                             &conn,
+                            &s_sender,
                             hacky_buffer,
                         ))
                         .unwrap();
-                    for sig in sigs {
-                        s_sender.send(sig).unwrap();
-                    }
                 }
             });
         }
@@ -570,7 +568,6 @@ async fn send_txn(
 
 fn build_seq_ranges(seqs: Vec<i64>, hacky_buffer: i64) -> Vec<(i64, i64)> {
     let mut ranges: Vec<(i64, i64)> = Vec::new();
-    let max_batch_size = 10_000;
     if seqs.is_empty() {
         return ranges;
     }
@@ -578,9 +575,7 @@ fn build_seq_ranges(seqs: Vec<i64>, hacky_buffer: i64) -> Vec<(i64, i64)> {
     let mut current_start = seqs[0];
     let mut current_end = seqs[0];
     for &num in seqs.iter().skip(1) {
-        let current_batch_size = num - current_start;
-        let seq_within_fill_range = num >= current_end + 1 - hacky_buffer;
-        if current_batch_size < max_batch_size && seq_within_fill_range {
+        if num >= (current_end + 1 - hacky_buffer) {
             current_end = num;
         } else {
             ranges.push((current_start, current_end));
@@ -601,8 +596,9 @@ async fn find_signatures_for_missing_seq_range(
     range: (i64, i64),
     client: &RpcClient,
     conn: &DatabaseConnection,
+    sender: &Sender<Signature>,
     hacky_buffer: i64,
-) -> anyhow::Result<Vec<Signature>> {
+) -> anyhow::Result<()> {
     let (start, end) = range;
     trace!("Filling gap for range: [{:?}, {:?}]", start, end);
 
@@ -617,13 +613,17 @@ async fn find_signatures_for_missing_seq_range(
     let next_txn = res
         .first()
         .ok_or_else(|| anyhow::anyhow!("Failed to get next txn for seq: {:?}", end))?;
-    trace!("Next txn for missing seq: {:?}", next_txn.tx);
+    trace!(
+        "Next txn for missing seq range [{:?}, {:?}]: {:?}",
+        next_txn.tx,
+        start,
+        end
+    );
 
     // Fetch signatures for all txns in the range before "next".
     // TODO: Scan and parse the transactions using blockbuster and skip failed txns.
     let mut sigs_remaining = (end - start + hacky_buffer + 1) as usize;
     let mut before = Signature::from_str(&next_txn.tx).ok();
-    let mut out = Vec::new();
     loop {
         let limit = cmp::min(1000, sigs_remaining);
         let config = GetConfirmedSignaturesForAddress2Config {
@@ -634,18 +634,20 @@ async fn find_signatures_for_missing_seq_range(
         let sigs = client
             .get_signatures_for_address_with_config(&tree, config)
             .await?;
-        for sig in sigs.clone() {
+        for (i, sig) in sigs.clone().iter().enumerate() {
             let o = Signature::from_str(&sig.signature)?;
-            out.push(o)
+            sender.send(o)?;
+            if i == sigs.len() {
+                before = Some(o);
+            }
         }
         sigs_remaining = cmp::max(sigs_remaining - sigs.len(), 0);
         if sigs_remaining == 0 || sigs.len() == 0 {
             break;
         }
-        before = out.last().copied();
     }
 
-    return anyhow::Ok(out);
+    return anyhow::Ok(());
 }
 
 async fn get_onchain_tree_seq(address: Pubkey, client: &RpcClient) -> anyhow::Result<u64> {
