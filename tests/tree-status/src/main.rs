@@ -8,7 +8,7 @@ use {
         stream::{self, StreamExt},
     },
     log::{debug, error, info},
-    prometheus::{IntCounter, IntGaugeVec, Opts, Registry},
+    prometheus::{IntGauge, IntGaugeVec, Opts, Registry},
     sea_orm::{
         sea_query::{Expr, Value},
         ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, DbErr, EntityTrait,
@@ -67,11 +67,11 @@ lazy_static::lazy_static! {
         &["tree"]
     ).unwrap();
 
-    pub static ref TREE_STATUS_LEAVES_COMPLETED: IntCounter = IntCounter::new(
+    pub static ref TREE_STATUS_LEAVES_COMPLETED: IntGauge = IntGauge::new(
         "tree_status_leaves_completed", "Number of complete trees"
     ).unwrap();
 
-    pub static ref TREE_STATUS_LEAVES_INCOMPLETE: IntCounter = IntCounter::new(
+    pub static ref TREE_STATUS_LEAVES_INCOMPLETE: IntGauge = IntGauge::new(
         "tree_status_leaves_incomplete", "Number of incomplete trees"
     ).unwrap();
 
