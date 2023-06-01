@@ -176,14 +176,18 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
+    // metrics
     let mut labels = HashMap::new();
     if let Some(group) = cli.prom_group {
-        labels.insert("group".to_string(), group);
+        labels.insert("group".to_owned(), group);
     }
-    let registry: Arc<Registry> = Arc::new(Registry::new_custom(None, Some(labels)).unwrap());
-    registry
-        .register(Box::new(TXN_FORWARDER_SENT.clone()))
-        .unwrap();
+    let registry = Registry::new_custom(None, Some(labels)).unwrap();
+    registry.register(Box::new(TXN_FORWARDER_SENT.clone()))?;
+    let metrics_jh = save_metrics(
+        registry,
+        cli.prom,
+        Duration::from_millis(cli.prom_save_interval),
+    );
 
     let config_wrapper = Value::from(map! {
         "redis_connection_str" => cli.redis_url,
@@ -192,13 +196,6 @@ async fn main() -> anyhow::Result<()> {
     let config = config_wrapper.into_dict().unwrap();
     let messenger = MessengerPool::new(cli.concurrency_redis, &config).await?;
     let (tx, rx) = mpsc::unbounded_channel();
-
-    // metrics
-    let metrics_jh = save_metrics(
-        registry.clone(),
-        cli.prom,
-        Duration::from_millis(cli.prom_save_interval),
-    );
 
     match cli.action {
         Action::Address {

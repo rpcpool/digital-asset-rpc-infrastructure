@@ -124,11 +124,13 @@ async fn main() -> anyhow::Result<()> {
     let messenger = Arc::new(Mutex::new(messenger));
 
     // metrics
-    let registry: Arc<Registry> = Arc::new(Registry::new());
-    registry
-        .register(Box::new(ACC_FORWARDER_SENT.clone()))
-        .unwrap();
-    let metrics_jh = save_metrics(registry, args.prom, Duration::from_millis(1_000));
+    let registry = Registry::new();
+    registry.register(Box::new(ACC_FORWARDER_SENT.clone()))?;
+    let metrics_jh = save_metrics(
+        registry,
+        args.prom,
+        Duration::from_millis(args.prom_save_interval),
+    );
 
     let client = RpcClient::new(args.rpc_url.clone());
 

@@ -16,7 +16,7 @@ use {
         pubkey::Pubkey,
         signature::{ParseSignatureError, Signature},
     },
-    std::{fmt, io::Result as IoResult, str::FromStr, sync::Arc},
+    std::{fmt, io::Result as IoResult, str::FromStr},
     tokio::{
         fs::{self, File},
         io::{stdin, AsyncBufReadExt, BufReader},
@@ -142,7 +142,7 @@ pub async fn read_lines(path: &str) -> anyhow::Result<BoxStream<'static, IoResul
 }
 
 pub fn save_metrics(
-    registry: Arc<Registry>,
+    registry: Registry,
     path: Option<String>,
     period: Duration,
 ) -> BoxFuture<'static, anyhow::Result<()>> {
