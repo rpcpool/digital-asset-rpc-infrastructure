@@ -51,6 +51,7 @@ use {
         fs::OpenOptions,
         io::{stdout, AsyncWrite, AsyncWriteExt},
         sync::{mpsc, Mutex},
+        task::JoinSet,
         time::Duration,
     },
     txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries, save_metrics},
@@ -127,8 +128,12 @@ struct Args {
     rpc: String,
 
     /// Number of concurrent requests for fetching transactions.
-    #[arg(long, short, default_value_t = 25)]
+    #[arg(long, default_value_t = 25)]
     concurrency: usize,
+
+    /// Number of concurrent processed trees.
+    #[arg(long, default_value_t = 5)]
+    concurrency_tree: usize,
 
     /// Size of signatures queue
     #[arg(long, default_value_t = 25_000)]
@@ -256,6 +261,9 @@ async fn main() -> anyhow::Result<()> {
 
     let concurrency = NonZeroUsize::new(args.concurrency)
         .ok_or_else(|| anyhow::anyhow!("invalid concurrency: {}", args.concurrency))?;
+    let signatures_history_queue = args.signatures_history_queue;
+    let max_retries = args.max_retries;
+    let mut tasks_tree = JoinSet::new();
 
     // Set up RPC interface
     let pubkeys_str = match &args.action {
@@ -291,7 +299,6 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Action::CheckTreeLeafs { output, .. } | Action::CheckTreesLeafs { output, .. } => {
-            let conn = args.get_pg_conn().await?;
             let mut output: Option<Pin<Box<dyn AsyncWrite>>> = if let Some(output) = output {
                 Some(if output == "-" {
                     Box::pin(stdout())
@@ -308,45 +315,77 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 None
             };
+            let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+            let tx = Arc::new(tx);
             while let Some(maybe_pubkey) = pubkeys.next().await {
                 let pubkey = maybe_pubkey?;
-                info!("checking tree leafs {pubkey}, hex: {}", hex::encode(pubkey));
-                if let Err(error) = check_tree_leafs(
-                    pubkey,
-                    &args.rpc,
-                    args.signatures_history_queue,
-                    concurrency,
-                    args.max_retries,
-                    &conn,
-                    output.as_mut(),
-                )
-                .await
-                {
-                    error!("{:?}", error);
+                if tasks_tree.len() == args.concurrency_tree {
+                    loop {
+                        tokio::select! {
+                            _ = tasks_tree.join_next() => {
+                                break;
+                            }
+                            Some(text) = rx.recv() => {
+                                if let Some(output) = output.as_mut() {
+                                    let _ = output.write(text.as_bytes()).await?;
+                                }
+                            }
+                        }
+                    }
                 }
+                let rpc = args.rpc.clone();
+                let conn = args.get_pg_conn().await?;
+                let tx = Arc::clone(&tx);
+                tasks_tree.spawn(async move {
+                    info!("checking tree leafs {pubkey}, hex: {}", hex::encode(pubkey));
+                    if let Err(error) = check_tree_leafs(
+                        pubkey,
+                        &rpc,
+                        signatures_history_queue,
+                        concurrency,
+                        max_retries,
+                        &conn,
+                        tx,
+                    )
+                    .await
+                    {
+                        error!("{:?}", error);
+                    }
+                });
             }
+            drop(tx);
             if let Some(mut output) = output {
+                while let Some(text) = rx.recv().await {
+                    let _ = output.write(text.as_bytes()).await?;
+                }
                 output.flush().await?;
             }
         }
         Action::ShowTree { .. } | Action::ShowTrees { .. } => {
             while let Some(maybe_pubkey) = pubkeys.next().await {
                 let pubkey = maybe_pubkey?;
-                info!("showing tree {pubkey}, hex: {}", hex::encode(pubkey));
-                if let Err(error) = read_tree(
-                    pubkey,
-                    &args.rpc,
-                    args.signatures_history_queue,
-                    concurrency,
-                    args.max_retries,
-                )
-                .await
-                {
-                    error!("{:?}", error);
+                if tasks_tree.len() == args.concurrency_tree {
+                    tasks_tree.join_next().await;
                 }
+                let rpc = args.rpc.clone();
+                tasks_tree.spawn(async move {
+                    info!("showing tree {pubkey}, hex: {}", hex::encode(pubkey));
+                    if let Err(error) = read_tree(
+                        pubkey,
+                        &rpc,
+                        signatures_history_queue,
+                        concurrency,
+                        max_retries,
+                    )
+                    .await
+                    {
+                        error!("{:?}", error);
+                    }
+                });
             }
         }
     }
+    while tasks_tree.join_next().await.is_some() {}
 
     metrics_jh.await
 }
@@ -486,7 +525,7 @@ async fn check_tree_leafs(
     concurrency: NonZeroUsize,
     max_retries: u8,
     conn: &DatabaseConnection,
-    mut output: Option<&mut Pin<Box<dyn AsyncWrite>>>,
+    tx: Arc<mpsc::UnboundedSender<String>>,
 ) -> anyhow::Result<()> {
     let (fetch_fut, mut leafs_rx) = read_tree_start(
         pubkey,
@@ -564,9 +603,7 @@ GROUP BY
 
         for (leaf_idx, (signature, seq)) in leafs.into_iter() {
             error!("leaf index {leaf_idx}: not found in db, seq {seq} tx={signature:?}");
-            if let Some(output) = output.as_mut() {
-                let _ = output.write(format!("{signature}\n").as_bytes()).await?;
-            }
+            let _ = tx.send(format!("{signature}\n"));
             TREE_STATUS_MISSED_LEAVES
                 .with_label_values(&[&pubkey.to_string()])
                 .inc();
