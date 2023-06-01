@@ -50,10 +50,11 @@ If you want to run against a range, you can use the `before` and/or `after` para
 cargo run -- \
  --redis-url $REDIS_URL \
  --rpc-url $RPC_URL \
- --max-retries 5 \
- --concurrency 3 \
- --after '4mhMTrXryz2o5cEEx8q7x8hYPpxQq1nJNEHGHu97mDXyvf9vUCUAGUBnfdBRhLcXUjaRLjy7RAKvHz7guT5z5PpW' \
- --before '4zczHcDJ4Gpv4dMUpYVekzNTWk7Pxtz3mQfcYDcwfgcUAkvHmuht7fTEggz5oowBWmaHNBwgYnZsFtCsAXwCjFvA' \
+ --max-retries 10 \
+ --concurrency 5 \
+ --after 'SwxK31AXJwCXkHkWSFA4f1u1V9jYgcwr8oDbeqEcNhJEVEgzEmgLVEsQ1pyLeTgzPAHDTmrHfcu5q9QSaAnwPs4' \
+ --before '5MUNFgEiFU5FwjasHroDK328Vrj4QAcf2zEK8FKVCBVKpLTynUCaTWNxJDyGMeAemij4qEAYXujVDRHT6WjzJxEX' \
+ --replay-forward \
  address --address GAnNkHUWwcC4s4jFgbPT491KtvVRuGBYefZ7Qahcmpqy
 ```
 

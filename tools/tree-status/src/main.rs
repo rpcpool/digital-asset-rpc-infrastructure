@@ -1,9 +1,11 @@
+use crossbeam::channel::{bounded, unbounded};
 use digital_asset_types::dao::cl_audits;
 use log::{trace, warn};
-use plerkle_messenger::{Messenger, MessengerConfig, TRANSACTION_STREAM};
+use plerkle_messenger::{MessengerConfig, TRANSACTION_STREAM};
 use plerkle_serialization::serializer::seralize_encoded_transaction_with_status;
 use sea_orm::{QueryOrder, Value};
 use solana_client::rpc_client::GetConfirmedSignaturesForAddress2Config;
+use tokio::runtime::Builder;
 
 use {
     anchor_client::anchor_lang::AnchorDeserialize,
@@ -63,6 +65,15 @@ use {
         sync::{mpsc, Mutex},
     },
     txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries},
+};
+
+const RPC_GET_TXN_RETRIES: u8 = 5;
+const RPC_TXN_CONFIG: RpcTransactionConfig = RpcTransactionConfig {
+    encoding: Some(UiTransactionEncoding::Base64),
+    commitment: Some(CommitmentConfig {
+        commitment: CommitmentLevel::Finalized,
+    }),
+    max_supported_transaction_version: Some(0),
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -147,7 +158,7 @@ impl Args {
             }
         }
     }
-    async fn get_messenger(&self) -> anyhow::Result<Box<dyn Messenger>> {
+    async fn get_messenger_config(&self) -> anyhow::Result<MessengerConfig> {
         match &self.action {
             Action::FixTree { redis_url, .. } => {
                 let config_wrapper = figment::value::Value::from(map! {
@@ -160,12 +171,7 @@ impl Args {
                     messenger_type: plerkle_messenger::MessengerType::Redis,
                     connection_config: config,
                 };
-                let mut messenger = plerkle_messenger::select_messenger(messenenger_config).await?;
-                messenger.add_stream(TRANSACTION_STREAM).await?;
-                messenger
-                    .set_buffer_size(TRANSACTION_STREAM, 10000000000000000)
-                    .await;
-                Ok(messenger)
+                Ok(messenenger_config)
             }
             _ => {
                 anyhow::bail!("No redis client supported")
@@ -329,11 +335,11 @@ async fn main() -> anyhow::Result<()> {
         Action::FixTree { .. } => {
             let client = RpcClient::new(args.rpc.clone());
             let conn = args.get_pg_conn().await?;
-            let mut messenger = args.get_messenger().await?;
-            while let Some(maybe_pubkey) = pubkeys.next().await {
+            let messenger_config = args.get_messenger_config().await?;
+            if let Some(maybe_pubkey) = pubkeys.next().await {
                 let pubkey: Pubkey = maybe_pubkey?;
                 info!("fixing tree {pubkey}, hex: {}", hex::encode(pubkey));
-                if let Err(error) = fix_tree(pubkey, &client, &conn, &mut messenger).await {
+                if let Err(error) = fix_tree(pubkey, client, conn, messenger_config).await {
                     error!("{:?}", error);
                 }
             }
@@ -394,17 +400,17 @@ async fn check_tree(
 
 async fn fix_tree(
     pubkey: Pubkey,
-    client: &RpcClient,
-    conn: &DatabaseConnection,
-    messenger: &mut Box<dyn plerkle_messenger::Messenger>,
+    client: RpcClient,
+    conn: DatabaseConnection,
+    messenger_config: MessengerConfig,
 ) -> anyhow::Result<()> {
-    let onchain_seq: i64 = get_onchain_tree_seq(pubkey, client)
+    let onchain_seq: i64 = get_onchain_tree_seq(pubkey, &client)
         .await
         .with_context(|| format!("[{pubkey}] tree is missing from chain or error occured"))?
         .try_into()
         .unwrap();
 
-    let indexed_seq = get_tree_max_seq(pubkey, conn)
+    let indexed_seq = get_tree_max_seq(pubkey, &conn)
         .await
         .with_context(|| format!("[{pubkey:?}] counldn't query tree from index"))?
         .ok_or_else(|| anyhow::anyhow!("[{pubkey}] tree missing from index"))?;
@@ -415,10 +421,16 @@ async fn fix_tree(
             "[{pubkey}] Tree has gaps. Max indexed seq: {}. Distinct seqs: {}",
             indexed_seq.max_seq, indexed_seq.cnt_seq
         );
-        let missing_seqs = get_missing_seq(pubkey, onchain_seq, conn).await?;
+        let missing_seqs = get_missing_seq(pubkey, onchain_seq, &conn).await?;
         warn!("[{pubkey}] missing seq: {:?}", missing_seqs);
-        find_and_forward_txns_for_missing_seqs(pubkey, client, missing_seqs, conn, messenger)
-            .await?;
+        find_and_forward_txns_for_missing_seqs(
+            pubkey,
+            missing_seqs,
+            client,
+            conn,
+            messenger_config,
+        )
+        .await?;
     } else {
         info!("[{:?}] Tree has no gaps!", pubkey)
     }
@@ -427,63 +439,138 @@ async fn fix_tree(
 
 async fn find_and_forward_txns_for_missing_seqs(
     tree: Pubkey,
-    client: &RpcClient,
     seqs: Vec<i64>,
-    conn: &DatabaseConnection,
-    messenger: &mut Box<dyn plerkle_messenger::Messenger>,
+    client: RpcClient,
+    conn: DatabaseConnection,
+    messenger_config: MessengerConfig,
 ) -> anyhow::Result<()> {
-    let rpc_cfg = RpcTransactionConfig {
-        encoding: Some(UiTransactionEncoding::Base64),
-        commitment: Some(CommitmentConfig {
-            commitment: CommitmentLevel::Finalized,
-        }),
-        max_supported_transaction_version: Some(0),
-    };
-    let max_retries = 5;
+    // Concurrency config
+    // TODO: Change to args
+    let batch_processing_concurrency = 5;
+    let get_txn_concurrency = 10;
 
-    // TODO: Make concurrent
-    for range in build_seq_ranges(seqs) {
-        let sigs = find_signatures_for_missing_seq_range(tree, client, range, conn).await?;
-        for sig in sigs {
-            trace!("sending missing txn: {}", sig.to_string());
-            let tx: EncodedConfirmedTransactionWithStatusMeta = rpc_send_with_retries(
-                &client,
-                RpcRequest::GetTransaction,
-                serde_json::json!([sig.to_string(), rpc_cfg,]),
-                max_retries,
-                sig,
-            )
-            .await?;
-            send(sig, tx, messenger).await?;
+    // Extra signatures to send as a safety buffer.
+    // E.g. if Seq 5 is missing and txn D produced Seq 6, we crawl back N signatures and send them all.
+    // This is a hacky workaround for failed signatures or non-bubblegum txns.
+    let hacky_buffer = 3;
+
+    let (r_sender, r_recv) = unbounded();
+    let (s_sender, s_recv) = unbounded();
+
+    let client = Arc::new(client);
+    let conn = Arc::new(conn);
+    let messenger = init_redis_messenger(messenger_config).await?;
+
+    crossbeam::scope(|s| {
+        let runtime = Arc::new(
+            Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(4)
+                .build()
+                .unwrap(),
+        );
+
+        s.spawn(|_| {
+            let ranges = build_seq_ranges(seqs, hacky_buffer);
+            trace!("Processing seq ranges: {:?}", ranges);
+            for range in ranges {
+                r_sender.send(range).unwrap();
+            }
+            drop(r_sender);
+        });
+
+        for _ in 0..batch_processing_concurrency {
+            let (s_sender, r_recv) = (s_sender.clone(), r_recv.clone());
+            let client = client.clone();
+            let conn = conn.clone();
+            let runtime = runtime.clone();
+            // Spawn workers in separate threads
+            s.spawn(move |_| {
+                for range in r_recv.iter() {
+                    let sigs = runtime
+                        .block_on(find_signatures_for_missing_seq_range(
+                            tree,
+                            range,
+                            &client,
+                            &conn,
+                            hacky_buffer,
+                        ))
+                        .unwrap();
+                    for sig in sigs {
+                        s_sender.send(sig).unwrap();
+                    }
+                }
+            });
         }
-    }
+        drop(s_sender);
+
+        for _ in 0..get_txn_concurrency {
+            let s_recv = s_recv.clone();
+            let client = client.clone();
+            let messenger = messenger.clone();
+            let runtime = runtime.clone();
+            s.spawn(move |_| {
+                for sig in s_recv.iter() {
+                    trace!("Attempting to send signature to redis: {:?}", sig);
+                    runtime
+                        .block_on(send_txn(sig, &client, &messenger))
+                        .unwrap();
+                }
+            });
+        }
+    })
+    .unwrap();
+
     anyhow::Ok(())
 }
 
-async fn send(
+async fn init_redis_messenger(
+    config: MessengerConfig,
+) -> anyhow::Result<Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>> {
+    let mut messenger = plerkle_messenger::select_messenger(config).await?;
+    messenger.add_stream(TRANSACTION_STREAM).await?;
+    messenger
+        .set_buffer_size(TRANSACTION_STREAM, 10000000000000000)
+        .await;
+    anyhow::Ok(Arc::new(Mutex::new(messenger)))
+}
+
+async fn send_txn(
     signature: Signature,
-    tx: EncodedConfirmedTransactionWithStatusMeta,
-    messenger: &mut Box<dyn plerkle_messenger::Messenger>,
+    client: &RpcClient,
+    messenger: &Mutex<Box<dyn plerkle_messenger::Messenger>>,
 ) -> anyhow::Result<()> {
+    let txn = rpc_send_with_retries(
+        &client,
+        RpcRequest::GetTransaction,
+        serde_json::json!([signature.to_string(), RPC_TXN_CONFIG,]),
+        RPC_GET_TXN_RETRIES,
+        signature,
+    )
+    .await?;
+
     // Ignore if tx failed or meta is missed
-    let meta = tx.transaction.meta.as_ref();
+    let meta = txn.transaction.meta.as_ref();
     if meta.map(|meta| meta.status.is_err()).unwrap_or(true) {
+        info!("Dropping failed transaction: {:?}", signature);
         return Ok(());
     }
 
     let fbb = flatbuffers::FlatBufferBuilder::new();
-    let fbb = seralize_encoded_transaction_with_status(fbb, tx)
+    let fbb = seralize_encoded_transaction_with_status(fbb, txn)
         .with_context(|| format!("failed to serialize transaction with {}", signature))?;
     let bytes = fbb.finished_data();
 
-    messenger.send(TRANSACTION_STREAM, bytes).await?;
-    info!("Sent transaction to stream {}", signature);
-
+    let mut locked = messenger.lock().await;
+    locked.send(TRANSACTION_STREAM, bytes).await?;
+    drop(locked);
+    info!("Successfully pushed transaction to redis: {:?}", signature);
     Ok(())
 }
 
-fn build_seq_ranges(seqs: Vec<i64>) -> Vec<(i64, i64)> {
+fn build_seq_ranges(seqs: Vec<i64>, hacky_buffer: i64) -> Vec<(i64, i64)> {
     let mut ranges: Vec<(i64, i64)> = Vec::new();
+    let max_batch_size = 10_000;
     if seqs.is_empty() {
         return ranges;
     }
@@ -491,7 +578,9 @@ fn build_seq_ranges(seqs: Vec<i64>) -> Vec<(i64, i64)> {
     let mut current_start = seqs[0];
     let mut current_end = seqs[0];
     for &num in seqs.iter().skip(1) {
-        if num == current_end + 1 {
+        let current_batch_size = num - current_start;
+        let seq_within_fill_range = num >= current_end + 1 - hacky_buffer;
+        if current_batch_size < max_batch_size && seq_within_fill_range {
             current_end = num;
         } else {
             ranges.push((current_start, current_end));
@@ -509,9 +598,10 @@ fn build_seq_ranges(seqs: Vec<i64>) -> Vec<(i64, i64)> {
 //   2 – Parse txns and extract seq, keep searching until the seq is found (can use Helius for this).
 async fn find_signatures_for_missing_seq_range(
     tree: Pubkey,
-    client: &RpcClient,
     range: (i64, i64),
+    client: &RpcClient,
     conn: &DatabaseConnection,
+    hacky_buffer: i64,
 ) -> anyhow::Result<Vec<Signature>> {
     let (start, end) = range;
     trace!("Filling gap for range: [{:?}, {:?}]", start, end);
@@ -527,11 +617,11 @@ async fn find_signatures_for_missing_seq_range(
     let next_txn = res
         .first()
         .ok_or_else(|| anyhow::anyhow!("Failed to get next txn for seq: {:?}", end))?;
-    trace!("next txn: {:?}", next_txn.tx);
+    trace!("Next txn for missing seq: {:?}", next_txn.tx);
 
     // Fetch signatures for all txns in the range before "next".
     // TODO: Scan and parse the transactions using blockbuster and skip failed txns.
-    let mut sigs_remaining = (end - start + 1) as usize;
+    let mut sigs_remaining = (end - start + hacky_buffer + 1) as usize;
     let mut before = Signature::from_str(&next_txn.tx).ok();
     let mut out = Vec::new();
     loop {
@@ -544,13 +634,6 @@ async fn find_signatures_for_missing_seq_range(
         let sigs = client
             .get_signatures_for_address_with_config(&tree, config)
             .await?;
-        trace!(
-            "sigs: {:?}",
-            sigs.clone()
-                .into_iter()
-                .map(|s| s.signature)
-                .collect::<Vec<_>>()
-        );
         for sig in sigs.clone() {
             let o = Signature::from_str(&sig.signature)?;
             out.push(o)
