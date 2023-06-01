@@ -246,7 +246,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(group) = args.prom_group.clone() {
         labels.insert("group".to_owned(), group);
     }
-    let registry = Registry::new_custom(None, Some(labels)).unwrap();
+    let registry = Registry::new_custom(None, Some(labels))?;
     registry.register(Box::new(TREE_STATUS_MAX_SEQ.clone()))?;
     registry.register(Box::new(TREE_STATUS_MISSING_SEQ.clone()))?;
     registry.register(Box::new(TREE_STATUS_LEAVES_COMPLETED.clone()))?;
