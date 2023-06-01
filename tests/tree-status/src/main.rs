@@ -39,7 +39,6 @@ use {
         cmp,
         collections::HashMap,
         env,
-        num::NonZeroUsize,
         pin::Pin,
         str::FromStr,
         sync::{
@@ -50,7 +49,7 @@ use {
     tokio::{
         fs::OpenOptions,
         io::{stdout, AsyncWrite, AsyncWriteExt},
-        sync::{mpsc, Mutex},
+        sync::{mpsc, Mutex, Semaphore},
         task::JoinSet,
         time::Duration,
     },
@@ -129,7 +128,7 @@ struct Args {
 
     /// Number of concurrent requests for fetching transactions.
     #[arg(long, default_value_t = 25)]
-    concurrency: usize,
+    concurrency_tx: usize,
 
     /// Number of concurrent processed trees.
     #[arg(long, default_value_t = 5)]
@@ -259,8 +258,10 @@ async fn main() -> anyhow::Result<()> {
         Duration::from_millis(args.prom_save_interval),
     );
 
-    let concurrency = NonZeroUsize::new(args.concurrency)
-        .ok_or_else(|| anyhow::anyhow!("invalid concurrency: {}", args.concurrency))?;
+    let concurrency_tx = (
+        args.concurrency_tx,
+        Arc::new(Semaphore::new(args.concurrency_tx)),
+    );
     let signatures_history_queue = args.signatures_history_queue;
     let max_retries = args.max_retries;
     let mut tasks_tree = JoinSet::new();
@@ -334,6 +335,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
                 let rpc = args.rpc.clone();
+                let concurrency_tx = concurrency_tx.clone();
                 let conn = args.get_pg_conn().await?;
                 let tx = Arc::clone(&tx);
                 tasks_tree.spawn(async move {
@@ -342,7 +344,7 @@ async fn main() -> anyhow::Result<()> {
                         pubkey,
                         &rpc,
                         signatures_history_queue,
-                        concurrency,
+                        concurrency_tx,
                         max_retries,
                         &conn,
                         tx,
@@ -368,13 +370,14 @@ async fn main() -> anyhow::Result<()> {
                     tasks_tree.join_next().await;
                 }
                 let rpc = args.rpc.clone();
+                let concurrency_tx = concurrency_tx.clone();
                 tasks_tree.spawn(async move {
                     info!("showing tree {pubkey}, hex: {}", hex::encode(pubkey));
                     if let Err(error) = read_tree(
                         pubkey,
                         &rpc,
                         signatures_history_queue,
-                        concurrency,
+                        concurrency_tx,
                         max_retries,
                     )
                     .await
@@ -522,7 +525,7 @@ async fn check_tree_leafs(
     pubkey: Pubkey,
     client_url: &str,
     signatures_history_queue: usize,
-    concurrency: NonZeroUsize,
+    concurrency_tx: (usize, Arc<Semaphore>),
     max_retries: u8,
     conn: &DatabaseConnection,
     tx: Arc<mpsc::UnboundedSender<String>>,
@@ -531,7 +534,7 @@ async fn check_tree_leafs(
         pubkey,
         client_url,
         signatures_history_queue,
-        concurrency,
+        concurrency_tx,
         max_retries,
     );
     try_join(fetch_fut, async move {
@@ -620,7 +623,7 @@ async fn read_tree(
     pubkey: Pubkey,
     client_url: &str,
     signatures_history_queue: usize,
-    concurrency: NonZeroUsize,
+    concurrency_tx: (usize, Arc<Semaphore>),
     max_retries: u8,
 ) -> anyhow::Result<()> {
     fn print_seqs(id: usize, sig: Signature, seqs: Vec<(u64, MaybeLeafNode)>) {
@@ -634,7 +637,7 @@ async fn read_tree(
         pubkey,
         client_url,
         signatures_history_queue,
-        concurrency,
+        concurrency_tx,
         max_retries,
     );
     try_join(fetch_fut, async move {
@@ -667,7 +670,7 @@ fn read_tree_start(
     pubkey: Pubkey,
     client_url: &str,
     signatures_history_queue: usize,
-    concurrency: NonZeroUsize,
+    (concurrency_tx_max, concurrency_tx): (usize, Arc<Semaphore>),
     max_retries: u8,
 ) -> (
     BoxFuture<'static, anyhow::Result<()>>,
@@ -683,13 +686,15 @@ fn read_tree_start(
     let (tx, rx) = mpsc::unbounded_channel();
     let tx = Arc::new(tx);
 
-    let fetch_futs = (0..concurrency.get())
+    let fetch_futs = (0..concurrency_tx_max)
         .map(|_| {
             let sig_id = Arc::clone(&sig_id);
             let rx_sig = Arc::clone(&rx_sig);
             let client = RpcClient::new(client_url.to_owned());
+            let concurrency_tx = Arc::clone(&concurrency_tx);
             let tx = Arc::clone(&tx);
             async move {
+                let _permit = concurrency_tx.acquire_owned().await.unwrap();
                 loop {
                     let mut lock = rx_sig.lock().await;
                     let maybe_msg = lock.recv().await;
