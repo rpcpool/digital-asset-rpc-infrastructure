@@ -173,6 +173,7 @@ async fn main() -> anyhow::Result<()> {
             let stream = Arc::new(Mutex::new(find_signatures(
                 collection,
                 client,
+                3, // max_retries
                 args.signatures_history_queue,
             )));
 

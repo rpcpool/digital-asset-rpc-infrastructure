@@ -309,7 +309,7 @@ async fn send_address(
     tasks_tx: mpsc::UnboundedSender<BoxFuture<'static, anyhow::Result<()>>>,
 ) -> anyhow::Result<()> {
     let client = RpcClient::new(rpc_url.clone());
-    let mut all_sig = find_signatures(pubkey, client, signatures_history_queue);
+    let mut all_sig = find_signatures(pubkey, client, max_retries, signatures_history_queue);
     while let Some(sig) = all_sig.recv().await {
         let rpc_url = rpc_url.clone();
         let messenger = messenger.clone();

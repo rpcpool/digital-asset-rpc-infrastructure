@@ -680,6 +680,7 @@ fn read_tree_start(
     let rx_sig = Arc::new(Mutex::new(find_signatures(
         pubkey,
         RpcClient::new(client_url.to_owned()),
+        max_retries,
         signatures_history_queue,
     )));
 

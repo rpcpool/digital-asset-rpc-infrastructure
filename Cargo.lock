@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "acc_forwarder"
-version = "0.0.1"
+version = "0.7.12"
 dependencies = [
  "anyhow",
  "bs58 0.4.0",
@@ -618,7 +618,7 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 
 [[package]]
 name = "bgtask_creator"
-version = "0.1.0"
+version = "0.7.12"
 dependencies = [
  "anyhow",
  "clap 4.2.7",
@@ -1460,7 +1460,7 @@ dependencies = [
 
 [[package]]
 name = "digital_asset_types"
-version = "0.6.8"
+version = "0.7.12"
 dependencies = [
  "blockbuster",
  "bs58 0.4.0",
@@ -2524,7 +2524,7 @@ checksum = "ece97ea872ece730aed82664c424eb4c8291e1ff2480247ccf7409044bc6479f"
 
 [[package]]
 name = "load_generation"
-version = "0.1.0"
+version = "0.7.12"
 dependencies = [
  "fake",
  "mpl-token-metadata",
@@ -2621,7 +2621,7 @@ dependencies = [
 
 [[package]]
 name = "metaplex-rpc-proxy"
-version = "0.6.8"
+version = "0.7.12"
 dependencies = [
  "lazy_static",
  "log",
@@ -2812,7 +2812,7 @@ dependencies = [
 
 [[package]]
 name = "nft_ingester"
-version = "0.7.1"
+version = "0.7.12"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5940,7 +5940,7 @@ dependencies = [
 
 [[package]]
 name = "tree-status"
-version = "0.1.0"
+version = "0.7.12"
 dependencies = [
  "anchor-client",
  "anyhow",
@@ -6007,7 +6007,7 @@ dependencies = [
 
 [[package]]
 name = "txn_forwarder"
-version = "0.6.9"
+version = "0.7.12"
 dependencies = [
  "anyhow",
  "clap 4.2.7",
