@@ -1,21 +1,22 @@
-use solana_client::client_error::ClientErrorKind;
-
 use {
     anyhow::Context,
     futures::stream::{BoxStream, StreamExt},
     log::{debug, error, info},
-    serde::de::DeserializeOwned,
+    plerkle_messenger::TRANSACTION_STREAM,
+    plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
     solana_client::{
-        client_error::ClientError, client_error::Result as RpcClientResult,
-        nonblocking::rpc_client::RpcClient, rpc_client::GetConfirmedSignaturesForAddress2Config,
+        client_error::ClientError, nonblocking::rpc_client::RpcClient,
+        rpc_client::GetConfirmedSignaturesForAddress2Config,
         rpc_request::RpcError::RpcRequestError, rpc_request::RpcRequest,
     },
     solana_sdk::{
         pubkey::Pubkey,
         signature::{ParseSignatureError, Signature},
     },
-    solana_transaction_status::{EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding},
+    solana_transaction_status::EncodedConfirmedTransactionWithStatusMeta,
+    std::sync::Arc,
     std::{fmt, io::Result as IoResult, str::FromStr},
+    tokio::sync::Mutex,
     tokio::{
         fs::File,
         io::{stdin, AsyncBufReadExt, BufReader},
@@ -113,16 +114,14 @@ pub fn find_signatures(
     rx
 }
 
-pub async fn rpc_send_with_retries<E>(
+pub async fn rpc_send_with_retries(
     client: &RpcClient,
     request: RpcRequest,
     value: serde_json::Value,
     max_retries: u8,
-    error_key: E,
-) -> Result<EncodedConfirmedTransactionWithStatusMeta, ClientError>
-where
-    E: fmt::Debug,
-{
+    messenger: Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
+    signature: Signature,
+) -> Result<(), ClientError> {
     let mut retries = 0;
     let mut delay = Duration::from_millis(500);
 
@@ -131,7 +130,7 @@ where
 
         if let Err(error) = response {
             if retries < max_retries {
-                error!("retrying {:?} {:?}: {:?}", request, error_key, error);
+                error!("retrying {:?} {:?}: {:?}", request, signature, error);
                 sleep(delay).await;
                 delay *= 2;
                 retries += 1;
@@ -140,28 +139,52 @@ where
                 return Err(error);
             }
         }
-
         let value = response.unwrap();
         let tx: EncodedConfirmedTransactionWithStatusMeta = value;
-
-        if let Some(_) = tx.transaction.transaction.decode() {
-            return Ok(tx);
-        } else {
-            if retries < max_retries {
-                error!(
-                    "retrying {:?} {:?}: Transaction could not be decoded",
-                    request, error_key
-                );
-                sleep(delay).await;
-                delay *= 2;
-                retries += 1;
-            } else {
-                return Err(ClientError::from(RpcRequestError(
-                    "Transaction could not be decoded".to_string(),
-                )));
+        match send(signature, tx, Arc::clone(&messenger)).await {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                if retries < max_retries {
+                    error!(
+                        "retrying {:?} {:?}: Transaction could not be sent: {:?}",
+                        request, signature, e
+                    );
+                    sleep(delay).await;
+                    delay *= 2;
+                    retries += 1;
+                } else {
+                    return Err(ClientError::from(RpcRequestError(format!(
+                        "Transaction could not be decoded: {}",
+                        e
+                    ))));
+                }
+                continue;
             }
         }
     }
+}
+
+async fn send(
+    signature: Signature,
+    tx: EncodedConfirmedTransactionWithStatusMeta,
+    messenger: Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
+) -> anyhow::Result<()> {
+    // Ignore if tx failed or meta is missed
+    let meta = tx.transaction.meta.as_ref();
+    if meta.map(|meta| meta.status.is_err()).unwrap_or(true) {
+        return Ok(());
+    }
+
+    let fbb = flatbuffers::FlatBufferBuilder::new();
+    let fbb = seralize_encoded_transaction_with_status(fbb, tx)
+        .with_context(|| format!("failed to serialize transaction with {}", signature))?;
+    let bytes = fbb.finished_data();
+
+    let mut locked = messenger.lock().await;
+    locked.send(TRANSACTION_STREAM, bytes).await?;
+    info!("Sent transaction to stream {}", signature);
+
+    Ok(())
 }
 
 pub async fn read_lines(path: &str) -> anyhow::Result<BoxStream<'static, IoResult<String>>> {

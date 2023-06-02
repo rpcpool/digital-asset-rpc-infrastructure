@@ -8,7 +8,6 @@ use {
     },
     log::info,
     plerkle_messenger::{MessengerConfig, ACCOUNT_STREAM, TRANSACTION_STREAM},
-    plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
     solana_client::{
         nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig,
         rpc_request::RpcRequest,
@@ -18,7 +17,7 @@ use {
         pubkey::Pubkey,
         signature::Signature,
     },
-    solana_transaction_status::{EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding},
+    solana_transaction_status::UiTransactionEncoding,
     std::{env, str::FromStr, sync::Arc},
     tokio::sync::{mpsc, Mutex},
     txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries},
@@ -33,7 +32,7 @@ struct Cli {
     rpc_url: String,
     #[arg(long, short, default_value_t = 25)]
     concurrency: usize,
-    #[arg(long, short, default_value_t = 3)]
+    #[arg(long, short, default_value_t = 5)]
     max_retries: u8,
     #[arg(long, short, default_value_t = false)]
     replay_forward: bool,
@@ -220,36 +219,14 @@ async fn send_tx(
     };
 
     let client = RpcClient::new(rpc_url);
-    let tx: EncodedConfirmedTransactionWithStatusMeta = rpc_send_with_retries(
+    rpc_send_with_retries(
         &client,
         RpcRequest::GetTransaction,
         serde_json::json!([signature.to_string(), CONFIG,]),
         max_retries,
+        Arc::clone(&messenger),
         signature,
     )
-    .await?;
-    send(signature, tx, Arc::clone(&messenger)).await
-}
-
-async fn send(
-    signature: Signature,
-    tx: EncodedConfirmedTransactionWithStatusMeta,
-    messenger: Arc<Mutex<Box<dyn plerkle_messenger::Messenger>>>,
-) -> anyhow::Result<()> {
-    // Ignore if tx failed or meta is missed
-    let meta = tx.transaction.meta.as_ref();
-    if meta.map(|meta| meta.status.is_err()).unwrap_or(true) {
-        return Ok(());
-    }
-
-    let fbb = flatbuffers::FlatBufferBuilder::new();
-    let fbb = seralize_encoded_transaction_with_status(fbb, tx)
-        .with_context(|| format!("failed to serialize transaction with {}", signature))?;
-    let bytes = fbb.finished_data();
-
-    let mut locked = messenger.lock().await;
-    locked.send(TRANSACTION_STREAM, bytes).await?;
-    info!("Sent transaction to stream {}", signature);
-
-    Ok(())
+    .await
+    .map_err(|e| anyhow::anyhow!(e))
 }
