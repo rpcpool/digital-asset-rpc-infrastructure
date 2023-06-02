@@ -391,7 +391,10 @@ async fn check_tree(
             indexed_seq.max_seq, indexed_seq.cnt_seq
         );
         let missing_seqs = get_missing_seq(pubkey, onchain_seq, conn).await?;
-        warn!("[{pubkey}] missing seq: {:?}", missing_seqs);
+        warn!(
+            "[{pubkey}] missing seq ranges: {:?}",
+            build_seq_ranges(missing_seqs)
+        );
     } else {
         info!("[{:?}] Tree has no gaps!", pubkey)
     }
@@ -432,7 +435,10 @@ async fn fix_tree(
         )
         .await?;
     } else {
-        info!("[{:?}] Tree has no gaps!", pubkey)
+        info!(
+            "[{:?}] Tree has no gaps! Indexed Seq: {:?}",
+            pubkey, indexed_seq.max_seq
+        )
     }
     Ok(())
 }
@@ -446,13 +452,8 @@ async fn find_and_forward_txns_for_missing_seqs(
 ) -> anyhow::Result<()> {
     // Concurrency config
     // TODO: Change to args
-    let batch_processing_concurrency = 1;
+    let batch_processing_concurrency = 10;
     let get_txn_concurrency = 20;
-
-    // Extra signatures to send as a safety buffer.
-    // E.g. if Seq 5 is missing and txn D produced Seq 6, we crawl back N signatures and send them all.
-    // This is a hacky workaround for failed signatures or non-bubblegum txns.
-    let hacky_buffer = 3;
 
     let (r_sender, r_recv) = unbounded();
     let (s_sender, s_recv) = unbounded();
@@ -471,7 +472,7 @@ async fn find_and_forward_txns_for_missing_seqs(
         );
 
         s.spawn(|_| {
-            let ranges = build_seq_ranges(seqs, hacky_buffer);
+            let ranges = build_seq_ranges(seqs);
             trace!("Processing seq ranges: {:?}", ranges);
             for range in ranges {
                 r_sender.send(range).unwrap();
@@ -489,12 +490,7 @@ async fn find_and_forward_txns_for_missing_seqs(
                 for range in r_recv.iter() {
                     runtime
                         .block_on(find_signatures_for_missing_seq_range(
-                            tree,
-                            range,
-                            &client,
-                            &conn,
-                            &s_sender,
-                            hacky_buffer,
+                            tree, range, &client, &conn, &s_sender,
                         ))
                         .unwrap();
                 }
@@ -566,7 +562,7 @@ async fn send_txn(
     Ok(())
 }
 
-fn build_seq_ranges(seqs: Vec<i64>, hacky_buffer: i64) -> Vec<(i64, i64)> {
+fn build_seq_ranges(seqs: Vec<i64>) -> Vec<(i64, i64)> {
     let mut ranges: Vec<(i64, i64)> = Vec::new();
     if seqs.is_empty() {
         return ranges;
@@ -575,7 +571,7 @@ fn build_seq_ranges(seqs: Vec<i64>, hacky_buffer: i64) -> Vec<(i64, i64)> {
     let mut current_start = seqs[0];
     let mut current_end = seqs[0];
     for &num in seqs.iter().skip(1) {
-        if num >= (current_end + 1 - hacky_buffer) {
+        if current_end + 1 == num {
             current_end = num;
         } else {
             ranges.push((current_start, current_end));
@@ -584,7 +580,23 @@ fn build_seq_ranges(seqs: Vec<i64>, hacky_buffer: i64) -> Vec<(i64, i64)> {
         }
     }
     ranges.push((current_start, current_end));
-    ranges
+
+    // Two ranges will be joined if within this gap.
+    // This will reduce the calls to GetSignaturesForAddress which will improve overall performance.
+    let maximum_join_gap: i32 = 10;
+    let mut joined_ranges: Vec<(i64, i64)> = Vec::new();
+    let (mut current_start, mut current_end) = ranges[0];
+    for (start, end) in ranges.iter().skip(1) {
+        if current_end + maximum_join_gap as i64 >= *start {
+            current_end = *end;
+        } else {
+            joined_ranges.push((current_start, current_end));
+            current_start = *start;
+            current_end = *end;
+        }
+    }
+
+    joined_ranges
 }
 
 // TODO: Txns submitted not be the right ones! We need a more complex search algo.
@@ -597,7 +609,6 @@ async fn find_signatures_for_missing_seq_range(
     client: &RpcClient,
     conn: &DatabaseConnection,
     sender: &Sender<Signature>,
-    hacky_buffer: i64,
 ) -> anyhow::Result<()> {
     let (start, end) = range;
     trace!("Filling gap for range: [{:?}, {:?}]", start, end);
@@ -619,6 +630,11 @@ async fn find_signatures_for_missing_seq_range(
         start,
         end
     );
+
+    // Extra signatures to send as a safety buffer.
+    // E.g. if Seq 5 is missing and txn D produced Seq 6, we crawl back N signatures and send them all.
+    // This is a hacky workaround for failed signatures or non-bubblegum txns.
+    let hacky_buffer = 3;
 
     // Fetch signatures for all txns in the range before "next".
     // TODO: Scan and parse the transactions using blockbuster and skip failed txns.
