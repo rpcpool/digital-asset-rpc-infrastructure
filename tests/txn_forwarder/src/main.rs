@@ -7,8 +7,16 @@ use {
         stream::StreamExt,
     },
     log::{error, info},
+    nft_ingester::{
+        config::rand_string,
+        tasks::{BgTask, BackgroundTaskRunnerConfig, DownloadMetadataTask, TaskManager},
+        program_transformers::ProgramTransformer,
+    },
     plerkle_messenger::{MessengerConfig, ACCOUNT_STREAM, TRANSACTION_STREAM},
-    plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
+    plerkle_serialization::{
+        root_as_transaction_info,
+        serializer::seralize_encoded_transaction_with_status,
+    },
     prometheus::{IntCounterVec, Opts, Registry},
     solana_client::{
         nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig,
@@ -25,6 +33,10 @@ use {
         env,
         str::FromStr,
         sync::Arc,
+        time,
+    },
+    sqlx:: {
+        postgres::{PgConnectOptions, PgPoolOptions},
     },
     tokio::{
         sync::{mpsc, Mutex},
@@ -54,6 +66,9 @@ struct Cli {
     /// Custom header in request to Solana RPC.
     #[arg(long)]
     rpc_custom_header: Option<String>,
+
+    #[arg(long)]
+    pg_url: Option<String>,
 
     #[arg(long, short, default_value_t = 25)]
     concurrency: usize,
@@ -104,14 +119,15 @@ enum Action {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct MessengerPool {
     tx: mpsc::Sender<Box<dyn plerkle_messenger::Messenger>>,
     rx: Arc<Mutex<mpsc::Receiver<Box<dyn plerkle_messenger::Messenger>>>>,
+    manager: Option<Arc<ProgramTransformer>>,
 }
 
 impl MessengerPool {
-    async fn new(size: usize, config: &BTreeMap<String, Value>) -> anyhow::Result<Self> {
+    async fn new(size: usize, config: &BTreeMap<String, Value>, pg_url: Option<String>) -> anyhow::Result<Self> {
         let (tx, rx) = mpsc::channel(size);
 
         for _ in 0..size {
@@ -130,9 +146,43 @@ impl MessengerPool {
             }
         }
 
+        let manager = if let Some(pg_url) = pg_url  {
+            let pg_options: PgConnectOptions = pg_url.clone().parse().unwrap();
+            let database_pool = PgPoolOptions::new()
+                .min_connections(1)
+                .max_connections(10)
+                .connect_with(pg_options)
+                .await
+                .unwrap();
+
+            let task_runner_config = BackgroundTaskRunnerConfig::default();
+
+            let bg_task_definitions: Vec<Box<dyn BgTask>> = vec![Box::new(DownloadMetadataTask {
+                lock_duration: task_runner_config.lock_duration,
+                max_attempts: task_runner_config.max_attempts,
+                timeout: Some(time::Duration::from_secs(
+                    task_runner_config.timeout.unwrap_or(3),
+                )),
+            })];
+
+            let mut background_task_manager =
+                TaskManager::new(rand_string(), database_pool.clone(), bg_task_definitions);
+
+            let _bg_task_listener = background_task_manager.start_listener(false);
+            let bg_task_sender = background_task_manager.get_sender().unwrap();
+
+            let manager = ProgramTransformer::new(database_pool, bg_task_sender);
+
+            Some(Arc::new(manager))
+        } else {
+            None
+        };
+
+
         Ok(Self {
             tx,
             rx: Arc::new(Mutex::new(rx)),
+            manager: manager,
         })
     }
 
@@ -153,26 +203,40 @@ impl MessengerPool {
             .with_context(|| format!("failed to serialize transaction with {signature}"))?;
         let bytes = fbb.finished_data();
 
-        let mut rx = self.rx.lock().await;
-        let mut messenger = rx
-            .recv()
-            .await
-            .ok_or_else(|| anyhow::anyhow!("failed to ger messenger"))?;
-        drop(rx);
+        if let Some(manager) = &self.manager {
+            if let Ok(tx) = root_as_transaction_info(&bytes) {
+                let manager = Arc::clone(&manager);
 
-        let result = messenger.send(TRANSACTION_STREAM, bytes).await;
-        if self.tx.try_send(messenger).is_err() {
-            panic!("expect empty channel");
-        }
-        result?;
-
-        info!("Sent transaction to stream {signature}");
-        if let Some(pubkey) = pubkey {
-            TXN_FORWARDER_SENT
-                .with_label_values(&[&pubkey.to_string()])
-                .inc();
+                let signature = tx.signature().unwrap_or("NO SIG");
+                info!("Received transaction: {}", signature);
+                match manager.handle_transaction(&tx).await {
+                    Ok(()) => info!("Forwarded transaction: {}", signature),
+                    Err(e) => error!("Failed to forward transaction: {} {}", signature, e),
+                }
+            }
         } else {
-            TXN_FORWARDER_SENT.with_label_values(&["undefined"]).inc();
+            let mut rx = self.rx.lock().await;
+            let mut messenger = rx
+                .recv()
+                .await
+                .ok_or_else(|| anyhow::anyhow!("failed to ger messenger"))?;
+            drop(rx);
+
+            let result = messenger.send(TRANSACTION_STREAM, bytes).await;
+            if self.tx.try_send(messenger).is_err() {
+                panic!("expect empty channel");
+            }
+            result?;
+
+            info!("Sent transaction to stream {signature}");
+            if let Some(pubkey) = pubkey {
+                TXN_FORWARDER_SENT
+                    .with_label_values(&[&pubkey.to_string()])
+                    .inc();
+            } else {
+                TXN_FORWARDER_SENT.with_label_values(&["undefined"]).inc();
+            }
+
         }
 
         Ok(())
@@ -207,7 +271,7 @@ async fn main() -> anyhow::Result<()> {
         "pipeline_size_bytes" => 1u128.to_string(),
     });
     let config = config_wrapper.into_dict().unwrap();
-    let messenger = MessengerPool::new(cli.concurrency_redis, &config).await?;
+    let messenger = MessengerPool::new(cli.concurrency_redis, &config, cli.pg_url).await?;
     let (tx, rx) = mpsc::unbounded_channel();
 
     match cli.action {
