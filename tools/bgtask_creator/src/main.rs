@@ -76,6 +76,14 @@ pub async fn main() {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("include-url")
+                .long("include-url")
+                .short('u')
+                .help("Fetch only the included url")
+                .required(false)
+                .action(ArgAction::Set),
+        )
+        .arg(
             Arg::new("authority")
                 .long("authority")
                 .short('a')
@@ -165,6 +173,7 @@ pub async fn main() {
     let mint = matches.get_one::<String>("mint");
     let creator = matches.get_one::<String>("creator");
     let ignore_ipfs = matches.get_flag("ignore-ipfs");
+    let include_url = matches.get_one::<String>("include-url");
 
     let all = "all".to_string();
     let mut asset_data_missing = if let Some(authority) = authority {
@@ -290,6 +299,9 @@ pub async fn main() {
                 ))
                 .order_by(asset_data::Column::Id, Order::Asc);
 
+        if let Some(url) = include_url {
+            query = query.filter(Condition::all().add(asset_data::Column::MetadataUrl.like(url)));
+        }
         if ignore_ipfs {
             query = query.filter(
                 Condition::all()
@@ -490,7 +502,7 @@ pub async fn main() {
             if tasks.is_empty() {
                 info!("No assets with missing metadata found");
             } else {
-                info!("Found {} tasks to process", tasks.len());
+                let total_tasks = tasks.len();
                 for task in tasks {
                     let res = task.await;
                     match res {
@@ -500,6 +512,7 @@ pub async fn main() {
                         }
                     }
                 }
+                info!("Found {} tasks to process", total_tasks);
             }
         }
     }

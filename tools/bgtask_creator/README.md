@@ -7,3 +7,7 @@ The tool avoids creating new tasks for those previously marked as 'failed'. To r
 Please note that the tool's primary function is task creation and not task execution.
 
 Run `cargo run` to run the tool and `cargo run -- help` to see the options. Ensure `INGESTER_DATABASE_CONFIG` is configured. For local testing, it could be for example `{listener_channel="backfill_item_added", url="postgres://ingest@localhost/das"}`
+
+Supported options:
+
+--include-url: Should be of the format `https://entities.nft.helium.io%`. Note the % option
