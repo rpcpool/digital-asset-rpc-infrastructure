@@ -61,7 +61,7 @@ where
                 let id_bytes = id.to_bytes();
                 let slot_i = bundle.slot as i64;
                 let uri = metadata.uri.trim().replace('\0', "");
-                let mut chain_data = ChainDataV1 {
+                let chain_data = ChainDataV1 {
                     name: metadata.name.clone(),
                     symbol: metadata.symbol.clone(),
                     edition_nonce: metadata.edition_nonce,
@@ -73,7 +73,6 @@ where
                         total: u.total,
                     }),
                 };
-                chain_data.sanitize();
                 let chain_data_json = serde_json::to_value(chain_data)
                     .map_err(|e| IngesterError::DeserializationError(e.to_string()))?;
                 let chain_mutability = match metadata.is_mutable {

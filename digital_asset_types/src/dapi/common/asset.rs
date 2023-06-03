@@ -127,6 +127,13 @@ pub fn safe_select<'a>(
         .and_then(|v| v.pop())
 }
 
+fn sanitize(val: Value) -> Result<String, &'static str> {
+    match val {
+        Value::String(s) => Ok(s.trim().replace("\0", "").to_string()),
+        _ => Err("Provided value is not a string"),
+    }
+}
+
 pub fn v1_content_from_json(
     asset_data: &asset_data::Model,
     cdn_prefix: Option<String>,
@@ -141,7 +148,11 @@ pub fn v1_content_from_json(
     let mut meta: MetadataMap = MetadataMap::new();
     let name = safe_select(chain_data_selector, "$.name");
     if let Some(name) = name {
-        meta.set_item("name", name.clone());
+        if let Ok(name) = sanitize(name.clone()) {
+            meta.set_item("name", Value::String(name));
+        } else {
+            meta.set_item("name", name.clone());
+        }
     }
     let desc = safe_select(selector, "$.description");
     if let Some(desc) = desc {
@@ -149,7 +160,11 @@ pub fn v1_content_from_json(
     }
     let symbol = safe_select(chain_data_selector, "$.symbol");
     if let Some(symbol) = symbol {
-        meta.set_item("symbol", symbol.clone());
+        if let Ok(symbol) = sanitize(symbol.clone()) {
+            meta.set_item("symbol", Value::String(symbol));
+        } else {
+            meta.set_item("symbol", symbol.clone());
+        }
     }
     let symbol = safe_select(selector, "$.attributes");
     if let Some(symbol) = symbol {
