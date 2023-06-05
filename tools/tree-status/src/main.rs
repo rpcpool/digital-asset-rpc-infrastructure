@@ -64,7 +64,7 @@ use {
         io::{stdout, AsyncWrite, AsyncWriteExt},
         sync::{mpsc, Mutex},
     },
-    txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries},
+    txn_forwarder::{find_signatures, read_lines, rpc_tx_with_retries},
 };
 
 const RPC_GET_TXN_RETRIES: u8 = 5;
@@ -534,7 +534,7 @@ async fn send_txn(
     client: &RpcClient,
     messenger: &Mutex<Box<dyn plerkle_messenger::Messenger>>,
 ) -> anyhow::Result<()> {
-    let txn = rpc_send_with_retries(
+    let txn: EncodedConfirmedTransactionWithStatusMeta = rpc_tx_with_retries(
         &client,
         RpcRequest::GetTransaction,
         serde_json::json!([signature.to_string(), RPC_TXN_CONFIG,]),
@@ -927,7 +927,7 @@ async fn process_tx(
         max_supported_transaction_version: Some(0),
     };
 
-    let tx: EncodedConfirmedTransactionWithStatusMeta = rpc_send_with_retries(
+    let tx: EncodedConfirmedTransactionWithStatusMeta = rpc_tx_with_retries(
         client,
         RpcRequest::GetTransaction,
         serde_json::json!([signature.to_string(), CONFIG]),

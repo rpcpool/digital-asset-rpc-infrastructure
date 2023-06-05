@@ -4,6 +4,8 @@ use {
     log::{debug, error, info},
     plerkle_messenger::TRANSACTION_STREAM,
     plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
+    serde::de::DeserializeOwned,
+    solana_client::client_error::Result as RpcClientResult,
     solana_client::{
         client_error::ClientError, nonblocking::rpc_client::RpcClient,
         rpc_client::GetConfirmedSignaturesForAddress2Config,
@@ -112,6 +114,36 @@ pub fn find_signatures(
     });
 
     rx
+}
+
+pub async fn rpc_tx_with_retries<T, E>(
+    client: &RpcClient,
+    request: RpcRequest,
+    value: serde_json::Value,
+    max_retries: u8,
+    error_key: E,
+) -> RpcClientResult<T>
+where
+    T: DeserializeOwned,
+    E: fmt::Debug,
+{
+    let mut retries = 0;
+    let mut delay = Duration::from_millis(500);
+    loop {
+        match client.send(request, value.clone()).await {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                if retries < max_retries {
+                    error!("retrying {request} {error_key:?}: {error}");
+                    sleep(delay).await;
+                    delay *= 2;
+                    retries += 1;
+                } else {
+                    return Err(error);
+                }
+            }
+        }
+    }
 }
 
 pub async fn rpc_send_with_retries(

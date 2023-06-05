@@ -29,7 +29,7 @@ use {
     },
     std::{collections::HashSet, env, str::FromStr, sync::Arc},
     tokio::sync::Mutex,
-    txn_forwarder::{find_signatures, read_lines, rpc_send_with_retries},
+    txn_forwarder::{find_signatures, read_lines, rpc_tx_with_retries},
 };
 
 #[derive(Parser)]
@@ -146,7 +146,7 @@ async fn main() -> anyhow::Result<()> {
             let collection = Pubkey::from_str(&collection)
                 .with_context(|| format!("failed to parse collection {collection}"))?;
             let stream = Arc::new(Mutex::new(find_signatures(
-                collection, client, None, None, 2_000,
+                collection, client, None, None, 2_000, false,
             )));
 
             try_join_all((0..concurrency).map(|_| {
@@ -210,7 +210,7 @@ async fn collection_get_tx_info(
         max_supported_transaction_version: Some(u8::MAX),
     };
 
-    let tx: EncodedConfirmedTransactionWithStatusMeta = rpc_send_with_retries(
+    let tx: EncodedConfirmedTransactionWithStatusMeta = rpc_tx_with_retries(
         client,
         RpcRequest::GetTransaction,
         serde_json::json!([signature.to_string(), CONFIG]),
@@ -306,7 +306,7 @@ async fn fetch_metadata_and_send_accounts(
 
 // returns largest (NFT related) token account belonging to mint
 async fn get_token_largest_account(client: &RpcClient, mint: Pubkey) -> anyhow::Result<Pubkey> {
-    let response: RpcResponse<Vec<RpcTokenAccountBalance>> = rpc_send_with_retries(
+    let response: RpcResponse<Vec<RpcTokenAccountBalance>> = rpc_tx_with_retries(
         client,
         RpcRequest::Custom {
             method: "getTokenLargestAccounts",
@@ -335,7 +335,7 @@ async fn fetch_account(pubkey: Pubkey, client: &RpcClient) -> anyhow::Result<(Ac
         min_context_slot: None,
     };
 
-    let response: RpcResponse<Option<UiAccount>> = rpc_send_with_retries(
+    let response: RpcResponse<Option<UiAccount>> = rpc_tx_with_retries(
         client,
         RpcRequest::GetAccountInfo,
         serde_json::json!([pubkey.to_string(), CONFIG]),
