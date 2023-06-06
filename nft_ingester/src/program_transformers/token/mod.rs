@@ -77,6 +77,7 @@ pub async fn handle_token_program_account<'a, 'b, 'c>(
                     let mut active: asset::ActiveModel = asset.into();
                     active.owner = Set(Some(owner));
                     active.delegate = Set(delegate);
+                    active.frozen = Set(frozen);
                     active.save(&txn).await?;
                 }
             }
