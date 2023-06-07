@@ -23,6 +23,7 @@ pub struct IngesterConfig {
     pub account_stream_worker_count: Option<u32>,
     pub transaction_stream_worker_count: Option<u32>,
     pub code_version: Option<&'static str>,
+    pub ipfs_gateway: Option<String>,
 }
 
 impl IngesterConfig {

@@ -84,6 +84,16 @@ pub async fn main() {
                 .action(ArgAction::Set),
         )
         .arg(
+            Arg::new("limit")
+                .long("limit")
+                .short('l')
+                .help("maximum number of tasks to create")
+                .required(false)
+                .action(ArgAction::Set)
+                .value_parser(value_parser!(u64))
+                .default_value("0"),
+        )
+        .arg(
             Arg::new("authority")
                 .long("authority")
                 .short('a')
@@ -174,6 +184,7 @@ pub async fn main() {
     let creator = matches.get_one::<String>("creator");
     let ignore_ipfs = matches.get_flag("ignore-ipfs");
     let include_url = matches.get_one::<String>("include-url");
+    let limit = matches.get_one::<u64>("limit").unwrap();
 
     let all = "all".to_string();
     let mut asset_data_missing = if let Some(authority) = authority {
@@ -439,6 +450,8 @@ pub async fn main() {
             println!("{}, total missing assets, {}", asset_data_missing.1, i)
         }
         _ => {
+            let mut count = 0;
+
             // Find all the assets with missing metadata
             while let Some(assets) = asset_data_missing.0.try_next().await.unwrap() {
                 info!("Found {} assets", assets.len());
@@ -484,7 +497,6 @@ pub async fn main() {
                                 false,
                             )
                             .await;
-
                             match res {
                                 Ok(_) => {
                                     info!("Task Created: {:?} {:?}", task_hash, task.asset_data_id);
@@ -495,6 +507,10 @@ pub async fn main() {
                             }
                         });
                         tasks.push(new_task);
+                    }
+                    count += 1;
+                    if *limit > 0 && count >= *limit {
+                        break;
                     }
                 }
             }

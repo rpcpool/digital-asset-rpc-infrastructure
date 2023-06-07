@@ -55,8 +55,12 @@ pub async fn main() -> Result<(), IngesterError> {
     //Setup definitions for background tasks
     let bg_task_definitions: Vec<Box<dyn BgTask>> = vec![Box::new(DownloadMetadataTask {})];
 
-    let mut background_task_manager =
-        TaskManager::new(rand_string(), database_pool.clone(), bg_task_definitions);
+    let mut background_task_manager = TaskManager::new(
+        rand_string(),
+        database_pool.clone(),
+        bg_task_definitions,
+        config.ipfs_gateway.clone(),
+    );
     // This is how we send new bg tasks
     let bg_task_listener = background_task_manager
         .start_listener(role == IngesterRole::BackgroundTaskRunner || role == IngesterRole::All);

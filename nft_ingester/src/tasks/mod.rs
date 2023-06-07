@@ -29,6 +29,7 @@ pub trait BgTask: Send + Sync {
         &self,
         db: &DatabaseConnection,
         data: serde_json::Value,
+        ipfs_gateway: Option<String>,
     ) -> Result<(), IngesterError>;
 }
 
@@ -69,6 +70,7 @@ pub struct TaskManager {
     pool: Pool<Postgres>,
     producer: Option<UnboundedSender<TaskData>>,
     registered_task_types: Arc<HashMap<String, Box<dyn BgTask>>>,
+    ipfs_gateway: Option<String>,
 }
 
 impl TaskManager {
@@ -76,6 +78,7 @@ impl TaskManager {
         db: &DatabaseConnection,
         task_def: &Box<dyn BgTask>,
         mut task: tasks::ActiveModel,
+        ipfs_gateway: Option<String>,
     ) -> Result<tasks::ActiveModel, IngesterError> {
         let task_name = task_def.name();
         let attempts: Option<Value> = task.attempts.into_value();
@@ -93,7 +96,7 @@ impl TaskManager {
         }?;
 
         let start = Utc::now();
-        let res = task_def.task(&db, *data_json).await;
+        let res = task_def.task(&db, *data_json, ipfs_gateway).await;
         let end = Utc::now();
         task.duration = Set(Some(
             ((end.timestamp_millis() - start.timestamp_millis()) / 1000) as i32,
@@ -204,6 +207,7 @@ impl TaskManager {
         instance_name: String,
         pool: Pool<Postgres>,
         task_defs: Vec<Box<dyn BgTask>>,
+        ipfs_gateway: Option<String>,
     ) -> Self {
         let mut tasks = HashMap::new();
         for task in task_defs {
@@ -214,6 +218,7 @@ impl TaskManager {
             pool,
             producer: None,
             registered_task_types: Arc::new(tasks),
+            ipfs_gateway,
         }
     }
 
@@ -338,6 +343,7 @@ impl TaskManager {
             }
         });
         let pool = self.pool.clone();
+        let ipfs_gateway = self.ipfs_gateway.clone();
         tokio::spawn(async move {
             let mut interval = time::interval(tokio::time::Duration::from_millis(RETRY_INTERVAL));
             let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone());
@@ -353,6 +359,7 @@ impl TaskManager {
                             let task_map_clone = task_map.clone();
                             let instance_name_clone = instance_name.clone();
                             let pool = pool.clone();
+                            let ipfs_gateway = ipfs_gateway.clone();
                             tokio::task::spawn(async move {
                                 if let Some(task_executor) =
                                     task_map_clone.clone().get(&*task.task_type)
@@ -371,6 +378,7 @@ impl TaskManager {
                                         &conn,
                                         task_executor,
                                         active_model,
+                                        ipfs_gateway,
                                     )
                                     .await?;
                                     TaskManager::save_task(&conn, model).await?;
