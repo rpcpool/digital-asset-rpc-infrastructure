@@ -1394,6 +1394,7 @@ dependencies = [
  "blockbuster 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "bs58 0.4.0",
  "futures",
+ "indexmap",
  "jsonpath_lib",
  "log",
  "mime_guess",

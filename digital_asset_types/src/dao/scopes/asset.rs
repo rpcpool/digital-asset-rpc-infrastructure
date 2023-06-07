@@ -2,8 +2,8 @@ use crate::dao::{
     asset, asset_authority, asset_creators, asset_data, asset_grouping, cl_audits, FullAsset,
     GroupingSize, Pagination,
 };
+use indexmap::IndexMap;
 use sea_orm::{entity::*, query::*, ConnectionTrait, DbErr, Order};
-use std::collections::BTreeMap;
 
 pub fn paginate<'db, T>(pagination: &Pagination, limit: u64, stmt: T) -> T
 where
@@ -159,8 +159,6 @@ where
         .find_also_related(asset_data::Entity)
         .filter(condition)
         .join(JoinType::LeftJoin, relation.def())
-        .distinct_on([(asset::Entity, asset::Column::Id)])
-        .order_by(asset::Column::Id, Order::Desc)
         .order_by(sort_by, sort_direction);
 
     stmt = paginate(pagination, limit, stmt);
@@ -175,8 +173,8 @@ pub async fn get_related_for_assets(
     assets: Vec<(asset::Model, Option<asset_data::Model>)>,
 ) -> Result<Vec<FullAsset>, DbErr> {
     let mut ids = Vec::with_capacity(assets.len());
-    // Using BTreeMap to preserve order.
-    let mut assets_map = assets.into_iter().fold(BTreeMap::new(), |mut x, asset| {
+    // Using IndexMap to preserve order.
+    let mut assets_map = assets.into_iter().fold(IndexMap::new(), |mut x, asset| {
         if let Some(ad) = asset.1 {
             let id = asset.0.id.clone();
             let fa = FullAsset {
@@ -238,14 +236,11 @@ pub async fn get_assets_by_condition(
     pagination: &Pagination,
     limit: u64,
 ) -> Result<Vec<FullAsset>, DbErr> {
-    let mut stmt = asset::Entity::find().distinct_on([(asset::Entity, asset::Column::Id)]);
+    let mut stmt = asset::Entity::find();
     for def in joins {
         stmt = stmt.join(JoinType::LeftJoin, def);
     }
-    stmt = stmt
-        .filter(condition)
-        .order_by(asset::Column::Id, Order::Desc)
-        .order_by(sort_by, sort_direction);
+    stmt = stmt.filter(condition).order_by(sort_by, sort_direction);
 
     stmt = paginate(pagination, limit, stmt);
     let asset_list = stmt.find_also_related(asset_data::Entity).all(conn).await?;
