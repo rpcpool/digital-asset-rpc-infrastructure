@@ -595,6 +595,7 @@ fn build_seq_ranges(seqs: Vec<i64>) -> Vec<(i64, i64)> {
             current_end = *end;
         }
     }
+    joined_ranges.push((current_start, current_end));
 
     joined_ranges
 }
