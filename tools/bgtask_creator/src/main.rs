@@ -499,7 +499,10 @@ pub async fn main() {
                             .await;
                             match res {
                                 Ok(_) => {
-                                    info!("Task Created: {:?} {:?}", task_hash, task.asset_data_id);
+                                    debug!(
+                                        "Task Created: {:?} {:?}, count: {:?}",
+                                        task_hash, task.asset_data_id, count
+                                    );
                                 }
                                 Err(e) => {
                                     error!("Task failed: {}", e);
@@ -509,9 +512,9 @@ pub async fn main() {
                         tasks.push(new_task);
                     }
                     count += 1;
-                    if *limit > 0 && count >= *limit {
-                        break;
-                    }
+                }
+                if *limit > 0 && count >= *limit {
+                    break;
                 }
             }
 
