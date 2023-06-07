@@ -1,3 +1,5 @@
+use log::debug;
+
 use crate::{api::*, DasApiError, RpcModule};
 pub struct RpcApiBuilder;
 
@@ -7,7 +9,7 @@ impl RpcApiBuilder {
     ) -> Result<RpcModule<Box<dyn ApiContract>>, DasApiError> {
         let mut module = RpcModule::new(contract);
         module.register_async_method("healthz", |_rpc_params, rpc_context| async move {
-            println!("Checking Health");
+            debug!("Checking Health");
             rpc_context.check_health().await.map_err(Into::into)
         })?;
 
