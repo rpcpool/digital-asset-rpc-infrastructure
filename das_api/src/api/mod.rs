@@ -1,7 +1,7 @@
 use crate::DasApiError;
 use async_trait::async_trait;
 use digital_asset_types::rpc::filter::SearchConditionType;
-use digital_asset_types::rpc::response::AssetList;
+use digital_asset_types::rpc::response::{AssetList, TransactionList};
 use digital_asset_types::rpc::{filter::AssetSorting, response::GetGroupingResponse};
 use digital_asset_types::rpc::{Asset, AssetProof, Interface, OwnershipModel, RoyaltyModel};
 use open_rpc_derive::{document_rpc, rpc};
@@ -100,6 +100,16 @@ pub struct GetGrouping {
     pub group_value: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct GetTransactionsByAsset {
+    pub id: String,
+    pub limit: Option<u32>,
+    pub page: Option<u32>,
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
 #[document_rpc]
 #[async_trait]
 pub trait ApiContract: Send + Sync + 'static {
@@ -164,4 +174,13 @@ pub trait ApiContract: Send + Sync + 'static {
         summary = "Get a list of assets grouped by a specific authority"
     )]
     async fn get_grouping(&self, payload: GetGrouping) -> Result<GetGroupingResponse, DasApiError>;
+    #[rpc(
+        name = "getTransactionByAsset",
+        params = "named",
+        summary = "Get all the transactions for an asset"
+    )]
+    async fn get_transactions_by_asset(
+        &self,
+        payload: GetTransactionsByAsset,
+    ) -> Result<TransactionList, DasApiError>;
 }

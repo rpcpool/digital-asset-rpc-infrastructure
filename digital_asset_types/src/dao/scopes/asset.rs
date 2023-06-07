@@ -1,6 +1,6 @@
 use crate::dao::{
-    asset, asset_authority, asset_creators, asset_data, asset_grouping, FullAsset, GroupingSize,
-    Pagination,
+    asset, asset_authority, asset_creators, asset_data, asset_grouping, cl_audits, FullAsset,
+    GroupingSize, Pagination,
 };
 use sea_orm::{entity::*, query::*, ConnectionTrait, DbErr, Order};
 use std::collections::BTreeMap;
@@ -288,4 +288,54 @@ pub async fn get_by_id(
         creators,
         groups: grouping,
     })
+}
+
+pub async fn fetch_transactions(
+    conn: &impl ConnectionTrait,
+    tree: Vec<u8>,
+    leaf_id: i64,
+    pagination: &Pagination,
+    limit: u64,
+) -> Result<Vec<Vec<String>>, DbErr> {
+    let mut stmt = cl_audits::Entity::find()
+        .filter(cl_audits::Column::Tree.eq(tree))
+        .filter(cl_audits::Column::LeafIdx.eq(leaf_id))
+        .order_by(cl_audits::Column::CreatedAt, sea_orm::Order::Desc);
+
+    stmt = paginate(pagination, limit, stmt);
+    let transactions = stmt.all(conn).await?;
+    let transaction_list: Vec<Vec<String>> = transactions
+        .into_iter()
+        .map(|transaction| vec![transaction.tx, transaction.instruction])
+        .collect();
+
+    Ok(transaction_list)
+}
+
+pub async fn get_transactions_by_asset(
+    conn: &impl ConnectionTrait,
+    asset_id: Vec<u8>,
+    pagination: &Pagination,
+    limit: u64,
+) -> Result<Vec<Vec<String>>, DbErr> {
+    let mut stmt = asset::Entity::find().distinct_on([(asset::Entity, asset::Column::Id)]);
+    stmt = stmt
+        .filter(asset::Column::Id.eq(asset_id))
+        .order_by(asset::Column::Id, Order::Desc)
+        .limit(1);
+
+    let asset = stmt.one(conn).await?;
+
+    if let Some(asset) = asset {
+        let tree = asset
+            .tree_id
+            .ok_or(DbErr::RecordNotFound("Tree not found".to_string()))?;
+        if tree.is_empty() {
+            return Err(DbErr::Custom("Empty tree for asset".to_string()));
+        }
+        let transactions = fetch_transactions(conn, tree, asset.nonce, pagination, limit).await?;
+        Ok(transactions)
+    } else {
+        Ok(Vec::new())
+    }
 }

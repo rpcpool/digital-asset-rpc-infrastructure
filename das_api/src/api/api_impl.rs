@@ -1,5 +1,3 @@
-
-
 use digital_asset_types::{
     dao::{
         scopes::asset::get_grouping,
@@ -10,7 +8,7 @@ use digital_asset_types::{
     },
     dapi::{
         get_asset, get_assets_by_authority, get_assets_by_creator, get_assets_by_group,
-        get_assets_by_owner, get_proof_for_asset, search_assets,
+        get_assets_by_owner, get_proof_for_asset, get_transactions_by_asset, search_assets,
     },
     rpc::{filter::SearchConditionType, response::GetGroupingResponse, transform::AssetTransform},
     rpc::{OwnershipModel, RoyaltyModel},
@@ -26,7 +24,7 @@ use {
     crate::validation::validate_pubkey,
     crate::DasApiError,
     async_trait::async_trait,
-    digital_asset_types::rpc::{response::AssetList, Asset, AssetProof},
+    digital_asset_types::rpc::{response::AssetList, response::TransactionList, Asset, AssetProof},
     sea_orm::{DatabaseConnection, DbErr, SqlxPostgresConnector},
     sqlx::postgres::PgPoolOptions,
 };
@@ -382,5 +380,32 @@ impl ApiContract for DasApi {
             group_name: group_value,
             group_size: gs.size,
         })
+    }
+
+    async fn get_transactions_by_asset(
+        self: &DasApi,
+        payload: GetTransactionsByAsset,
+    ) -> Result<TransactionList, DasApiError> {
+        let GetTransactionsByAsset {
+            id,
+            limit,
+            page,
+            before,
+            after,
+        } = payload;
+        let id = validate_pubkey(id.clone())?;
+        let id = id.to_bytes().to_vec();
+        self.validate_pagination(&limit, &page, &before, &after)?;
+
+        get_transactions_by_asset(
+            &self.db_connection,
+            id,
+            limit.map(|x| x as u64).unwrap_or(1000),
+            page.map(|x| x as u64),
+            before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+        )
+        .await
+        .map_err(Into::into)
     }
 }
