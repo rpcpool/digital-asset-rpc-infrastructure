@@ -8,7 +8,7 @@ use digital_asset_types::{
     },
     dapi::{
         get_asset, get_assets_by_authority, get_assets_by_creator, get_assets_by_group,
-        get_assets_by_owner, get_proof_for_asset, get_transactions_by_asset, search_assets,
+        get_assets_by_owner, get_proof_for_asset, get_signatures_for_asset, search_assets,
     },
     rpc::{filter::SearchConditionType, response::GetGroupingResponse, transform::AssetTransform},
     rpc::{OwnershipModel, RoyaltyModel},
@@ -24,7 +24,9 @@ use {
     crate::validation::validate_pubkey,
     crate::DasApiError,
     async_trait::async_trait,
-    digital_asset_types::rpc::{response::AssetList, response::TransactionList, Asset, AssetProof},
+    digital_asset_types::rpc::{
+        response::AssetList, response::TransactionSignatureList, Asset, AssetProof,
+    },
     sea_orm::{DatabaseConnection, DbErr, SqlxPostgresConnector},
     sqlx::postgres::PgPoolOptions,
 };
@@ -382,11 +384,11 @@ impl ApiContract for DasApi {
         })
     }
 
-    async fn get_transactions_by_asset(
+    async fn get_signatures_for_asset(
         self: &DasApi,
-        payload: GetTransactionsByAsset,
-    ) -> Result<TransactionList, DasApiError> {
-        let GetTransactionsByAsset {
+        payload: GetSignaturesForAsset,
+    ) -> Result<TransactionSignatureList, DasApiError> {
+        let GetSignaturesForAsset {
             id,
             limit,
             page,
@@ -397,7 +399,7 @@ impl ApiContract for DasApi {
         let id = id.to_bytes().to_vec();
         self.validate_pagination(&limit, &page, &before, &after)?;
 
-        get_transactions_by_asset(
+        get_signatures_for_asset(
             &self.db_connection,
             id,
             limit.map(|x| x as u64).unwrap_or(1000),

@@ -4,7 +4,7 @@ use crate::dao::Pagination;
 use crate::dao::{asset, asset_authority, asset_creators, asset_data, asset_grouping};
 
 use crate::rpc::filter::{AssetSortBy, AssetSortDirection, AssetSorting};
-use crate::rpc::response::{AssetError, AssetList, TransactionList};
+use crate::rpc::response::{AssetError, AssetList, TransactionSignatureList};
 use crate::rpc::transform::AssetTransform;
 use crate::rpc::{
     Asset as RpcAsset, Authority, Compression, Content, Creator, File, Group, Interface,
@@ -73,11 +73,11 @@ pub fn build_asset_response(
     }
 }
 
-pub fn build_transaction_response(
+pub fn build_transaction_signatures_response(
     items: Vec<Vec<String>>,
     limit: u64,
     pagination: &Pagination,
-) -> TransactionList {
+) -> TransactionSignatureList {
     let total = items.len() as u32;
     let (page, before, after) = match pagination {
         Pagination::Keyset { before, after } => {
@@ -87,7 +87,7 @@ pub fn build_transaction_response(
         }
         Pagination::Page { page } => (Some(*page), None, None),
     };
-    TransactionList {
+    TransactionSignatureList {
         total,
         limit: limit as u32,
         page: page.map(|x| x as u32),

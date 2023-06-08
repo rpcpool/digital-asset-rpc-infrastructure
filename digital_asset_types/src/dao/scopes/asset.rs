@@ -307,7 +307,7 @@ pub async fn fetch_transactions(
     Ok(transaction_list)
 }
 
-pub async fn get_transactions_by_asset(
+pub async fn get_signatures_for_asset(
     conn: &impl ConnectionTrait,
     asset_id: Vec<u8>,
     pagination: &Pagination,

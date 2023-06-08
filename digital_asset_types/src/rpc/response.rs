@@ -37,7 +37,7 @@ pub struct AssetList {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default, JsonSchema)]
 #[serde(default)]
-pub struct TransactionList {
+pub struct TransactionSignatureList {
     pub total: u32,
     pub limit: u32,
     #[serde(skip_serializing_if = "Option::is_none")]

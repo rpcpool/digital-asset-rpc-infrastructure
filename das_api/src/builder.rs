@@ -75,11 +75,11 @@ impl RpcApiBuilder {
         )?;
 
         module.register_async_method(
-            "getTransactionsByAsset",
+            "getSignaturesForAsset",
             |rpc_params, rpc_context| async move {
-                let payload = rpc_params.parse::<GetTransactionsByAsset>()?;
+                let payload = rpc_params.parse::<GetSignaturesForAsset>()?;
                 rpc_context
-                    .get_transactions_by_asset(payload)
+                    .get_signatures_for_asset(payload)
                     .await
                     .map_err(Into::into)
             },
