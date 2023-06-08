@@ -18,7 +18,9 @@ use std::path::PathBuf;
 
 use futures::TryStreamExt;
 
-use sea_orm::{entity::*, query::*, DeleteResult, EntityTrait, JsonValue, SqlxPostgresConnector};
+use sea_orm::{
+    entity::*, query::*, DbBackend, DeleteResult, EntityTrait, JsonValue, SqlxPostgresConnector,
+};
 
 use clap::{value_parser, Arg, ArgAction, Command};
 
@@ -50,14 +52,6 @@ pub async fn main() {
                 .value_parser(value_parser!(PathBuf)),
         )
         .arg(
-            Arg::new("delete")
-                .long("delete")
-                .short('d')
-                .help("Delete all existing tasks before creating new ones.")
-                .required(false)
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("batch_size")
                 .long("batch-size")
                 .short('b')
@@ -68,18 +62,18 @@ pub async fn main() {
                 .default_value("1000"),
         )
         .arg(
-            Arg::new("ignore-ipfs")
-                .long("ignore-ipfs")
+            Arg::new("ignore-url")
+                .long("ignore-url")
                 .short('i')
-                .help("ignore ipfs URLs when creating tasks")
+                .help("ignore matching url when creating tasks")
                 .required(false)
-                .action(clap::ArgAction::SetTrue),
+                .action(ArgAction::Set),
         )
         .arg(
             Arg::new("include-url")
                 .long("include-url")
                 .short('u')
-                .help("Fetch only the included url")
+                .help("include only the matching url when creating tasks")
                 .required(false)
                 .action(ArgAction::Set),
         )
@@ -135,6 +129,14 @@ pub async fn main() {
                     .action(clap::ArgAction::SetTrue),
             ),
         )
+        .subcommand(
+            Command::new("reindex").about("Set reindex=true on all assets where metadata=pending"),
+        )
+        .subcommand(
+            Command::new("create")
+                .about("Create new background tasks for missing assets (reindex=true)"),
+        )
+        .subcommand(Command::new("delete").about("Delete ALL pending background tasks"))
         .get_matches();
 
     let config = setup_config();
@@ -158,303 +160,126 @@ pub async fn main() {
     // Get a postgres connection from the pool
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(database_pool.clone());
 
-    if matches.get_flag("delete") {
-        info!("Deleting all existing tasks");
-
-        // Delete all existing tasks
-        let deleted_tasks: Result<DeleteResult, IngesterError> = tasks::Entity::delete_many()
-            .exec(&conn)
-            .await
-            .map_err(|e| e.into());
-
-        match deleted_tasks {
-            Ok(result) => {
-                info!("Deleted a number of tasks {}", result.rows_affected);
-            }
-            Err(e) => {
-                info!("Error deleting tasks: {}", e);
-            }
-        }
-    }
-
     let batch_size = matches.get_one::<u64>("batch_size").unwrap();
     let authority = matches.get_one::<String>("authority");
     let collection = matches.get_one::<String>("collection");
     let mint = matches.get_one::<String>("mint");
     let creator = matches.get_one::<String>("creator");
-    let ignore_ipfs = matches.get_flag("ignore-ipfs");
+    let ignore_url = matches.get_one::<String>("ignore-url");
     let include_url = matches.get_one::<String>("include-url");
     let limit = matches.get_one::<u64>("limit").unwrap();
 
-    let all = "all".to_string();
-    let mut asset_data_missing = if let Some(authority) = authority {
-        info!(
-            "Creating new tasks for assets with missing metadata for authority {}, batch size={}",
-            authority, batch_size
-        );
-
-        let pubkey = Pubkey::from_str(&authority.as_str()).unwrap();
-        let pubkey_bytes = pubkey.to_bytes().to_vec();
-
-        (
-            asset_data::Entity::find()
-                .join_rev(
-                    JoinType::InnerJoin,
-                    asset_authority::Entity::belongs_to(asset_data::Entity)
-                        .from(asset_authority::Column::AssetId)
-                        .to(asset_data::Column::Id)
-                        .into(),
-                )
-                .filter(
-                    Condition::all()
-                        .add(asset_authority::Column::Authority.eq(pubkey_bytes))
-                        .add(asset_data::Column::Reindex.eq(false)),
-                )
-                .order_by(asset_data::Column::Id, Order::Asc)
-                .paginate(&conn, *batch_size)
-                .into_stream(),
-            authority,
-        )
-    } else if let Some(collection) = collection {
-        info!(
-            "Creating new tasks for assets with missing metadata for collection {}, batch size={}",
-            collection, batch_size
-        );
-
-        (
-            asset_data::Entity::find()
-                .join_rev(
-                    JoinType::InnerJoin,
-                    asset_grouping::Entity::belongs_to(asset_data::Entity)
-                        .from(asset_grouping::Column::AssetId)
-                        .to(asset_data::Column::Id)
-                        .into(),
-                )
-                .filter(
-                    Condition::all()
-                        .add(asset_grouping::Column::GroupValue.eq(collection.as_str()))
-                        .add(asset_data::Column::Reindex.eq(false)),
-                )
-                .order_by(asset_data::Column::Id, Order::Asc)
-                .paginate(&conn, *batch_size)
-                .into_stream(),
-            collection,
-        )
-    } else if let Some(mint) = mint {
-        info!(
-            "Creating new tasks for assets with missing metadata for mint {}, batch size={}",
-            mint, batch_size
-        );
-
-        let pubkey = Pubkey::from_str(&mint.as_str()).unwrap();
-        let pubkey_bytes = pubkey.to_bytes().to_vec();
-
-        (
-            asset_data::Entity::find()
-                .join(JoinType::InnerJoin, asset::Relation::AssetData.def())
-                .join_rev(
-                    JoinType::InnerJoin,
-                    tokens::Entity::belongs_to(asset::Entity)
-                        .from(tokens::Column::Mint)
-                        .to(asset::Column::SupplyMint)
-                        .into(),
-                )
-                .filter(
-                    Condition::all()
-                        .add(tokens::Column::MintAuthority.eq(pubkey_bytes))
-                        .add(asset_data::Column::Reindex.eq(false)),
-                )
-                .order_by(asset_data::Column::Id, Order::Asc)
-                .paginate(&conn, *batch_size)
-                .into_stream(),
-            mint,
-        )
-    } else if let Some(creator) = creator {
-        info!(
-            "Creating new tasks for assets with missing metadata for creator {}, batch size={}",
-            creator, batch_size
-        );
-
-        let pubkey = Pubkey::from_str(&creator.as_str()).unwrap();
-        let pubkey_bytes = pubkey.to_bytes().to_vec();
-
-        (
-            asset_data::Entity::find()
-                .join_rev(
-                    JoinType::InnerJoin,
-                    asset_creators::Entity::belongs_to(asset_data::Entity)
-                        .from(asset_creators::Column::AssetId)
-                        .to(asset_data::Column::Id)
-                        .into(),
-                )
-                .filter(
-                    Condition::all()
-                        .add(asset_creators::Column::Creator.eq(pubkey_bytes))
-                        .add(asset_data::Column::Reindex.eq(false)),
-                )
-                .order_by(asset_data::Column::Id, Order::Asc)
-                .paginate(&conn, *batch_size)
-                .into_stream(),
-            creator,
-        )
-    } else {
-        info!(
-            "Creating new tasks for all assets with missing metadata, batch size={}",
-            batch_size
-        );
-
-        let mut query =
-            asset_data::Entity::find()
-                .filter(Condition::all().add(
-                    asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())),
-                ))
-                .order_by(asset_data::Column::Id, Order::Asc);
-
-        if let Some(url) = include_url {
-            query = query.filter(Condition::all().add(asset_data::Column::MetadataUrl.like(url)));
-        }
-        if ignore_ipfs {
-            query = query.filter(
-                Condition::all()
-                    .add(asset_data::Column::MetadataUrl.not_like("https://nftstorage.link/ipfs%"))
-                    .add(asset_data::Column::MetadataUrl.not_like("https://api.stepn.com%")),
-            );
-        }
-
-        let stream = query.paginate(&conn, *batch_size).into_stream();
-
-        (stream, &all)
-    };
-
-    let mut tasks = Vec::new();
     match matches.subcommand_name() {
+        Some("reindex") => {
+            let exec_res = conn
+                .execute(Statement::from_string(
+                    DbBackend::Postgres,
+                    "
+UPDATE
+    asset_data
+SET
+    reindex = TRUE
+WHERE
+    asset_data.metadata = to_jsonb('processing'::text) AND
+    reindex = FALSE
+"
+                    .to_owned(),
+                ))
+                .await;
+            info!("Updated {:?} assets", exec_res.unwrap().rows_affected());
+        }
         Some("show") => {
-            // Check the assets found
-            let asset_data_found = if let Some(authority) = authority {
-                let pubkey = Pubkey::from_str(&authority.as_str()).unwrap();
-                let pubkey_bytes = pubkey.to_bytes().to_vec();
+            // Check the total number of assets in the DB
+            let condition_found =
+                asset_data::Column::Metadata.ne(JsonValue::String("processing".to_string()));
+            let condition_missing =
+                asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string()));
+            let condition_reindex = asset_data::Column::Reindex.eq(true);
 
-                asset_data::Entity::find()
-                    .join_rev(
-                        JoinType::InnerJoin,
-                        asset_authority::Entity::belongs_to(asset_data::Entity)
-                            .from(asset_authority::Column::AssetId)
-                            .to(asset_data::Column::Id)
-                            .into(),
-                    )
-                    .filter(
-                        Condition::all()
-                            .add(asset_authority::Column::Authority.eq(pubkey_bytes))
-                            .add(
-                                asset_data::Column::Metadata
-                                    .ne(JsonValue::String("processing".to_string())),
-                            ),
-                    )
-                    .count(&conn)
-                    .await
-            } else if let Some(collection) = collection {
-                asset_data::Entity::find()
-                    .join_rev(
-                        JoinType::InnerJoin,
-                        asset_grouping::Entity::belongs_to(asset_data::Entity)
-                            .from(asset_grouping::Column::AssetId)
-                            .to(asset_data::Column::Id)
-                            .into(),
-                    )
-                    .filter(
-                        Condition::all()
-                            .add(asset_grouping::Column::GroupValue.eq(collection.as_str()))
-                            .add(
-                                asset_data::Column::Metadata
-                                    .ne(JsonValue::String("processing".to_string())),
-                            ),
-                    )
-                    .count(&conn)
-                    .await
-            } else if let Some(mint) = mint {
-                let pubkey = Pubkey::from_str(&mint.as_str()).unwrap();
-                let pubkey_bytes = pubkey.to_bytes().to_vec();
+            let asset_data_finished =
+                find_by_type(authority, collection, creator, mint, condition_found);
+            let asset_data_processing =
+                find_by_type(authority, collection, creator, mint, condition_missing);
+            let asset_data_reindex =
+                find_by_type(authority, collection, creator, mint, condition_reindex);
 
-                asset_data::Entity::find()
-                    .join(JoinType::InnerJoin, asset::Relation::AssetData.def())
-                    .join_rev(
-                        JoinType::InnerJoin,
-                        tokens::Entity::belongs_to(asset::Entity)
-                            .from(tokens::Column::Mint)
-                            .to(asset::Column::SupplyMint)
-                            .into(),
-                    )
-                    .filter(
-                        Condition::all()
-                            .add(tokens::Column::MintAuthority.eq(pubkey_bytes))
-                            .add(
-                                asset_data::Column::Metadata
-                                    .ne(JsonValue::String("processing".to_string())),
-                            ),
-                    )
-                    .count(&conn)
-                    .await
-            } else if let Some(creator) = creator {
-                let pubkey = Pubkey::from_str(&creator.as_str()).unwrap();
-                let pubkey_bytes = pubkey.to_bytes().to_vec();
+            let mut asset_data_missing = asset_data_processing
+                .0
+                .order_by(asset_data::Column::Id, Order::Asc)
+                .paginate(&conn, *batch_size)
+                .into_stream();
 
-                asset_data::Entity::find()
-                    .join_rev(
-                        JoinType::InnerJoin,
-                        asset_creators::Entity::belongs_to(asset_data::Entity)
-                            .from(asset_creators::Column::AssetId)
-                            .to(asset_data::Column::Id)
-                            .into(),
-                    )
-                    .filter(
-                        Condition::all()
-                            .add(asset_creators::Column::Creator.eq(pubkey_bytes))
-                            .add(
-                                asset_data::Column::Metadata
-                                    .ne(JsonValue::String("processing".to_string())),
-                            ),
-                    )
-                    .count(&conn)
-                    .await
-            } else {
-                asset_data::Entity::find()
-                    .filter(
-                        Condition::all().add(
-                            asset_data::Column::Metadata
-                                .ne(JsonValue::String("processing".to_string())),
-                        ),
-                    )
-                    .count(&conn)
-                    .await
-            };
+            let asset_data_count = asset_data_finished.0.count(&conn).await;
+            let asset_reindex_count = asset_data_reindex.0.count(&conn).await;
 
             let mut i = 0;
-            while let Some(assets) = asset_data_missing.0.try_next().await.unwrap() {
+            while let Some(assets) = asset_data_missing.try_next().await.unwrap() {
                 info!("Found {} assets", assets.len());
                 i += assets.len();
                 if let Some(matches) = matches.subcommand_matches("show") {
                     if matches.get_flag("print") {
                         for asset in assets {
-                            println!(
+                            info!(
                                 "{}, missing asset, {:?}",
-                                asset_data_missing.1,
+                                asset_data_processing.1,
                                 Pubkey::try_from(asset.id)
                             );
                         }
                     }
                 }
             }
-            if let Ok(total) = asset_data_found {
-                println!("{}, total assets, {}", asset_data_missing.1, total);
-            }
-            println!("{}, total missing assets, {}", asset_data_missing.1, i)
-        }
-        _ => {
-            let mut count = 0;
 
+            let total_finished = asset_data_count.unwrap_or(0);
+            let total_assets = i + total_finished as usize;
+            info!(
+                "{}, reindexing assets: {:?}, total finished assets: {}, missing assets: {}, total assets: {}",
+                asset_data_processing.1,
+                asset_reindex_count,
+                total_finished,
+                i,
+                total_assets
+            );
+        }
+        Some("delete") => {
+            info!("Deleting all existing tasks");
+
+            // Delete all existing tasks
+            let deleted_tasks: Result<DeleteResult, IngesterError> = tasks::Entity::delete_many()
+                .exec(&conn)
+                .await
+                .map_err(|e| e.into());
+
+            match deleted_tasks {
+                Ok(result) => {
+                    info!("Deleted a number of tasks {}", result.rows_affected);
+                }
+                Err(e) => {
+                    info!("Error deleting tasks: {}", e);
+                }
+            }
+        }
+        Some("create") => {
+            let mut condition = asset_data::Column::Reindex.eq(true);
+
+            if let Some(url) = include_url {
+                condition = condition.and(asset_data::Column::MetadataUrl.like(url));
+            }
+            if let Some(url) = ignore_url {
+                condition = condition.and(asset_data::Column::MetadataUrl.not_like(url));
+            }
+            let asset_data = find_by_type(authority, collection, creator, mint, condition);
+
+            let mut asset_data_missing = asset_data
+                .0
+                .order_by(asset_data::Column::Id, Order::Asc)
+                .paginate(&conn, *batch_size)
+                .into_stream();
+
+            let mut count = 0;
             // Find all the assets with missing metadata
-            while let Some(assets) = asset_data_missing.0.try_next().await.unwrap() {
-                info!("Found {} assets", assets.len());
+            let mut tasks = Vec::new();
+            while let Some(assets) = asset_data_missing.try_next().await.unwrap() {
+                info!("Total missing {} assets", assets.len());
                 for asset in assets {
                     let mut task = DownloadMetadata {
                         asset_data_id: asset.id,
@@ -487,7 +312,6 @@ pub async fn main() {
                             }
 
                             let task_hash = task_data.hash();
-
                             let res = TaskManager::new_task_handler(
                                 database_pool.clone(),
                                 name.clone(),
@@ -497,11 +321,12 @@ pub async fn main() {
                                 false,
                             )
                             .await;
+
                             match res {
                                 Ok(_) => {
                                     debug!(
-                                        "Task Created: {:?} {:?}, count: {:?}",
-                                        task_hash, task.asset_data_id, count
+                                        "Task created: {:?} {:?}",
+                                        task_hash, task.asset_data_id
                                     );
                                 }
                                 Err(e) => {
@@ -521,18 +346,140 @@ pub async fn main() {
             if tasks.is_empty() {
                 info!("No assets with missing metadata found");
             } else {
-                let total_tasks = tasks.len();
+                info!("Found {} tasks to process", tasks.len());
+                let mut succeeded = 0;
+                let mut failed = 0;
                 for task in tasks {
-                    let res = task.await;
-                    match res {
-                        Ok(_) => {}
+                    match task.await {
+                        Ok(_) => succeeded += 1,
                         Err(e) => {
-                            error!("Task failed: {}", e);
+                            info!("Task failed: {}", e);
+                            failed += 1;
                         }
                     }
                 }
-                info!("Found {} tasks to process", total_tasks);
+                info!("Tasks succeeded={}, failed={}", succeeded, failed);
             }
         }
+        _ => {
+            info!("Please provide an action")
+        }
+    }
+}
+
+fn find_by_type<'a>(
+    authority: Option<&'a String>,
+    collection: Option<&'a String>,
+    creator: Option<&'a String>,
+    mint: Option<&'a String>,
+    condition: sea_orm::sea_query::SimpleExpr,
+) -> (
+    sea_orm::Select<digital_asset_types::dao::asset_data::Entity>,
+    String,
+) {
+    if let Some(authority) = authority {
+        info!(
+            "Find asset data for authority {} condition {:?}",
+            authority, condition
+        );
+
+        let pubkey = Pubkey::from_str(authority.as_str()).unwrap();
+        let pubkey_bytes = pubkey.to_bytes().to_vec();
+
+        (
+            asset_data::Entity::find()
+                .join_rev(
+                    JoinType::InnerJoin,
+                    asset_authority::Entity::belongs_to(asset_data::Entity)
+                        .from(asset_authority::Column::AssetId)
+                        .to(asset_data::Column::Id)
+                        .into(),
+                )
+                .filter(
+                    Condition::all()
+                        .add(asset_authority::Column::Authority.eq(pubkey_bytes))
+                        .add(condition),
+                ),
+            authority.to_string(),
+        )
+    } else if let Some(collection) = collection {
+        info!(
+            "Finding asset_data for collection {}, condition {:?}",
+            collection, condition
+        );
+
+        (
+            asset_data::Entity::find()
+                .join_rev(
+                    JoinType::InnerJoin,
+                    asset_grouping::Entity::belongs_to(asset_data::Entity)
+                        .from(asset_grouping::Column::AssetId)
+                        .to(asset_data::Column::Id)
+                        .into(),
+                )
+                .filter(
+                    Condition::all()
+                        .add(asset_grouping::Column::GroupValue.eq(collection.as_str()))
+                        .add(condition),
+                ),
+            collection.to_string(),
+        )
+    } else if let Some(mint) = mint {
+        info!(
+            "Finding assets for mint {}, condition {:?}",
+            mint, condition
+        );
+
+        let pubkey = Pubkey::from_str(mint.as_str()).unwrap();
+        let pubkey_bytes = pubkey.to_bytes().to_vec();
+
+        (
+            asset_data::Entity::find()
+                .join(JoinType::InnerJoin, asset_data::Relation::Asset.def())
+                .join_rev(
+                    JoinType::InnerJoin,
+                    tokens::Entity::belongs_to(asset::Entity)
+                        .from(tokens::Column::Mint)
+                        .to(asset::Column::SupplyMint)
+                        .into(),
+                )
+                .filter(
+                    Condition::all()
+                        .add(tokens::Column::MintAuthority.eq(pubkey_bytes))
+                        .add(condition),
+                ),
+            mint.to_string(),
+        )
+    } else if let Some(creator) = creator {
+        info!(
+            "Finding assets for creator {} with condition {:?}",
+            creator, condition
+        );
+
+        let pubkey = Pubkey::from_str(creator.as_str()).unwrap();
+        let pubkey_bytes = pubkey.to_bytes().to_vec();
+
+        (
+            asset_data::Entity::find()
+                .join_rev(
+                    JoinType::InnerJoin,
+                    asset_creators::Entity::belongs_to(asset_data::Entity)
+                        .from(asset_creators::Column::AssetId)
+                        .to(asset_data::Column::Id)
+                        .into(),
+                )
+                .filter(
+                    Condition::all()
+                        .add(asset_creators::Column::Creator.eq(pubkey_bytes))
+                        .add(condition),
+                ),
+            creator.to_string(),
+        )
+    } else {
+        info!("Finding all assets with condition {:?}", condition,);
+        (
+            asset_data::Entity::find().filter(Condition::all().add(condition)),
+            "all".to_string(),
+        )
     }
 }
