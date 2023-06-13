@@ -183,7 +183,7 @@ pub fn v1_content_from_json(
     let animation = safe_select(selector, "$.animation_url");
     let external_url = safe_select(selector, "$.external_url").map(|val| {
         let mut links = HashMap::new();
-        links.insert("external_url".to_string(), val[0].to_owned());
+        links.insert("external_url".to_string(), val.to_owned());
         links
     });
     let _metadata = safe_select(selector, "description");
@@ -284,8 +284,9 @@ pub fn get_content(
     cdn_prefix: Option<String>,
 ) -> Result<Content, DbErr> {
     match asset.specification_version {
-        SpecificationVersions::V1 => v1_content_from_json(data, cdn_prefix),
-        SpecificationVersions::V0 => v1_content_from_json(data, cdn_prefix),
+        SpecificationVersions::V1 | SpecificationVersions::V0 => {
+            v1_content_from_json(data, cdn_prefix)
+        }
         _ => Err(DbErr::Custom("Version Not Implemented".to_string())),
     }
 }
@@ -328,7 +329,7 @@ pub fn get_interface(asset: &asset::Model) -> Interface {
     ))
 }
 
-//TODO -> impl custom erro type
+//TODO -> impl custom error type
 pub fn asset_to_rpc(asset: FullAsset, transform: &AssetTransform) -> Result<RpcAsset, DbErr> {
     let FullAsset {
         asset,
