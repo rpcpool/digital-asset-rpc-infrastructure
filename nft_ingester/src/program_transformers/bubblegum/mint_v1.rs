@@ -96,8 +96,8 @@ where
                     metadata_mutability: Set(Mutability::Mutable),
                     slot_updated: Set(slot_i),
                     reindex: Set(Some(true)),
-                    raw_name: Set(name.to_vec()),
-                    raw_symbol: Set(symbol.to_vec()),
+                    raw_name: Set(Some(name.to_vec())),
+                    raw_symbol: Set(Some(symbol.to_vec())),
                     ..Default::default()
                 };
 
