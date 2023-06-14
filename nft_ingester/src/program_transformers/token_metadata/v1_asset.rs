@@ -16,14 +16,14 @@ use digital_asset_types::{
     },
     json::ChainDataV1,
 };
-use log::{debug, info};
+
 use num_traits::FromPrimitive;
 use plerkle_serialization::Pubkey as FBPubkey;
 use sea_orm::{
     entity::*, query::*, sea_query::OnConflict, ActiveValue::Set, ConnectionTrait, DbBackend,
     DbErr, EntityTrait, JsonValue,
 };
-use std::collections::HashSet;
+
 
 use crate::tasks::{DownloadMetadata, IntoTaskData};
 

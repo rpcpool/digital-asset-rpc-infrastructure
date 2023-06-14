@@ -69,7 +69,6 @@ where
                 }
                 id_bytes
             }
-            _ => return Err(IngesterError::NotImplemented),
         };
 
         return Ok(());

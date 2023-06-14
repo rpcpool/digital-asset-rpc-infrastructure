@@ -6,7 +6,6 @@ use {
         future::{try_join_all, BoxFuture, FutureExt},
         stream::StreamExt,
     },
-    log::info,
     plerkle_messenger::{MessengerConfig, ACCOUNT_STREAM, TRANSACTION_STREAM},
     solana_client::{
         nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig,

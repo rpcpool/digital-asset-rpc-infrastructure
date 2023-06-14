@@ -50,7 +50,6 @@ where
                 update_asset(txn, id_bytes.clone(), Some(seq), asset_to_update).await?;
                 id_bytes
             }
-            _ => return Err(IngesterError::NotImplemented),
         };
 
         // The primary key `id` is not required here since `update_creator` uses `update_many`

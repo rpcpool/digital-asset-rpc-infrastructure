@@ -1,4 +1,4 @@
-use crossbeam::channel::{bounded, unbounded, Sender};
+use crossbeam::channel::{unbounded, Sender};
 use digital_asset_types::dao::cl_audits;
 use log::{trace, warn};
 use plerkle_messenger::{MessengerConfig, TRANSACTION_STREAM};
