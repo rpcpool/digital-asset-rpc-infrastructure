@@ -151,6 +151,35 @@ pub fn safe_select<'a>(
         .and_then(|v| v.pop())
 }
 
+#[cfg(feature = "fetch-raw-fields")]
+async fn process_raw_fields(
+    name: Option<String>,
+    symbol: Option<String>,
+    asset_data: &AssetData,
+) -> (Option<String>, Option<String>) {
+    let name_result = if let Some(name) = &name {
+        let raw_name = asset_data.raw_name.clone();
+        match String::from_utf8(raw_name) {
+            Ok(s) => Some(s),
+            Err(_) => Some(name.clone()),
+        }
+    } else {
+        None
+    };
+
+    let symbol_result = if let Some(symbol) = &symbol {
+        let raw_symbol = asset_data.raw_symbol.clone();
+        match String::from_utf8(raw_symbol) {
+            Ok(s) => Some(s),
+            Err(_) => Some(symbol.clone()),
+        }
+    } else {
+        None
+    };
+
+    (name_result, symbol_result)
+}
+
 pub fn v1_content_from_json(
     asset_data: &asset_data::Model,
     cdn_prefix: Option<String>,

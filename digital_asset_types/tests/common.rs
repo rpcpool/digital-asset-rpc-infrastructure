@@ -42,8 +42,8 @@ pub fn create_asset_data(
     row_num: Vec<u8>,
 ) -> (asset_data::ActiveModel, asset_data::Model) {
     let chain_data = ChainDataV1 {
-        name: metadata.name,
-        symbol: metadata.symbol,
+        name: metadata.name.clone(),
+        symbol: metadata.symbol.clone(),
         edition_nonce: metadata.edition_nonce,
         primary_sale_happened: metadata.primary_sale_happened,
         token_standard: metadata.token_standard,
@@ -83,6 +83,8 @@ pub fn create_asset_data(
             metadata: JsonValue::String("processing".to_string()),
             slot_updated: 0,
             reindex: None,
+            raw_name: metadata.name.into_bytes().to_vec().clone(),
+            raw_symbol: metadata.symbol.into_bytes().to_vec().clone(),
         },
     )
 }

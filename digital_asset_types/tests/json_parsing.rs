@@ -35,6 +35,8 @@ pub async fn parse_offchain_json(json: serde_json::Value, cdn_prefix: Option<Str
         metadata: json,
         slot_updated: 0,
         reindex: None,
+        raw_name: String::from("Handalf").into_bytes().to_vec(),
+        raw_symbol: String::from("").into_bytes().to_vec(),
     };
 
     v1_content_from_json(&asset_data, cdn_prefix).unwrap()
