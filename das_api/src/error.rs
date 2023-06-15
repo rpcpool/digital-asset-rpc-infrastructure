@@ -2,17 +2,17 @@ use {jsonrpsee::core::Error as RpcError, jsonrpsee::types::error::CallError, thi
 
 #[derive(Error, Debug)]
 pub enum DasApiError {
-    #[error("Config Missing or Error {0}")]
+    #[error("Config Missing or Error: {0}")]
     ConfigurationError(String),
     #[error("Server Failed to Start")]
     ServerStartError(#[from] RpcError),
     #[error("Database Connection Failed")]
     DatabaseConnectionError(#[from] sqlx::Error),
-    #[error("Pubkey Validation Err {0} is invalid")]
+    #[error("Pubkey Validation Err: {0} is invalid")]
     PubkeyValidationError(String),
-    #[error("Validation Error {0}")]
+    #[error("Validation Error: {0}")]
     ValidationError(String),
-    #[error("Database Error {0}")]
+    #[error("Database Error: {0}")]
     DatabaseError(#[from] sea_orm::DbErr),
     #[error("Pagination Error. Only one pagination parameter supported per query.")]
     PaginationError,
