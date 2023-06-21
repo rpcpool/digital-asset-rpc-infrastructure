@@ -1,10 +1,10 @@
 use super::{save_changelog_event, update_asset};
 use crate::error::IngesterError;
-use solana_program::pubkey::Pubkey;
 use blockbuster::{instruction::InstructionBundle, programs::bubblegum::BubblegumInstruction};
 use digital_asset_types::dao::asset;
 use log::debug;
 use sea_orm::{entity::*, ConnectionTrait, TransactionTrait};
+use solana_program::pubkey::Pubkey;
 
 pub async fn burn<'c, T>(
     parsing_result: &BubblegumInstruction,
