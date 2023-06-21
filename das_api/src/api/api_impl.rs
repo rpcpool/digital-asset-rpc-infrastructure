@@ -150,8 +150,8 @@ impl ApiContract for DasApi {
             sort_by,
             limit.map(|x| x as u64).unwrap_or(1000),
             page.map(|x| x as u64),
-            before.map(|x| x.as_bytes().to_vec()),
-            after.map(|x| x.as_bytes().to_vec()),
+            before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
         )
         .await
         .map_err(Into::into)
@@ -181,8 +181,8 @@ impl ApiContract for DasApi {
             sort_by,
             limit.map(|x| x as u64).unwrap_or(1000),
             page.map(|x| x as u64),
-            before.map(|x| x.as_bytes().to_vec()),
-            after.map(|x| x.as_bytes().to_vec()),
+            before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
         )
         .await
         .map_err(Into::into)
@@ -214,8 +214,8 @@ impl ApiContract for DasApi {
             sort_by,
             limit.map(|x| x as u64).unwrap_or(1000),
             page.map(|x| x as u64),
-            before.map(|x| x.as_bytes().to_vec()),
-            after.map(|x| x.as_bytes().to_vec()),
+            before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
         )
         .await
         .map_err(Into::into)
@@ -244,8 +244,8 @@ impl ApiContract for DasApi {
             sort_by,
             limit.map(|x| x as u64).unwrap_or(1000),
             page.map(|x| x as u64),
-            before.map(|x| x.as_bytes().to_vec()),
-            after.map(|x| x.as_bytes().to_vec()),
+            before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
         )
         .await
         .map_err(Into::into)
@@ -278,6 +278,7 @@ impl ApiContract for DasApi {
             page,
             before,
             after,
+            json_uri
         } = payload;
         // Deserialize search assets query
         self.validate_pagination(&limit, &page, &before, &after)?;
@@ -326,6 +327,7 @@ impl ApiContract for DasApi {
             royalty_target,
             royalty_amount,
             burnt,
+            json_uri,
         };
         let sort_by = sort_by.unwrap_or_default();
         // Execute query
@@ -335,8 +337,8 @@ impl ApiContract for DasApi {
             sort_by,
             limit.map(|x| x as u64).unwrap_or(1000),
             page.map(|x| x as u64),
-            before.map(|x| x.as_bytes().to_vec()),
-            after.map(|x| x.as_bytes().to_vec()),
+            before.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
+            after.map(|x| bs58::decode(x).into_vec().unwrap_or_default()),
         )
         .await
         .map_err(Into::into)
