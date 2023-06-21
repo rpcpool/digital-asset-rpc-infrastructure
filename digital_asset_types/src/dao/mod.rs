@@ -53,6 +53,7 @@ pub struct SearchAssetsQuery {
     pub royalty_target: Option<Vec<u8>>,
     pub royalty_amount: Option<u32>,
     pub burnt: Option<bool>,
+    pub json_uri: Option<String>,
 }
 
 impl SearchAssetsQuery {
@@ -109,6 +110,9 @@ impl SearchAssetsQuery {
             num_conditions += 1;
         }
         if self.grouping.is_some() {
+            num_conditions += 1;
+        }
+        if self.json_uri.is_some() {
             num_conditions += 1;
         }
 
@@ -218,6 +222,21 @@ impl SearchAssetsQuery {
                 .on_condition(|left, right| {
                     Expr::tbl(right, asset_grouping::Column::AssetId)
                         .eq(Expr::tbl(left, asset::Column::Id))
+                        .into_condition()
+                });
+            joins.push(rel);
+        }
+
+        if let Some(ju) = self.json_uri.to_owned() {
+            let cond = Condition::all()
+                .add(asset_data::Column::MetadataUrl.eq(ju));
+            conditions = conditions.add(cond);
+            let rel = asset_data::Relation::Asset
+                .def()
+                .rev()
+                .on_condition(|left, right| {
+                    Expr::tbl(right, asset_data::Column::Id)
+                        .eq(Expr::tbl(left, asset::Column::AssetData))
                         .into_condition()
                 });
             joins.push(rel);
