@@ -228,8 +228,7 @@ impl SearchAssetsQuery {
         }
 
         if let Some(ju) = self.json_uri.to_owned() {
-            let cond = Condition::all()
-                .add(asset_data::Column::MetadataUrl.eq(ju));
+            let cond = Condition::all().add(asset_data::Column::MetadataUrl.eq(ju));
             conditions = conditions.add(cond);
             let rel = asset_data::Relation::Asset
                 .def()
