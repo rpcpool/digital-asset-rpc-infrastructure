@@ -1,5 +1,5 @@
 use crate::error::IngesterError;
-use digital_asset_types::dao::{asset, asset_creators, backfill_items, cl_audits, cl_items};
+use digital_asset_types::dao::{asset, asset_creators, backfill_items, cl_items};
 use log::{debug, info, warn};
 use sea_orm::{
     entity::*, query::*, sea_query::OnConflict, ColumnTrait, DbBackend, DbErr, EntityTrait,

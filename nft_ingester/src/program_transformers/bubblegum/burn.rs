@@ -1,6 +1,6 @@
 use super::{save_changelog_event, update_asset};
 use crate::error::IngesterError;
-use anchor_lang::prelude::Pubkey;
+use solana_program::pubkey::Pubkey;
 use blockbuster::{instruction::InstructionBundle, programs::bubblegum::BubblegumInstruction};
 use digital_asset_types::dao::asset;
 use log::debug;
