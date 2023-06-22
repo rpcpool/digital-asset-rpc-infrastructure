@@ -1,4 +1,24 @@
-## IMPORTANT: See Prerequisites below
+# Helius Digital Asset RPC Infrastructure
+
+## Disclaimer
+
+This is the Helius version of the DAS system. Please note that we have diverged from the original repository.
+Helius has been consistently upgrading, fixing, and changing the DAS system for our customers. **Use at your own risk**.
+
+### Branch Management
+
+All custom Helius work is done under the `helius` branch.
+Changes directly compatible with the Metaplex repository are merged into the `main` branch. We periodically backport general fixes and improvements into the original repository.
+
+### Contribution
+
+PRs are welcome! This is the quickest way to get your changes ingested into the Helius system. PR's should be made against the `helius` branch. Please include testing details.
+
+<br/>
+
+---
+
+<br/>
 
 ## Digital Asset RPC API Infrastructure
 
@@ -20,10 +40,10 @@ This spec is what providers of this api must implement against.
 Along with the above rust binaries, this repo also maintains examples and best practice settings for running the entire infrastructure.
 The example infrastructure is as follows.
 
-- A Solana No-Vote Validator - This validator is configured to only have secure access to the validator ledger and account data under consensus.
-- A Geyser Plugin (Plerkle) - The above validator is further configured to load this geyser plugin that sends Plerkle Serialized Messages over a messaging system.
-- A Redis Cluster (Stream Optimized) - The example messaging system is a light weight redis deployment that supports the streaming configuration.
-- A Kubernetes Cluster - The orchestration system for the API and Ingester processes. Probably overkill for a small installation, but it's a rock solid platform for critical software.
+-   A Solana No-Vote Validator - This validator is configured to only have secure access to the validator ledger and account data under consensus.
+-   A Geyser Plugin (Plerkle) - The above validator is further configured to load this geyser plugin that sends Plerkle Serialized Messages over a messaging system.
+-   A Redis Cluster (Stream Optimized) - The example messaging system is a light weight redis deployment that supports the streaming configuration.
+-   A Kubernetes Cluster - The orchestration system for the API and Ingester processes. Probably overkill for a small installation, but it's a rock solid platform for critical software.
 
 This repo houses Helm Charts, Docker files and Terraform files to assist in the deployment of the example infrastructure.
 
@@ -47,10 +67,10 @@ If you need to install `sea-orm-cli` run `cargo install sea-orm-cli`.
 
 _Prerequisites_
 
-- A Postgres Server running with the database setup according to ./init.sql
-- A Redis instance that has streams enabled or a version that supports streams
-- A local solana validator with the Plerkle plugin running.
-- Environment Variables set to allow your validator, ingester and api to access those prerequisites.
+-   A Postgres Server running with the database setup according to ./init.sql
+-   A Redis instance that has streams enabled or a version that supports streams
+-   A local solana validator with the Plerkle plugin running.
+-   Environment Variables set to allow your validator, ingester and api to access those prerequisites.
 
 See [Plugin Configuration](https://github.com/metaplex-foundation/digital-asset-validator-plugin#building-locally) for how to locally configure the test validator plugin to work.
 
@@ -98,11 +118,11 @@ For production you should split the components up.
 
 Developing with Docker is much easier, but has some nuances to it. This test docker compose system relies on a programs folder being accessible, this folder needs to have the shared object files for the following programs
 
-- Token Metadata
-- Bubblegum
-- Gummyroll
-- Token 2022
-- Latest version of the Associated token program
+-   Token Metadata
+-   Bubblegum
+-   Gummyroll
+-   Token 2022
+-   Latest version of the Associated token program
 
 You need to run the following script (which takes a long time) in order to get all those .so files.
 
