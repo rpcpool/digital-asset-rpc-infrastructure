@@ -445,6 +445,7 @@ pub fn asset_to_rpc(asset: FullAsset, transform: &AssetTransform) -> Result<RpcA
             total: u.get("total").and_then(|t| t.as_u64()).unwrap_or(0),
             remaining: u.get("remaining").and_then(|t| t.as_u64()).unwrap_or(0),
         }),
+        burnt: asset.burnt,
     })
 }
 

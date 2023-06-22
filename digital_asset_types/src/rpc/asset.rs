@@ -358,4 +358,5 @@ pub struct Asset {
     pub uses: Option<Uses>,
     pub supply: Option<Supply>,
     pub mutable: bool,
+    pub burnt: bool,
 }
