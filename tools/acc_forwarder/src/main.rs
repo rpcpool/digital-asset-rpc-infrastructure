@@ -118,10 +118,42 @@ async fn main() -> anyhow::Result<()> {
         Action::Scenario { scenario_file } => {
             let mut accounts = read_lines(&scenario_file).await?;
             while let Some(maybe_account) = accounts.next().await {
-                let pubkey = maybe_account?.parse()?;
-                fetch_and_send_account(pubkey, &client, &messenger).await?;
+                match maybe_account {
+                    Ok(account) => match account.parse() {
+                        Ok(mint) => {
+                            let metadata_account = find_metadata_account(&mint).0;
+                            let token_account = get_token_largest_account(&client, mint).await;
+
+                            match token_account {
+                                Ok(token_account) => {
+                                    for pubkey in &[mint, metadata_account, token_account] {
+                                        match fetch_and_send_account(*pubkey, &client, &messenger)
+                                            .await
+                                        {
+                                            Ok(_) => {}
+                                            Err(e) => {
+                                                warn!("Failed to fetch and send account: {:?}", e);
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => warn!("Failed to find mint account: {:?}", e),
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to parse account: {:?}", e);
+                            continue;
+                        }
+                    },
+                    Err(e) => {
+                        warn!("Failed to get next account: {:?}", e);
+                        continue;
+                    }
+                }
             }
         }
+
         Action::Mint { mint } => {
             let mint =
                 Pubkey::from_str(&mint).with_context(|| format!("failed to parse mint {mint}"))?;
