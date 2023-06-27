@@ -36,6 +36,6 @@ cargo run -- \
 cargo run -- \
  --rpc-url $RPC_URL \
  --max-retries 10 \
- --concurrency 3 \
+ --concurrency 25 \
  fix-tree --pg-url $DB_URL --redis-url $REDIS_URL --tree $TREE
 ```
