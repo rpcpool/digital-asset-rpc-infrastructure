@@ -159,12 +159,11 @@ where
     let mut stmt = asset::Entity::find()
         .filter(condition)
         .join(JoinType::LeftJoin, relation.def())
-        .order_by(sort_by, sort_direction);
+        .order_by(sort_by, sort_direction)
+        .order_by(asset::Column::Id, Order::Asc);
 
     stmt = paginate(pagination, limit, stmt);
-
     let assets = stmt.all(conn).await?;
-
     get_related_for_assets(conn, assets).await
 }
 
@@ -252,11 +251,14 @@ pub async fn get_assets_by_condition(
     for def in joins {
         stmt = stmt.join(JoinType::LeftJoin, def);
     }
-    stmt = stmt.filter(condition).order_by(sort_by, sort_direction);
+    stmt = stmt
+        .filter(condition)
+        .order_by(sort_by, sort_direction)
+        .order_by(asset::Column::Id, Order::Asc);
 
     stmt = paginate(pagination, limit, stmt);
-    let asset_list = stmt.all(conn).await?;
-    get_related_for_assets(conn, asset_list).await
+    let assets = stmt.all(conn).await?;
+    get_related_for_assets(conn, assets).await
 }
 
 pub async fn get_by_id(
