@@ -159,8 +159,8 @@ where
     let mut stmt = asset::Entity::find()
         .filter(condition)
         .join(JoinType::LeftJoin, relation.def())
-        .order_by(sort_by, sort_direction)
-        .order_by(asset::Column::Id, Order::Asc);
+        .order_by(sort_by, sort_direction.clone())
+        .order_by(asset::Column::Id, sort_direction);
 
     stmt = paginate(pagination, limit, stmt);
     let assets = stmt.all(conn).await?;
@@ -253,8 +253,8 @@ pub async fn get_assets_by_condition(
     }
     stmt = stmt
         .filter(condition)
-        .order_by(sort_by, sort_direction)
-        .order_by(asset::Column::Id, Order::Asc);
+        .order_by(sort_by, sort_direction.clone())
+        .order_by(asset::Column::Id, sort_direction);
 
     stmt = paginate(pagination, limit, stmt);
     let assets = stmt.all(conn).await?;
