@@ -440,6 +440,24 @@ async fn fix_tree(
         .with_context(|| format!("[{pubkey:?}] counldn't query tree from index"))?
         .ok_or_else(|| anyhow::anyhow!("[{pubkey}] tree missing from index"))?;
 
+    match indexed_seq.max_seq.cmp(&onchain_seq) {
+        cmp::Ordering::Less => {
+            warn!(
+                "[{pubkey}] Tree not fully indexed. On-chain seq: {}. Indexed seq: {}",
+                onchain_seq, indexed_seq.max_seq
+            );
+        }
+        cmp::Ordering::Equal => {
+            info!("[{pubkey}] Tree is up-to-date! Seq: {}", onchain_seq)
+        }
+        cmp::Ordering::Greater => {
+            error!(
+                "[{pubkey}] Something went wrong. Indexer is ahead of the chain? On-chain seq: {}. Indexed seq: {}",
+                onchain_seq, indexed_seq.max_seq
+            );
+        }
+    }
+
     // Check completeness
     if indexed_seq.max_seq != indexed_seq.cnt_seq {
         warn!(
@@ -514,11 +532,14 @@ async fn find_and_forward_txns_for_missing_seqs(
             s.spawn(move |_| {
                 for range in r_recv.iter() {
                     info!("Processing seq range: {:?}", range);
-                    runtime
-                        .block_on(find_signatures_for_missing_seq_range(
-                            tree, range, &client, &conn, &s_sender,
-                        ))
-                        .unwrap();
+                    match runtime.block_on(find_signatures_for_missing_seq_range(
+                        tree, range, &client, &conn, &s_sender,
+                    )) {
+                        Ok(_) => {}
+                        Err(err) => {
+                            warn!("error processing seq range: {:?}, error: {:?}", range, err)
+                        }
+                    }
                 }
             });
         }
@@ -648,9 +669,7 @@ async fn find_signatures_for_missing_seq_range(
         .limit(1)
         .all(conn)
         .await?;
-    let before_txn = before_txn
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get before txn for seq: {:?}", end))?;
+    let before_txn = before_txn.first();
 
     // Find the indexed seq before the start of the range.
     let until_txn = cl_audits::Entity::find()
@@ -660,20 +679,27 @@ async fn find_signatures_for_missing_seq_range(
         .limit(1)
         .all(conn)
         .await?;
-    let until_txn = until_txn
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get until txn for seq: {:?}", start))?;
+    let until_txn = until_txn.first();
 
     trace!(
         "Txns for missing seq range [{:?}, {:?}]. Until (start): {:?}. Before (end): {:?}.",
         start,
         end,
-        until_txn.tx,
-        before_txn.tx,
+        until_txn
+            .as_ref()
+            .map_or("None".to_string(), |txn| txn.tx.clone()),
+        before_txn
+            .as_ref()
+            .map_or("None".to_string(), |txn| txn.tx.clone()),
     );
 
-    let mut before = Signature::from_str(&before_txn.tx).ok();
-    let until = Signature::from_str(&until_txn.tx).ok();
+    let mut before = before_txn
+        .map(|txn| Signature::from_str(&txn.tx).ok())
+        .flatten();
+
+    let until = until_txn
+        .map(|txn| Signature::from_str(&txn.tx).ok())
+        .flatten();
     let limit: usize = 1000;
     loop {
         let config = GetConfirmedSignaturesForAddress2Config {
