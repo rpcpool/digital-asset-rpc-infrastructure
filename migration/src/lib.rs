@@ -16,16 +16,13 @@ mod m20230203_205959_improve_upsert_perf;
 mod m20230224_093722_performance_improvements;
 mod m20230310_162227_add_indexes_to_bg;
 mod m20230317_121944_remove_indexes_for_perf;
-<<<<<<< HEAD
 mod m20230508_142103_add_offchain_reindex;
 mod m20230510_224316_cl_audit_table;
-=======
 mod m20230526_120101_add_owner_delegate_sequence_number;
 mod m20230601_120101_add_pnft_enum_val;
 mod m20230615_120101_remove_asset_null_constraints;
 mod m20230620_120101_add_was_decompressed;
 mod m20230623_120101_add_leaf_sequence_number;
->>>>>>> 3f298f9... Enable out-of-order transaction processing for asset table #77
 
 pub struct Migrator;
 
@@ -49,16 +46,13 @@ impl MigratorTrait for Migrator {
             Box::new(m20230224_093722_performance_improvements::Migration),
             Box::new(m20230310_162227_add_indexes_to_bg::Migration),
             Box::new(m20230317_121944_remove_indexes_for_perf::Migration),
-<<<<<<< HEAD
             Box::new(m20230508_142103_add_offchain_reindex::Migration),
             Box::new(m20230510_224316_cl_audit_table::Migration),
-=======
             Box::new(m20230526_120101_add_owner_delegate_sequence_number::Migration),
             Box::new(m20230601_120101_add_pnft_enum_val::Migration),
             Box::new(m20230615_120101_remove_asset_null_constraints::Migration),
             Box::new(m20230620_120101_add_was_decompressed::Migration),
             Box::new(m20230623_120101_add_leaf_sequence_number::Migration),
->>>>>>> 3f298f9... Enable out-of-order transaction processing for asset table #77
         ]
     }
 }
