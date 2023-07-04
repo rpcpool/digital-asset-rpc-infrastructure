@@ -97,7 +97,7 @@ where
     // a single row into the `backfill_items` table.  This way if an incomplete path was inserted
     // into `cl_items` due to an error, a gap will be created for the tree and the backfiller will
     // fix it.
-    if i - 1 == depth as i64 {
+    /*if i - 1 == depth as i64 {
         // See if the tree already exists in the `backfill_items` table.
         let rows = backfill_items::Entity::find()
             .filter(backfill_items::Column::Tree.eq(tree_id))
@@ -122,7 +122,7 @@ where
         };
 
         backfill_items::Entity::insert(item).exec(txn).await?;
-    }
+    }*/
 
     Ok(())
     //TODO -> set maximum size of path and break into multiple statements
