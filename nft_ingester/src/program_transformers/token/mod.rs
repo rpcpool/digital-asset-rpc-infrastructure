@@ -1,6 +1,8 @@
 use crate::{error::IngesterError, tasks::TaskData};
 use blockbuster::programs::token_account::TokenProgramAccount;
-use digital_asset_types::dao::{asset, token_accounts, tokens};
+use cadence_macros::statsd_count;
+use digital_asset_types::dao::{asset, asset_data, token_accounts, tokens};
+use log::error;
 use plerkle_serialization::AccountInfo;
 use sea_orm::{
     entity::*, query::*, sea_query::OnConflict, ActiveValue::Set, ConnectionTrait,
@@ -67,11 +69,14 @@ pub async fn handle_token_program_account<'a, 'b, 'c>(
             );
             db.execute(query).await?;
             let txn = db.begin().await?;
-            let asset_update: Option<asset::Model> = asset::Entity::find_by_id(mint)
+
+            let asset_with_data = asset::Entity::find_by_id(mint)
                 .filter(asset::Column::OwnerType.eq("single"))
+                .find_also_related(asset_data::Entity)
                 .one(&txn)
                 .await?;
-            if let Some(asset) = asset_update {
+
+            if let Some((asset, data)) = asset_with_data {
                 // will only update owner if token account balance is non-zero
                 if ta.amount > 0 {
                     let mut active: asset::ActiveModel = asset.into();
@@ -79,6 +84,14 @@ pub async fn handle_token_program_account<'a, 'b, 'c>(
                     active.delegate = Set(delegate);
                     active.frozen = Set(frozen);
                     active.save(&txn).await?;
+
+                    if let Some(data) = data {
+                        if data.metadata_url.is_empty() {
+                            statsd_count!("token_account.empty_url", 1);
+                        } else {
+                            statsd_count!("token_account.non_empty_url", 1);
+                        }
+                    }
                 }
             }
             txn.commit().await?;
