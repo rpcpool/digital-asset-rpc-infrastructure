@@ -2,8 +2,9 @@ use crate::dao::{
     asset, asset_authority, asset_creators, asset_data, asset_grouping, FullAsset, GroupingSize,
     Pagination,
 };
+use indexmap::IndexMap;
 use sea_orm::{entity::*, query::*, ConnectionTrait, DbErr, Order};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 pub fn paginate<T>(pagination: &Pagination, limit: u64, stmt: T) -> T
 where
@@ -158,8 +159,6 @@ where
     let mut stmt = asset::Entity::find()
         .filter(condition)
         .join(JoinType::LeftJoin, relation.def())
-        .distinct_on([(asset::Entity, asset::Column::Id)])
-        .order_by(asset::Column::Id, Order::Desc)
         .order_by(sort_by, sort_direction);
 
     stmt = paginate(pagination, limit, stmt);
@@ -184,8 +183,8 @@ pub async fn get_related_for_assets(
         acc
     });
 
-    // Using BTreeMap to preserve order.
-    let mut assets_map = assets.into_iter().fold(BTreeMap::new(), |mut acc, asset| {
+    // Using IndexMap to preserve order.
+    let mut assets_map = assets.into_iter().fold(IndexMap::new(), |mut acc, asset| {
         if let Some(ad) = asset
             .asset_data
             .clone()
@@ -193,7 +192,7 @@ pub async fn get_related_for_assets(
         {
             let id = asset.id.clone();
             let fa = FullAsset {
-                asset: asset,
+                asset,
                 data: ad.clone(),
                 authorities: vec![],
                 creators: vec![],
@@ -249,14 +248,11 @@ pub async fn get_assets_by_condition(
     pagination: &Pagination,
     limit: u64,
 ) -> Result<Vec<FullAsset>, DbErr> {
-    let mut stmt = asset::Entity::find().distinct_on([(asset::Entity, asset::Column::Id)]);
+    let mut stmt = asset::Entity::find();
     for def in joins {
         stmt = stmt.join(JoinType::LeftJoin, def);
     }
-    stmt = stmt
-        .filter(condition)
-        .order_by(asset::Column::Id, Order::Desc)
-        .order_by(sort_by, sort_direction);
+    stmt = stmt.filter(condition).order_by(sort_by, sort_direction);
 
     stmt = paginate(pagination, limit, stmt);
     let asset_list = stmt.all(conn).await?;

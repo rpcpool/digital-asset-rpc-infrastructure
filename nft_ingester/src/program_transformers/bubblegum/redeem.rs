@@ -1,12 +1,13 @@
-use crate::{error::IngesterError, program_transformers::bubblegum::update_asset};
-
-use super::save_changelog_event;
-use blockbuster::{
-    instruction::InstructionBundle,
-    programs::bubblegum::{BubblegumInstruction, LeafSchema},
+use crate::{
+    error::IngesterError,
+    program_transformers::bubblegum::{
+        save_changelog_event, u32_to_u8_array, upsert_asset_with_leaf_info, upsert_asset_with_seq,
+    },
 };
-use digital_asset_types::dao::asset;
-use sea_orm::{entity::*, ConnectionTrait, TransactionTrait};
+use blockbuster::{instruction::InstructionBundle, programs::bubblegum::BubblegumInstruction};
+use log::debug;
+use sea_orm::{ConnectionTrait, TransactionTrait};
+use solana_sdk::pubkey::Pubkey;
 
 pub async fn redeem<'c, T>(
     parsing_result: &BubblegumInstruction,
@@ -16,33 +17,33 @@ pub async fn redeem<'c, T>(
 where
     T: ConnectionTrait + TransactionTrait,
 {
-    if let (Some(le), Some(cl)) = (&parsing_result.leaf_update, &parsing_result.tree_update) {
+    if let Some(cl) = &parsing_result.tree_update {
         let seq = save_changelog_event(cl, bundle.slot, bundle.txn_id, txn).await?;
-        return match le.schema {
-            LeafSchema::V1 {
-                id,
-                delegate,
-                owner,
-                ..
-            } => {
-                let id_bytes = id.to_bytes().to_vec();
-                let delegate = if owner == delegate {
-                    None
-                } else {
-                    Some(delegate.to_bytes().to_vec())
-                };
-                let owner_bytes = owner.to_bytes().to_vec();
-                let asset_to_update = asset::ActiveModel {
-                    id: Unchanged(id_bytes.clone()),
-                    leaf: Set(Some(vec![0; 32])),
-                    delegate: Set(delegate),
-                    owner: Set(Some(owner_bytes)),
-                    seq: Set(seq as i64),
-                    ..Default::default()
-                };
-                update_asset(txn, id_bytes, Some(seq), asset_to_update).await
-            } // _ => Err(IngesterError::NotImplemented),
-        };
+        let leaf_index = cl.index;
+        let (asset_id, _) = Pubkey::find_program_address(
+            &[
+                "asset".as_bytes(),
+                cl.id.as_ref(),
+                u32_to_u8_array(leaf_index).as_ref(),
+            ],
+            &mpl_bubblegum::ID,
+        );
+        debug!("Indexing burn for asset id: {:?}", asset_id);
+        let id_bytes = asset_id.to_bytes();
+
+        // Partial update of asset table with just leaf.
+        upsert_asset_with_leaf_info(
+            txn,
+            id_bytes.to_vec(),
+            Some(vec![0; 32]),
+            Some(seq as i64),
+            false,
+        )
+        .await?;
+
+        upsert_asset_with_seq(txn, id_bytes.to_vec(), seq as i64).await?;
+
+        return Ok(());
     }
     Err(IngesterError::ParsingError(
         "Ix not parsed correctly".to_string(),
