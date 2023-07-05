@@ -76,20 +76,26 @@ pub async fn handle_token_program_account<'a, 'b, 'c>(
                 .one(&txn)
                 .await?;
 
+            let owner_clone = owner.clone();
             if let Some((asset, data)) = asset_with_data {
                 // will only update owner if token account balance is non-zero
                 if ta.amount > 0 {
-                    let mut active: asset::ActiveModel = asset.into();
-                    active.owner = Set(Some(owner));
-                    active.delegate = Set(delegate);
-                    active.frozen = Set(frozen);
-                    active.save(&txn).await?;
+                    if asset.owner != Some(owner_clone)
+                        || asset.delegate != delegate
+                        || asset.frozen != frozen
+                    {
+                        let mut active: asset::ActiveModel = asset.into();
+                        active.owner = Set(Some(owner));
+                        active.delegate = Set(delegate);
+                        active.frozen = Set(frozen);
+                        active.save(&txn).await?;
 
-                    if let Some(data) = data {
-                        if data.metadata_url.is_empty() {
-                            statsd_count!("token_account.empty_url", 1);
-                        } else {
-                            statsd_count!("token_account.non_empty_url", 1);
+                        if let Some(data) = data {
+                            if data.metadata_url.is_empty() {
+                                statsd_count!("token_account.empty_url", 1);
+                            } else {
+                                statsd_count!("token_account.non_empty_url", 1);
+                            }
                         }
                     }
                 }
