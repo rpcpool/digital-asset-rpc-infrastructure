@@ -2,7 +2,7 @@ use crate::{error::IngesterError, tasks::TaskData};
 use blockbuster::programs::token_account::TokenProgramAccount;
 use cadence_macros::statsd_count;
 use digital_asset_types::dao::{asset, asset_data, token_accounts, tokens};
-use log::error;
+use log::warn;
 use plerkle_serialization::AccountInfo;
 use sea_orm::{
     entity::*, query::*, sea_query::OnConflict, ActiveValue::Set, ConnectionTrait,
@@ -87,9 +87,11 @@ pub async fn handle_token_program_account<'a, 'b, 'c>(
 
                     if let Some(data) = data {
                         if data.metadata_url.is_empty() {
-                            statsd_count!("token_account.empty_url", 1);
+                            statsd_count!("ingester.token_account.empty_url", 1);
+                            warn!("url is absent")
                         } else {
-                            statsd_count!("token_account.non_empty_url", 1);
+                            statsd_count!("ingester.token_account.non_empty_url", 1);
+                            warn!("url is present")
                         }
                     }
                 }
