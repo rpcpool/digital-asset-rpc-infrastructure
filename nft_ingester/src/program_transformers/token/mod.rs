@@ -72,25 +72,17 @@ pub async fn handle_token_program_account<'a, 'b, 'c>(
             db.execute(query).await?;
 
             // Metrics
-            let mut metadata_url_exists = false;
             let mut token_owner_update = false;
             let mut token_delegate_update = false;
             let mut token_freeze_update = false;
 
             let txn = db.begin().await?;
-            let asset_with_data = asset::Entity::find_by_id(mint)
+            let asset_update = asset::Entity::find_by_id(mint)
                 .filter(asset::Column::OwnerType.eq("single"))
-                .find_also_related(asset_data::Entity)
                 .one(&txn)
                 .await?;
 
-            if let Some((asset, data)) = asset_with_data {
-                if let Some(data) = data {
-                    if !data.metadata_url.is_empty() {
-                        metadata_url_exists = true;
-                    }
-                }
-
+            if let Some(asset) = asset_update {
                 // Only handle token account updates for NFTs (supply=1)
                 // TODO: Support fungible tokens
                 let asset_clone = asset.clone();
@@ -129,11 +121,6 @@ pub async fn handle_token_program_account<'a, 'b, 'c>(
             txn.commit().await?;
 
             // Publish metrics outside of the txn to reduce txn latency.
-            if metadata_url_exists {
-                statsd_count!("token_account.non_empty_url", 1);
-            } else {
-                statsd_count!("token_account.empty_url", 1);
-            }
             if token_owner_update {
                 statsd_count!("token_account.owner_update", 1);
             }
