@@ -1,5 +1,5 @@
 use super::{save_changelog_event, update_asset};
-use crate::error::IngesterError;
+use crate::{error::IngesterError, program_transformers::bubblegum::u32_to_u8_array};
 use blockbuster::{instruction::InstructionBundle, programs::bubblegum::BubblegumInstruction};
 use digital_asset_types::dao::asset;
 use log::debug;
@@ -41,12 +41,4 @@ where
     Err(IngesterError::ParsingError(
         "Ix not parsed correctly".to_string(),
     ))
-}
-
-// PDA lookup requires an 8-byte array.
-fn u32_to_u8_array(value: u32) -> [u8; 8] {
-    let bytes: [u8; 4] = value.to_le_bytes();
-    let mut result: [u8; 8] = [0; 8];
-    result[..4].copy_from_slice(&bytes);
-    result
 }
