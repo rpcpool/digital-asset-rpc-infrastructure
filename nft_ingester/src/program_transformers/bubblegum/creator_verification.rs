@@ -10,12 +10,9 @@ use mpl_bubblegum::{
 };
 use sea_orm::{ConnectionTrait, Set, TransactionTrait, Unchanged};
 
-use crate::{
-    error::IngesterError,
-    program_transformers::bubblegum::{update_asset, update_creator},
-};
+use crate::{error::IngesterError, program_transformers::bubblegum::update_creator};
 
-use super::save_changelog_event;
+use super::{save_changelog_event, update_compressed_asset};
 
 pub async fn process<'c, T>(
     parsing_result: &BubblegumInstruction,
@@ -92,7 +89,7 @@ where
                     ..Default::default()
                 };
 
-                update_asset(txn, id_bytes.clone(), Some(seq), asset_to_update).await?;
+                update_compressed_asset(txn, id_bytes.clone(), Some(seq), asset_to_update).await?;
                 id_bytes
             } // _ => return Err(IngesterError::NotImplemented),
         };

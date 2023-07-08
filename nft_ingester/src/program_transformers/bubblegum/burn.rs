@@ -1,4 +1,4 @@
-use super::{save_changelog_event, update_asset};
+use super::{save_changelog_event, update_compressed_asset};
 use crate::{error::IngesterError, program_transformers::bubblegum::u32_to_u8_array};
 use blockbuster::{instruction::InstructionBundle, programs::bubblegum::BubblegumInstruction};
 use digital_asset_types::dao::asset;
@@ -35,7 +35,7 @@ where
         };
         // Don't send sequence number with this update, because we will always
         // run this update even if it's from a backfill/replay.
-        update_asset(txn, id_bytes, None, asset_to_update).await?;
+        update_compressed_asset(txn, id_bytes, None, asset_to_update).await?;
         return Ok(());
     }
     Err(IngesterError::ParsingError(
