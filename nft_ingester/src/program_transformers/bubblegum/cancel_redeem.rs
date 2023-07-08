@@ -1,4 +1,4 @@
-use super::{save_changelog_event, update_asset};
+use super::{save_changelog_event, update_compressed_asset};
 use crate::error::IngesterError;
 use blockbuster::{
     instruction::InstructionBundle,
@@ -40,7 +40,7 @@ where
                     seq: Set(seq as i64), // gummyroll seq
                     ..Default::default()
                 };
-                update_asset(txn, id_bytes, Some(seq), asset_to_update).await
+                update_compressed_asset(txn, id_bytes, Some(seq), asset_to_update).await
             }
         };
     }

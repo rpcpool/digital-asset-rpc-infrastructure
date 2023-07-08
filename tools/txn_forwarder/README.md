@@ -8,7 +8,7 @@ cargo run -- \
  --rpc-url $RPC_URL \
  --max-retries 10 \
  --concurrency 10 \
- single --txn 65MtykBysKAofpvKMkGPYotxQYFRHM47g99iCs6B9ZxfAbBmHKeLi2LSUA8KUcm4qYsot2z9AB4uREuUuEQNw8HA
+ single --txn 3dzRYn994xzgUeomzczdkMAhicjPZKXkKFSvYKjQpT2Lbnv1pG3DG7de8sVomUMFX9Y3Fquz194jtvVH2sRWMAX7
 ```
 
 ## Send single transaction to Dev/Prod

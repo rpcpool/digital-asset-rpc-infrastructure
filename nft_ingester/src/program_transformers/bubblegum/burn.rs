@@ -1,5 +1,5 @@
-use super::{save_changelog_event, update_asset};
-use crate::error::IngesterError;
+use super::{save_changelog_event, update_compressed_asset};
+use crate::{error::IngesterError, program_transformers::bubblegum::u32_to_u8_array};
 use anchor_lang::prelude::Pubkey;
 use blockbuster::{instruction::InstructionBundle, programs::bubblegum::BubblegumInstruction};
 use digital_asset_types::dao::asset;
@@ -36,18 +36,10 @@ where
         };
         // Don't send sequence number with this update, because we will always
         // run this update even if it's from a backfill/replay.
-        update_asset(txn, id_bytes, None, asset_to_update).await?;
+        update_compressed_asset(txn, id_bytes, None, asset_to_update).await?;
         return Ok(());
     }
     Err(IngesterError::ParsingError(
         "Ix not parsed correctly".to_string(),
     ))
-}
-
-// PDA lookup requires an 8-byte array.
-fn u32_to_u8_array(value: u32) -> [u8; 8] {
-    let bytes: [u8; 4] = value.to_le_bytes();
-    let mut result: [u8; 8] = [0; 8];
-    result[..4].copy_from_slice(&bytes);
-    result
 }

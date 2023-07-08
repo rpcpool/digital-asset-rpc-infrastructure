@@ -5,7 +5,7 @@ use blockbuster::{
 use digital_asset_types::dao::{asset, asset_grouping};
 use sea_orm::{entity::*, query::*, sea_query::OnConflict, DbBackend, Set, Unchanged};
 
-use super::{save_changelog_event, update_asset};
+use super::{save_changelog_event, update_compressed_asset};
 use crate::error::IngesterError;
 pub async fn process<'c, T>(
     parsing_result: &BubblegumInstruction,
@@ -31,7 +31,7 @@ where
                     seq: Set(seq as i64),
                     ..Default::default()
                 };
-                update_asset(txn, id_bytes.clone(), Some(seq), asset_to_update).await?;
+                update_compressed_asset(txn, id_bytes.clone(), Some(seq), asset_to_update).await?;
 
                 if verify {
                     if let Some(Payload::SetAndVerifyCollection { collection }) =

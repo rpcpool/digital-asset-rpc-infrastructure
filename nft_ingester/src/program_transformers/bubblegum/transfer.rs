@@ -1,6 +1,6 @@
-use crate::{error::IngesterError, program_transformers::bubblegum::update_asset};
+use crate::error::IngesterError;
 
-use super::save_changelog_event;
+use super::{save_changelog_event, update_compressed_asset};
 use blockbuster::{
     instruction::InstructionBundle,
     programs::bubblegum::{BubblegumInstruction, LeafSchema},
@@ -41,7 +41,7 @@ where
                     seq: Set(seq as i64), // gummyroll seq
                     ..Default::default()
                 };
-                update_asset(txn, id_bytes, Some(seq), asset_to_update).await
+                update_compressed_asset(txn, id_bytes, Some(seq), asset_to_update).await
             }
         };
     }

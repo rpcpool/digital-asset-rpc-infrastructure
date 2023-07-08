@@ -145,7 +145,7 @@ where
     //TODO -> set maximum size of path and break into multiple statements
 }
 
-pub async fn update_asset<T>(
+pub async fn update_compressed_asset<T>(
     txn: &T,
     id: Vec<u8>,
     seq: Option<u64>,
@@ -158,7 +158,9 @@ where
         asset::Entity::update(model).filter(
             Condition::all()
                 .add(asset::Column::Id.eq(id.clone()))
-                .add(asset::Column::Seq.lte(seq)),
+                .add(asset::Column::Seq.lte(seq))
+                // Do not update once asset is decompressed
+                .add(asset::Column::Compressed.eq(true)),
         )
     } else {
         asset::Entity::update(model).filter(asset::Column::Id.eq(id.clone()))
@@ -170,7 +172,7 @@ where
             DbErr::RecordNotFound(ref s) => {
                 if s.contains("None of the database rows are affected") {
                     warn!(
-                        "Update failed. No asset found for id {}.",
+                        "Skipping update for asset {}. It either does not exist or has already been decompressed.",
                         bs58::encode(id).into_string()
                     );
                     Ok(())
