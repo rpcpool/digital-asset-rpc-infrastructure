@@ -68,7 +68,29 @@ async fn simple_content() {
                 contexts: None,
             }
         ])
-    )
+    );
+    assert_eq!(
+        parsed
+            .clone()
+            .links
+            .unwrap()
+            .get("image")
+            .unwrap()
+            .as_str()
+            .unwrap(),
+        "https://madlads.s3.us-west-2.amazonaws.com/images/1.png"
+    );
+    assert_eq!(
+        parsed
+            .clone()
+            .links
+            .unwrap()
+            .get("external_url")
+            .unwrap()
+            .as_str()
+            .unwrap(),
+        "https://madlads.com"
+    );
 }
 
 #[tokio::test]
@@ -97,7 +119,7 @@ async fn simple_content_with_cdn() {
                 contexts: None,
             }
         ])
-    )
+    );
 }
 
 #[tokio::test]
@@ -129,7 +151,29 @@ async fn complex_content() {
                 contexts: None,
             },
         ])
-    )
+    );
+    assert_eq!(
+        parsed
+            .clone()
+            .links
+            .unwrap()
+            .get("image")
+            .unwrap()
+            .as_str()
+            .unwrap(),
+        "https://arweave.net/_a4sXT6fOHI-5VHFOHLEF73wqKuZtJgE518Ciq9DGyI?ext=gif"
+    );
+    assert_eq!(
+        parsed
+            .clone()
+            .links
+            .unwrap()
+            .get("animation_url")
+            .unwrap()
+            .as_str()
+            .unwrap(),
+        "https://arweave.net/HVOJ3bTpqMJJJtd5nW2575vPTekLa_SSDsQc7AqV_Ho?ext=mp4"
+    );
 }
 
 #[tokio::test]
