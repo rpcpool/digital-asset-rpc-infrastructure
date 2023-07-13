@@ -1,10 +1,7 @@
-use crate::{error::IngesterError, tasks::TaskData};
+use crate::{error::IngesterError, metric, tasks::TaskData};
 use blockbuster::programs::token_account::TokenProgramAccount;
-use cadence_macros::statsd_count;
-use digital_asset_types::dao::{
-    asset, asset_data, sea_orm_active_enums::OwnerType, token_accounts, tokens,
-};
-use log::error;
+use cadence_macros::{is_global_default_set, statsd_count};
+use digital_asset_types::dao::{asset, token_accounts, tokens};
 use plerkle_serialization::AccountInfo;
 use sea_orm::{
     entity::*, query::*, sea_query::OnConflict, ActiveValue::Set, ConnectionTrait,
@@ -122,13 +119,19 @@ pub async fn handle_token_program_account<'a, 'b, 'c>(
 
             // Publish metrics outside of the txn to reduce txn latency.
             if token_owner_update {
-                statsd_count!("token_account.owner_update", 1);
+                metric! {
+                    statsd_count!("token_account.owner_update", 1);
+                }
             }
             if token_delegate_update {
-                statsd_count!("token_account.delegate_update", 1);
+                metric! {
+                    statsd_count!("token_account.delegate_update", 1);
+                }
             }
             if token_freeze_update {
-                statsd_count!("token_account.freeze_update", 1);
+                metric! {
+                    statsd_count!("token_account.freeze_update", 1);
+                }
             }
 
             Ok(())
