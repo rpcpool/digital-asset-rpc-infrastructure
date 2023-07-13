@@ -1,10 +1,7 @@
-use std::{
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use crate::{
-    metric, metrics::capture_result,
-    program_transformers::ProgramTransformer, tasks::TaskData,
+    metric, metrics::capture_result, program_transformers::ProgramTransformer, tasks::TaskData,
 };
 use cadence_macros::{is_global_default_set, statsd_count, statsd_time};
 use chrono::Utc;
@@ -91,6 +88,10 @@ async fn handle_account(manager: Arc<ProgramTransformer>, item: RecvData) -> Opt
                 "stream" => ACCOUNT_STREAM
             );
         }
+        let mut account = None;
+        if let Some(pubkey) = account_update.pubkey() {
+            account = Some(bs58::encode(pubkey.0.as_slice()).into_string());
+        }
         let begin_processing = Instant::now();
         let res = manager.handle_account_update(account_update).await;
         ret_id = capture_result(
@@ -101,6 +102,7 @@ async fn handle_account(manager: Arc<ProgramTransformer>, item: RecvData) -> Opt
             res,
             begin_processing,
             None,
+            account,
         );
     }
     ret_id
