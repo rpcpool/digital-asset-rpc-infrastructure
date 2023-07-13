@@ -48,7 +48,6 @@ pub fn capture_result(
     res: Result<(), IngesterError>,
     proc: Instant,
     txn_sig: Option<&str>,
-    account: Option<String>,
 ) -> Option<String> {
     let mut ret_id = None;
     match res {
@@ -79,8 +78,6 @@ pub fn capture_result(
             }
             if let Some(sig) = txn_sig {
                 warn!("Error deserializing txn {}: {:?}", sig, e);
-            } else if let Some(account) = account {
-                warn!("Error deserializing account {}: {:?}", account, e);
             } else {
                 warn!("{}", e);
             }
@@ -92,8 +89,6 @@ pub fn capture_result(
             }
             if let Some(sig) = txn_sig {
                 warn!("Error parsing txn {}: {:?}", sig, e);
-            } else if let Some(account) = account {
-                warn!("Error parsing account {}: {:?}", account, e);
             } else {
                 warn!("{}", e);
             }
@@ -102,10 +97,8 @@ pub fn capture_result(
         Err(err) => {
             if let Some(sig) = txn_sig {
                 error!("Error handling update for txn {}: {:?}", sig, err);
-            } else if let Some(account) = account {
-                error!("Error handling update for account {}: {:?}", account, err);
             } else {
-                error!("Error handling update: {:?}", err);
+                error!("Error handling account update: {:?}", err);
             }
             metric! {
                 statsd_count!("ingester.ingest_update_error", 1, label.0 => &label.1, "stream" => stream, "error" => "u");

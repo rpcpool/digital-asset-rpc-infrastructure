@@ -101,7 +101,6 @@ async fn handle_transaction(manager: Arc<ProgramTransformer>, item: RecvData) ->
             res,
             begin,
             tx.signature(),
-            None,
         );
     }
     ret_id
