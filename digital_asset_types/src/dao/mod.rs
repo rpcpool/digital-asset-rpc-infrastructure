@@ -183,9 +183,8 @@ impl SearchAssetsQuery {
             conditions = conditions.add(asset_creators::Column::Creator.eq(c));
         }
 
-        // N.B. Something to consider is that without specifying the creators themselves,
-        // there is no index being hit. That means in some scenarios this query could be very slow.
-        // But those should only happen in rare scenarios.
+        // Without specifying the creators themselves, there is no index being hit.
+        // So in some rare scenarios, this query could be very slow.
         if let Some(cv) = self.creator_verified.to_owned() {
             conditions = conditions.add(asset_creators::Column::Verified.eq(cv));
         }
