@@ -171,7 +171,9 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         "{} WHERE excluded.slot_updated > asset_data.slot_updated",
         query.sql
     );
-    let _res = txn.execute(query).await?;
+    txn.execute(query)
+        .await
+        .map_err(|db_err| IngesterError::AssetIndexError(db_err.to_string()))?;
     let model = asset::ActiveModel {
         id: Set(id.to_vec()),
         owner,
@@ -228,7 +230,9 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         "{} WHERE excluded.slot_updated > asset.slot_updated",
         query.sql
     );
-    txn.execute(query).await?;
+    txn.execute(query)
+        .await
+        .map_err(|db_err| IngesterError::AssetIndexError(db_err.to_string()))?;
     let attachment = asset_v1_account_attachments::ActiveModel {
         id: Set(edition_attachment_address.to_bytes().to_vec()),
         slot_updated: Set(slot_i),
@@ -242,7 +246,9 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
                 .to_owned(),
         )
         .build(DbBackend::Postgres);
-    txn.execute(query).await?;
+    txn.execute(query)
+        .await
+        .map_err(|db_err| IngesterError::AssetIndexError(db_err.to_string()))?;
     let model = asset_authority::ActiveModel {
         asset_id: Set(id.to_vec()),
         authority: Set(authority),
@@ -265,7 +271,9 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         "{} WHERE excluded.slot_updated > asset_authority.slot_updated",
         query.sql
     );
-    txn.execute(query).await?;
+    txn.execute(query)
+        .await
+        .map_err(|db_err| IngesterError::AssetIndexError(db_err.to_string()))?;
     if let Some(c) = &metadata.collection {
         if c.verified {
             let model = asset_grouping::ActiveModel {
@@ -295,7 +303,9 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
                     "{} WHERE excluded.slot_updated > asset_grouping.slot_updated AND excluded.seq >= asset_grouping.seq",
                     query.sql
                 );
-            txn.execute(query).await?;
+            txn.execute(query)
+                .await
+                .map_err(|db_err| IngesterError::AssetIndexError(db_err.to_string()))?;
         }
     }
 
@@ -356,7 +366,9 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
                 "{} WHERE excluded.slot_updated > asset_creators.slot_updated",
                 query.sql
             );
-            txn.execute(query).await?;
+            txn.execute(query)
+                .await
+                .map_err(|db_err| IngesterError::AssetIndexError(db_err.to_string()))?;
         }
     }
     txn.commit().await?;
