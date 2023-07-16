@@ -280,14 +280,17 @@ pub async fn get_by_id(
     let (asset, data) = asset_data;
     let authorities: Vec<asset_authority::Model> = asset_authority::Entity::find()
         .filter(asset_authority::Column::AssetId.eq(asset.id.clone()))
+        .order_by_asc(asset_authority::Column::AssetId)
         .all(conn)
         .await?;
     let creators: Vec<asset_creators::Model> = asset_creators::Entity::find()
         .filter(asset_creators::Column::AssetId.eq(asset.id.clone()))
+        .order_by_asc(asset_creators::Column::AssetId)
         .all(conn)
         .await?;
     let grouping: Vec<asset_grouping::Model> = asset_grouping::Entity::find()
         .filter(asset_grouping::Column::AssetId.eq(asset.id.clone()))
+        .order_by_asc(asset_grouping::Column::AssetId)
         .all(conn)
         .await?;
     Ok(FullAsset {
