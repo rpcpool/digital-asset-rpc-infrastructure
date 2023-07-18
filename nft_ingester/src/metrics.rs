@@ -40,6 +40,8 @@ pub fn setup_metrics(config: &IngesterConfig) {
     }
 }
 
+// Returns a boolean indicating whether the redis message should be ACK'd.
+// If the message is not ACK'd, it will be retried as long as it is under the retry limit.
 pub fn capture_result(
     id: String,
     stream: &str,
@@ -49,8 +51,8 @@ pub fn capture_result(
     proc: Instant,
     txn_sig: Option<&str>,
     account: Option<String>,
-) -> Option<String> {
-    let mut ret_id = None;
+) -> bool {
+    let mut should_ack = false;
     match res {
         Ok(_) => {
             metric! {
@@ -65,13 +67,13 @@ pub fn capture_result(
                     statsd_count!("ingester.redeliver_success", 1, label.0 => &label.1, "stream" => stream);
                 }
             }
-            ret_id = Some(id);
+            should_ack = true;
         }
         Err(err) if err == IngesterError::NotImplemented => {
             metric! {
                 statsd_count!("ingester.not_implemented", 1, label.0 => &label.1, "stream" => stream, "error" => "ni");
             }
-            ret_id = Some(id);
+            should_ack = true;
         }
         Err(IngesterError::DeserializationError(e)) => {
             metric! {
@@ -84,7 +86,8 @@ pub fn capture_result(
             } else {
                 warn!("{}", e);
             }
-            ret_id = Some(id);
+            // Non-retryable error.
+            should_ack = true;
         }
         Err(IngesterError::ParsingError(e)) => {
             metric! {
@@ -97,7 +100,8 @@ pub fn capture_result(
             } else {
                 warn!("{}", e);
             }
-            ret_id = Some(id);
+            // Non-retryable error.
+            should_ack = true;
         }
         Err(IngesterError::DatabaseError(e)) => {
             metric! {
@@ -108,7 +112,7 @@ pub fn capture_result(
             } else {
                 warn!("{}", e);
             }
-            ret_id = Some(id);
+            should_ack = false;
         }
         Err(IngesterError::AssetIndexError(e)) => {
             metric! {
@@ -119,7 +123,7 @@ pub fn capture_result(
             } else {
                 warn!("Error indexing account: {:?}", e);
             }
-            ret_id = Some(id);
+            should_ack = false;
         }
         Err(err) => {
             if let Some(sig) = txn_sig {
@@ -132,7 +136,8 @@ pub fn capture_result(
             metric! {
                 statsd_count!("ingester.ingest_update_error", 1, label.0 => &label.1, "stream" => stream, "error" => "u");
             }
+            should_ack = false;
         }
     }
-    ret_id
+    should_ack
 }

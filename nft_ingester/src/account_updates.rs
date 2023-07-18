@@ -94,8 +94,8 @@ async fn handle_account(manager: Arc<ProgramTransformer>, item: RecvData) -> Opt
         }
         let begin_processing = Instant::now();
         let res = manager.handle_account_update(account_update).await;
-        ret_id = capture_result(
-            id,
+        let should_ack = capture_result(
+            id.clone(),
             ACCOUNT_STREAM,
             ("owner", &str_program_id),
             item.tries,
@@ -104,6 +104,9 @@ async fn handle_account(manager: Arc<ProgramTransformer>, item: RecvData) -> Opt
             None,
             account,
         );
+        if should_ack {
+            ret_id = Some(id);
+        }
     }
     ret_id
 }
