@@ -105,11 +105,13 @@ pub struct GetGrouping {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct GetSignaturesForAsset {
-    pub id: String,
+    pub id: Option<String>,
     pub limit: Option<u32>,
     pub page: Option<u32>,
     pub before: Option<String>,
     pub after: Option<String>,
+    pub tree: Option<String>,
+    pub leaf_index: Option<i64>,
 }
 
 #[document_rpc]

@@ -47,7 +47,7 @@ pub async fn main() -> Result<(), IngesterError> {
     let role = config.clone().role.unwrap_or(IngesterRole::All);
     info!("Starting Program with Role {}", role);
     // Tasks Setup -----------------------------------------------
-    // This joinset maages all the tasks that are spawned.
+    // This joinSet manages all the tasks that are spawned.
     let mut tasks = JoinSet::new();
     let stream_metrics_timer = Duration::seconds(30).to_std().unwrap();
 
