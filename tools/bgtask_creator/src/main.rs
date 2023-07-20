@@ -137,6 +137,7 @@ pub async fn main() {
                 .about("Create new background tasks for missing assets (reindex=true)"),
         )
         .subcommand(Command::new("delete").about("Delete ALL pending background tasks"))
+        .subcommand(Command::new("find").about("Find and describe a task by asset id"))
         .get_matches();
 
     let config = setup_config();
@@ -170,6 +171,32 @@ pub async fn main() {
     let limit = matches.get_one::<u64>("limit").unwrap();
 
     match matches.subcommand_name() {
+        Some("find") => {
+            // Re-using this field for simplicity.
+            let asset_id = Pubkey::from_str(mint.unwrap()).unwrap();
+            let asset_id_bytes = asset_id.clone().to_bytes().to_vec();
+            let asset_data = asset_data::Entity::find_by_id(asset_id_bytes.clone())
+                .one(&conn)
+                .await
+                .unwrap()
+                .unwrap();
+
+            println!("off-chain data for asset: {:?}", asset_data.metadata);
+
+            let mut task = DownloadMetadata {
+                asset_data_id: asset_id_bytes.clone(),
+                uri: asset_data.metadata_url,
+                created_at: Some(Utc::now().naive_utc()),
+            };
+            task.sanitize();
+            let task_data = task.clone().into_task_data().unwrap();
+            let hash = task_data.hash().unwrap().clone();
+            let task_entry = tasks::Entity::find_by_id(hash)
+                .filter(tasks::Column::Status.ne(TaskStatus::Pending))
+                .one(&conn)
+                .await;
+            println!("task: {:?}", task_entry)
+        }
         Some("reindex") => {
             let exec_res = conn
                 .execute(Statement::from_string(
@@ -434,20 +461,7 @@ fn find_by_type<'a>(
         let pubkey_bytes = pubkey.to_bytes().to_vec();
 
         (
-            asset_data::Entity::find()
-                .join(JoinType::InnerJoin, asset_data::Relation::Asset.def())
-                .join_rev(
-                    JoinType::InnerJoin,
-                    tokens::Entity::belongs_to(asset::Entity)
-                        .from(tokens::Column::Mint)
-                        .to(asset::Column::SupplyMint)
-                        .into(),
-                )
-                .filter(
-                    Condition::all()
-                        .add(tokens::Column::MintAuthority.eq(pubkey_bytes))
-                        .add(condition),
-                ),
+            asset_data::Entity::find_by_id(pubkey_bytes),
             mint.to_string(),
         )
     } else if let Some(creator) = creator {

@@ -11,3 +11,27 @@ Run `cargo run` to run the tool and `cargo run -- help` to see the options. Ensu
 Supported options:
 
 --include-url: Should be of the format `https://entities.nft.helium.io%`. Note the % option
+
+## Examples
+
+### Find a task
+
+For a specific NFT (also works for cNFTs)
+
+```
+cargo run -- --mint 9xozKt1ZgKQqUvahDv1wi9eWuoNNEyR2uEiGRU8YmH87 find
+```
+
+### Create new tasks for assets without metadata
+
+For a collection:
+
+```
+cargo run -- --collection DASHYFhWiCoe8PNCHZJAjmvGBBj8SLtkvW2uYV2e3FrV create
+```
+
+Specific NFT (works also for cNFTs):
+
+```
+cargo run -- --mint 9xozKt1ZgKQqUvahDv1wi9eWuoNNEyR2uEiGRU8YmH87 create
+```
