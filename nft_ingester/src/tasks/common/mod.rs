@@ -48,7 +48,11 @@ impl FromTaskData<DownloadMetadata> for DownloadMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DownloadMetadataTask {}
+pub struct DownloadMetadataTask {
+    pub lock_duration: Option<i64>,
+    pub max_attempts: Option<i16>,
+    pub timeout: Option<Duration>,
+}
 
 impl DownloadMetadataTask {
     async fn request_metadata(
@@ -87,11 +91,11 @@ impl BgTask for DownloadMetadataTask {
     }
 
     fn lock_duration(&self) -> i64 {
-        5
+        self.lock_duration.unwrap_or(5)
     }
 
     fn max_attempts(&self) -> i16 {
-        3
+        self.max_attempts.unwrap_or(3)
     }
 
     async fn task(
@@ -106,7 +110,7 @@ impl BgTask for DownloadMetadataTask {
             Ok(_) => {
                 DownloadMetadataTask::request_metadata(
                     download_metadata.uri.clone(),
-                    Duration::from_secs(10),
+                    self.timeout.unwrap_or(Duration::from_secs(3)),
                     ipfs_gateway,
                 )
                 .await?

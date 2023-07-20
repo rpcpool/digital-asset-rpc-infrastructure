@@ -7,7 +7,7 @@ use serde::Deserialize;
 use std::env;
 use tracing_subscriber::fmt;
 
-use crate::error::IngesterError;
+use crate::{error::IngesterError, tasks::BgTaskConfig};
 
 #[derive(Deserialize, PartialEq, Debug, Clone)]
 pub struct IngesterConfig {
@@ -24,6 +24,7 @@ pub struct IngesterConfig {
     pub transaction_stream_worker_count: Option<u32>,
     pub code_version: Option<&'static str>,
     pub ipfs_gateway: Option<String>,
+    pub bg_task_config: Option<BgTaskConfig>,
 }
 
 impl IngesterConfig {

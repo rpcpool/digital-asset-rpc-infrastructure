@@ -4,11 +4,12 @@ use cadence_macros::{is_global_default_set, statsd_count, statsd_gauge, statsd_h
 use chrono::{Duration, NaiveDateTime, Utc};
 use crypto::{digest::Digest, sha2::Sha256};
 use digital_asset_types::dao::{sea_orm_active_enums::TaskStatus, tasks};
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use sea_orm::{
     entity::*, query::*, sea_query::Expr, ActiveValue::Set, ColumnTrait, DatabaseConnection,
     DeleteResult, SqlxPostgresConnector,
 };
+use serde::Deserialize;
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{
@@ -37,6 +38,32 @@ const RETRY_INTERVAL: u64 = 1000;
 const QUEUE_DEPTH_INTERVAL: u64 = 2500;
 const DELETE_INTERVAL: u64 = 30000;
 const MAX_TASK_BATCH_SIZE: u64 = 100;
+const PURGE_TIME: u64 = 3600;
+
+#[derive(Deserialize, PartialEq, Debug, Clone)]
+pub struct BgTaskConfig {
+    pub delete_interval: Option<u64>,
+    pub retry_interval: Option<u64>,
+    pub purge_time: Option<u64>,
+    pub batch_size: Option<u64>,
+    pub lock_duration: Option<i64>,
+    pub max_attempts: Option<i16>,
+    pub timeout: Option<u64>,
+}
+
+impl Default for BgTaskConfig {
+    fn default() -> Self {
+        BgTaskConfig {
+            delete_interval: Some(DELETE_INTERVAL),
+            retry_interval: Some(RETRY_INTERVAL),
+            purge_time: Some(PURGE_TIME),
+            batch_size: Some(MAX_TASK_BATCH_SIZE),
+            lock_duration: Some(5),
+            max_attempts: Some(3),
+            timeout: Some(3),
+        }
+    }
+}
 
 pub struct TaskData {
     pub name: &'static str,
@@ -169,6 +196,7 @@ impl TaskManager {
 
     pub async fn get_pending_tasks(
         conn: &DatabaseConnection,
+        batch_size: u64,
     ) -> Result<Vec<tasks::Model>, IngesterError> {
         tasks::Entity::find()
             .filter(
@@ -186,7 +214,7 @@ impl TaskManager {
             )
             .order_by(tasks::Column::Attempts, Order::Asc)
             .order_by(tasks::Column::CreatedAt, Order::Desc)
-            .limit(MAX_TASK_BATCH_SIZE)
+            .limit(batch_size)
             .all(conn)
             .await
             .map_err(|e| e.into())
@@ -270,8 +298,15 @@ impl TaskManager {
         })
     }
 
-    pub async fn purge_old_tasks(conn: &DatabaseConnection) -> Result<DeleteResult, IngesterError> {
-        let cod = Expr::cust("NOW() - created_at::timestamp > interval '60 minute'"); //TOdo parametrize
+    pub async fn purge_old_tasks(
+        conn: &DatabaseConnection,
+        task_max_age: time::Duration,
+    ) -> Result<DeleteResult, IngesterError> {
+        let interval = format!(
+            "NOW() - created_at::timestamp > interval '{} seconds'",
+            task_max_age.as_secs()
+        );
+        let cod = Expr::cust(&interval);
         tasks::Entity::delete_many()
             .filter(Condition::all().add(cod))
             .exec(conn)
@@ -331,14 +366,43 @@ impl TaskManager {
         })
     }
 
-    pub fn start_runner(&self) -> JoinHandle<()> {
+    pub fn start_runner(&self, config: Option<BgTaskConfig>) -> JoinHandle<()> {
+        let config = config.unwrap_or_default();
+
+        let delete_interval = tokio::time::Duration::from_millis(
+            config
+                .delete_interval
+                .unwrap_or(BgTaskConfig::default().delete_interval.unwrap()),
+        );
+
+        let retry_interval = tokio::time::Duration::from_millis(
+            config
+                .retry_interval
+                .unwrap_or(BgTaskConfig::default().retry_interval.unwrap()),
+        );
+
+        let purge_time = tokio::time::Duration::from_secs(
+            config
+                .purge_time
+                .unwrap_or(BgTaskConfig::default().purge_time.unwrap()),
+        );
+
+        let batch_size = config
+            .batch_size
+            .unwrap_or(BgTaskConfig::default().batch_size.unwrap());
+
+        info!(
+            "Background runner config: delete_interval: {:?}, retry_interval: {:?}, purge_time: {:?}, batch_size:{:?}",
+            delete_interval, retry_interval, purge_time, batch_size
+        );
+
         let pool = self.pool.clone();
         tokio::spawn(async move {
             let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
-            let mut interval = time::interval(tokio::time::Duration::from_millis(DELETE_INTERVAL));
+            let mut interval = time::interval(delete_interval);
             loop {
                 interval.tick().await; // ticks immediately
-                let delete_res = TaskManager::purge_old_tasks(&conn).await;
+                let delete_res = TaskManager::purge_old_tasks(&conn, purge_time).await;
                 match delete_res {
                     Ok(res) => {
                         debug!("deleted {} tasks entries", res.rows_affected);
@@ -377,11 +441,11 @@ impl TaskManager {
         let task_map = self.registered_task_types.clone();
         let instance_name = self.instance_name.clone();
         tokio::spawn(async move {
-            let mut interval = time::interval(tokio::time::Duration::from_millis(RETRY_INTERVAL));
+            let mut interval = time::interval(retry_interval);
             let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone());
             loop {
                 interval.tick().await; // ticks immediately
-                let tasks_res = TaskManager::get_pending_tasks(&conn).await;
+                let tasks_res = TaskManager::get_pending_tasks(&conn, batch_size).await;
                 match tasks_res {
                     Ok(tasks) => {
                         debug!("tasks that need to be executed: {}", tasks.len());

@@ -30,6 +30,7 @@ use log::{error, info};
 use plerkle_messenger::{
     redis_messenger::RedisMessenger, ConsumptionType, ACCOUNT_STREAM, TRANSACTION_STREAM,
 };
+use std::time;
 use tokio::{signal, task::JoinSet};
 
 #[tokio::main(flavor = "multi_thread")]
@@ -53,7 +54,14 @@ pub async fn main() -> Result<(), IngesterError> {
 
     // BACKGROUND TASKS --------------------------------------------
     //Setup definitions for background tasks
-    let bg_task_definitions: Vec<Box<dyn BgTask>> = vec![Box::new(DownloadMetadataTask {})];
+    let task_runner_config = config.bg_task_config.clone().unwrap_or_default();
+    let bg_task_definitions: Vec<Box<dyn BgTask>> = vec![Box::new(DownloadMetadataTask {
+        lock_duration: task_runner_config.lock_duration,
+        max_attempts: task_runner_config.max_attempts,
+        timeout: Some(time::Duration::from_secs(
+            task_runner_config.timeout.unwrap_or(3),
+        )),
+    })];
 
     let mut background_task_manager = TaskManager::new(
         rand_string(),
@@ -122,7 +130,8 @@ pub async fn main() -> Result<(), IngesterError> {
     // Setup Stream Size Timers, these are small processes that run every 60 seconds and farm metrics for the size of the streams.
     // If metrics are disabled, these will not run.
     if role == IngesterRole::BackgroundTaskRunner || role == IngesterRole::All {
-        tasks.spawn(background_task_manager.start_runner());
+        let background_runner_config = config.clone().bg_task_config;
+        tasks.spawn(background_task_manager.start_runner(background_runner_config));
     }
     // Backfiller Setup ------------------------------------------
     if role == IngesterRole::Backfiller || role == IngesterRole::All {
