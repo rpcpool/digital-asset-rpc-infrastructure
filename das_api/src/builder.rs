@@ -14,24 +14,7 @@ impl RpcApiBuilder {
         })?;
 
         module.register_async_method("get_asset_proof", |rpc_params, rpc_context| async move {
-            let payload: GetAsset;
-            if let Ok(parsed_payload) = rpc_params.parse::<GetAsset>() {
-                payload = parsed_payload;
-            } else {
-                let mut sequence_parser = rpc_params.sequence();
-
-                let id = match sequence_parser.next::<String>() {
-                    Ok(id) => id,
-                    Err(_) => {
-                        return Err(DasApiError::ValidationError(
-                            "'id' is missing or invalid".to_string(),
-                        )
-                        .into());
-                    }
-                };
-
-                payload = GetAsset { id, raw_data: None }
-            }
+            let payload = rpc_params.parse::<GetAssetProof>()?;
             rpc_context
                 .get_asset_proof(payload)
                 .await
@@ -40,27 +23,7 @@ impl RpcApiBuilder {
         module.register_alias("getAssetProof", "get_asset_proof")?;
 
         module.register_async_method("get_asset", |rpc_params, rpc_context| async move {
-            let payload: GetAsset;
-            if let Ok(parsed_payload) = rpc_params.parse::<GetAsset>() {
-                payload = parsed_payload;
-            } else {
-                let mut sequence_parser = rpc_params.sequence();
-
-                let id = match sequence_parser.next::<String>() {
-                    Ok(id) => id,
-                    Err(_) => {
-                        return Err(DasApiError::ValidationError(
-                            "'id' is missing or invalid".to_string(),
-                        )
-                        .into());
-                    }
-                };
-
-                payload = GetAsset {
-                    id,
-                    raw_data: sequence_parser.optional_next::<bool>().unwrap_or(None),
-                }
-            }
+            let payload = rpc_params.parse::<GetAsset>()?;
             rpc_context.get_asset(payload).await.map_err(Into::into)
         })?;
         module.register_alias("getAsset", "get_asset")?;
