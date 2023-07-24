@@ -128,7 +128,7 @@ impl ApiContract for DasApi {
         let transform = AssetTransform {
             cdn_prefix: self.cdn_prefix.clone(),
         };
-        get_asset(&self.db_connection, id_bytes, &transform)
+        get_asset(&self.db_connection, id_bytes, &transform, payload.raw_data)
             .await
             .map_err(Into::into)
     }

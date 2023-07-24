@@ -151,38 +151,23 @@ pub fn safe_select<'a>(
         .and_then(|v| v.pop())
 }
 
-#[cfg(feature = "fetch-raw-fields")]
-async fn process_raw_fields(
-    name: Option<String>,
-    symbol: Option<String>,
-    asset_data: &AssetData,
+fn process_raw_fields(
+    name: &Option<Vec<u8>>,
+    symbol: &Option<Vec<u8>>,
 ) -> (Option<String>, Option<String>) {
-    let name_result = if let Some(name) = &name {
-        let raw_name = asset_data.raw_name.clone();
-        match String::from_utf8(raw_name) {
-            Ok(s) => Some(s),
-            Err(_) => Some(name.clone()),
-        }
-    } else {
-        None
-    };
-
-    let symbol_result = if let Some(symbol) = &symbol {
-        let raw_symbol = asset_data.raw_symbol.clone();
-        match String::from_utf8(raw_symbol) {
-            Ok(s) => Some(s),
-            Err(_) => Some(symbol.clone()),
-        }
-    } else {
-        None
-    };
-
+    let name_result = name
+        .as_ref()
+        .and_then(|name| String::from_utf8(name.clone()).ok());
+    let symbol_result = symbol
+        .as_ref()
+        .and_then(|symbol| String::from_utf8(symbol.clone()).ok());
     (name_result, symbol_result)
 }
 
 pub fn v1_content_from_json(
     asset_data: &asset_data::Model,
     cdn_prefix: Option<String>,
+    raw_data: Option<bool>,
 ) -> Result<Content, DbErr> {
     // todo -> move this to the bg worker for pre processing
     let json_uri = asset_data.metadata_url.clone();
@@ -192,17 +177,27 @@ pub fn v1_content_from_json(
     let selector = &mut selector_fn;
     let chain_data_selector = &mut chain_data_selector_fn;
     let mut meta: MetadataMap = MetadataMap::new();
-    let name = safe_select(chain_data_selector, "$.name");
-    if let Some(name) = name {
-        meta.set_item("name", name.clone());
+    if raw_data.unwrap_or(false) {
+        let (name, symbol) = process_raw_fields(&asset_data.raw_name, &asset_data.raw_symbol);
+        if let Some(name) = name {
+            meta.set_item("name", name.into());
+        }
+        if let Some(symbol) = symbol {
+            meta.set_item("symbol", symbol.into());
+        }
+    } else {
+        let name = safe_select(chain_data_selector, "$.name");
+        if let Some(name) = name {
+            meta.set_item("name", name.clone());
+        }
+        let symbol = safe_select(chain_data_selector, "$.symbol");
+        if let Some(symbol) = symbol {
+            meta.set_item("symbol", symbol.clone());
+        }
     }
     let desc = safe_select(selector, "$.description");
     if let Some(desc) = desc {
         meta.set_item("description", desc.clone());
-    }
-    let symbol = safe_select(chain_data_selector, "$.symbol");
-    if let Some(symbol) = symbol {
-        meta.set_item("symbol", symbol.clone());
     }
     let symbol = safe_select(selector, "$.attributes");
     if let Some(symbol) = symbol {
@@ -312,10 +307,11 @@ pub fn get_content(
     asset: &asset::Model,
     data: &asset_data::Model,
     cdn_prefix: Option<String>,
+    raw_data: Option<bool>,
 ) -> Result<Content, DbErr> {
     match asset.specification_version {
         SpecificationVersions::V1 | SpecificationVersions::V0 => {
-            v1_content_from_json(data, cdn_prefix)
+            v1_content_from_json(data, cdn_prefix, raw_data)
         }
         _ => Err(DbErr::Custom("Version Not Implemented".to_string())),
     }
@@ -360,7 +356,11 @@ pub fn get_interface(asset: &asset::Model) -> Interface {
 }
 
 //TODO -> impl custom error type
-pub fn asset_to_rpc(asset: FullAsset, transform: &AssetTransform) -> Result<RpcAsset, DbErr> {
+pub fn asset_to_rpc(
+    asset: FullAsset,
+    transform: &AssetTransform,
+    raw_data: Option<bool>,
+) -> Result<RpcAsset, DbErr> {
     let FullAsset {
         asset,
         data,
@@ -372,7 +372,7 @@ pub fn asset_to_rpc(asset: FullAsset, transform: &AssetTransform) -> Result<RpcA
     let rpc_creators = to_creators(creators);
     let rpc_groups = to_grouping(groups);
     let interface = get_interface(&asset);
-    let content = get_content(&asset, &data, transform.cdn_prefix.clone())?;
+    let content = get_content(&asset, &data, transform.cdn_prefix.clone(), raw_data)?;
     let mut chain_data_selector_fn = jsonpath_lib::selector(&data.chain_data);
     let chain_data_selector = &mut chain_data_selector_fn;
     let basis_points = safe_select(chain_data_selector, "$.primary_sale_happened")
@@ -458,7 +458,7 @@ pub fn asset_list_to_rpc(
         .into_iter()
         .fold((vec![], vec![]), |(mut assets, mut errors), asset| {
             let id = bs58::encode(asset.asset.id.clone()).into_string();
-            match asset_to_rpc(asset, transform) {
+            match asset_to_rpc(asset, transform, None) {
                 Ok(rpc_asset) => assets.push(rpc_asset),
                 Err(e) => errors.push(AssetError {
                     id,

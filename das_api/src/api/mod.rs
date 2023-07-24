@@ -38,6 +38,7 @@ pub struct GetAssetsByOwner {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct GetAsset {
     pub id: String,
+    pub raw_data: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
