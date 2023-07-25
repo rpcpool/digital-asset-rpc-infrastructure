@@ -251,6 +251,38 @@ where
     Ok(())
 }
 
+pub async fn upsert_asset_hashes_with_seq<T>(txn: &T, id: Vec<u8>, seq: i64, data_hash: String, creator_hash: String) -> Result<(), IngesterError>
+where
+    T: ConnectionTrait + TransactionTrait,
+{
+    let model = asset::ActiveModel {
+        id: Set(id),
+        seq: Set(Some(seq)),
+        data_hash: Set(Some(data_hash)),
+        creator_hash: Set(Some(creator_hash)),
+        ..Default::default()
+    };
+
+    let mut query = asset::Entity::insert(model)
+        .on_conflict(
+            OnConflict::column(asset::Column::Id)
+                .update_columns([asset::Column::Seq, asset::Column::DataHash, asset::Column::CreatorHash])
+                .to_owned(),
+        )
+        .build(DbBackend::Postgres);
+
+    query.sql = format!(
+        "{} WHERE excluded.seq > asset.seq OR asset.seq IS NULL",
+        query.sql
+    );
+
+    txn.execute(query)
+        .await
+        .map_err(|db_err| IngesterError::StorageWriteError(db_err.to_string()))?;
+
+    Ok(())
+}
+
 pub async fn upsert_asset_with_seq<T>(txn: &T, id: Vec<u8>, seq: i64) -> Result<(), IngesterError>
 where
     T: ConnectionTrait + TransactionTrait,

@@ -2,15 +2,20 @@ use blockbuster::{
     instruction::InstructionBundle,
     programs::bubblegum::{BubblegumInstruction, LeafSchema, Payload},
 };
-use digital_asset_types::dao::asset_creators;
-use sea_orm::{ConnectionTrait, Set, TransactionTrait};
+use digital_asset_types::dao::{asset, asset_creators};
+use log::{debug, info};
+use mpl_bubblegum::{
+    hash_creators, hash_metadata,
+    state::metaplex_adapter::{Creator, MetadataArgs},
+};
+use sea_orm::{ConnectionTrait, Set, TransactionTrait, Unchanged};
 
 use crate::{
     error::IngesterError,
     program_transformers::bubblegum::{
         update_creator, upsert_asset_with_leaf_info, upsert_asset_with_owner_and_delegate_info,
-        upsert_asset_with_seq,
-    },
+        upsert_asset_with_seq, upsert_asset_hashes_with_seq,
+    }
 };
 
 use super::save_changelog_event;
@@ -24,21 +29,60 @@ pub async fn process<'c, T>(
 where
     T: ConnectionTrait + TransactionTrait,
 {
-    let maybe_creator = match parsing_result.payload {
-        Some(Payload::VerifyCreator { creator }) => Some(creator),
-        Some(Payload::UnverifyCreator { creator }) => Some(creator),
-        _ => None,
-    };
-
-    if let (Some(le), Some(cl), Some(creator)) = (
+    if let (Some(le), Some(cl), Some(payload)) = (
         &parsing_result.leaf_update,
         &parsing_result.tree_update,
-        maybe_creator,
+        &parsing_result.payload,
     ) {
-        // Do we need to update the `slot_updated` field as well as part of the table
-        // updates below?
-
+        let (creator, verify, creator_hash, data_hash, metadata) = match payload {
+            Payload::CreatorVerification {
+                creator,
+                verify,
+                creator_hash,
+                data_hash,
+                args,
+            } => (creator, verify, creator_hash, data_hash, args),
+            _ => {
+                return Err(IngesterError::ParsingError(
+                    "Ix not parsed correctly".to_string(),
+                ));
+            }
+        };
+        debug!(
+            "Handling creator verification event for creator {} (verify: {}): {}",
+            creator, verify, bundle.txn_id
+        );
         let seq = save_changelog_event(cl, bundle.slot, bundle.txn_id, txn).await?;
+
+        let updated_creators = metadata
+            .creators
+            .iter()
+            .map(|c| {
+                let verified = if c.address == creator.clone() {
+                    verify.clone()
+                } else {
+                    c.verified
+                };
+                Creator {
+                    address: c.address,
+                    verified,
+                    share: c.share,
+                }
+            })
+            .collect::<Vec<Creator>>();
+        let mut updated_metadata = metadata.clone();
+        updated_metadata.creators = updated_creators;
+        let updated_data_hash = hash_metadata(&updated_metadata)
+            .map(|e| bs58::encode(e).into_string())
+            .unwrap_or("".to_string())
+            .trim()
+            .to_string();
+        let updated_creator_hash = hash_creators(&updated_metadata.creators)
+            .map(|e| bs58::encode(e).into_string())
+            .unwrap_or("".to_string())
+            .trim()
+            .to_string();
+
         let asset_id_bytes = match le.schema {
             LeafSchema::V1 {
                 id,
@@ -46,7 +90,7 @@ where
                 delegate,
                 ..
             } => {
-                let id_bytes = id.to_bytes();
+                let id_bytes = id.to_bytes().to_vec();
                 let owner_bytes = owner.to_bytes().to_vec();
                 let delegate = if owner == delegate {
                     None
@@ -74,7 +118,11 @@ where
                 )
                 .await?;
 
+                // Partial update of asset table with just seq.
                 upsert_asset_with_seq(txn, id_bytes.to_vec(), seq as i64).await?;
+
+                // Partial update of asset table with just creator hash.
+                upsert_asset_hashes_with_seq(txn, id_bytes.to_vec(), seq as i64, updated_data_hash, updated_creator_hash).await?;
 
                 id_bytes.to_vec()
             } //_ => return Err(IngesterError::NotImplemented),
