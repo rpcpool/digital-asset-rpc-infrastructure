@@ -662,28 +662,6 @@ checksum = "8d696c370c750c948ada61c69a0ee2cbbb9c50b1019ddb86d9317157a99c2cae"
 [[package]]
 name = "blockbuster"
 version = "0.7.3"
-dependencies = [
- "anchor-lang",
- "async-trait",
- "borsh 0.9.3",
- "bs58 0.4.0",
- "flatbuffers",
- "lazy_static",
- "mpl-bubblegum",
- "mpl-candy-guard",
- "mpl-candy-machine-core",
- "mpl-token-metadata",
- "plerkle_serialization 1.5.3",
- "solana-sdk",
- "spl-account-compression",
- "spl-noop",
- "spl-token",
- "thiserror",
-]
-
-[[package]]
-name = "blockbuster"
-version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e81021acdb7d3d6378f4ab943d381e16bbe07a89e8d97d3587dca35bc05f498"
 dependencies = [
@@ -698,6 +676,28 @@ dependencies = [
  "mpl-candy-machine-core",
  "mpl-token-metadata",
  "plerkle_serialization 1.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "solana-sdk",
+ "spl-account-compression",
+ "spl-noop",
+ "spl-token",
+ "thiserror",
+]
+
+[[package]]
+name = "blockbuster"
+version = "0.7.4"
+dependencies = [
+ "anchor-lang",
+ "async-trait",
+ "borsh 0.9.3",
+ "bs58 0.4.0",
+ "flatbuffers",
+ "lazy_static",
+ "mpl-bubblegum",
+ "mpl-candy-guard",
+ "mpl-candy-machine-core",
+ "mpl-token-metadata",
+ "plerkle_serialization 1.5.3",
  "solana-sdk",
  "spl-account-compression",
  "spl-noop",
@@ -1400,7 +1400,7 @@ name = "digital_asset_types"
 version = "0.7.2"
 dependencies = [
  "async-trait",
- "blockbuster 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "blockbuster 0.7.3",
  "bs58 0.4.0",
  "futures",
  "indexmap",
@@ -2719,7 +2719,7 @@ dependencies = [
  "anchor-lang",
  "async-trait",
  "base64 0.21.0",
- "blockbuster 0.7.3",
+ "blockbuster 0.7.4",
  "borsh 0.9.3",
  "bs58 0.4.0",
  "cadence",

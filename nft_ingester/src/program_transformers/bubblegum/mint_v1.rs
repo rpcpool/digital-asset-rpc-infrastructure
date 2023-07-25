@@ -20,6 +20,7 @@ use digital_asset_types::{
     },
     json::ChainDataV1,
 };
+use log::info;
 use num_traits::FromPrimitive;
 use sea_orm::{
     entity::*, query::*, sea_query::OnConflict, ConnectionTrait, DbBackend, EntityTrait, JsonValue,
