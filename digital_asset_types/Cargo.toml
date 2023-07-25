@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-blockbuster = "0.7.3"
+blockbuster = "0.7.4"
 bs58 = "0.4.0"
 jsonpath_lib = "0.3.0"
 log = "0.4.17"
