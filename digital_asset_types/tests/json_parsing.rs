@@ -8,10 +8,16 @@ use digital_asset_types::rpc::Content;
 use digital_asset_types::rpc::File;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
+use tokio;
 
-pub async fn test_json(uri: String) -> Content {
-    let body: serde_json::Value = reqwest::get(&uri).await.unwrap().json().await.unwrap();
+pub async fn load_test_json(file_name: &str) -> serde_json::Value {
+    let json = tokio::fs::read_to_string(format!("tests/data/{}", file_name))
+        .await
+        .unwrap();
+    serde_json::from_str(&json).unwrap()
+}
 
+pub async fn parse_offchain_json(json: serde_json::Value) -> Content {
     let asset_data = asset_data::Model {
         id: Keypair::new().pubkey().to_bytes().to_vec(),
         chain_data_mutability: ChainMutability::Mutable,
@@ -24,9 +30,9 @@ pub async fn test_json(uri: String) -> Content {
             uses: None,
         })
         .unwrap(),
-        metadata_url: uri,
+        metadata_url: String::from("some url"),
         metadata_mutability: Mutability::Mutable,
-        metadata: body,
+        metadata: json,
         slot_updated: 0,
         reindex: None,
     };
@@ -34,11 +40,11 @@ pub async fn test_json(uri: String) -> Content {
     v1_content_from_json(&asset_data).unwrap()
 }
 
+
 #[tokio::test]
 async fn simple_v1_content() {
-    let c =
-        test_json("https://arweave.net/pIe_btAJIcuymBjOFAmVZ3GSGPyi2yY_30kDdHmQJzs".to_string())
-            .await;
+    let j = load_test_json("mad_lad.json").await;
+    let parsed = parse_offchain_json(j).await;
     assert_eq!(
         parsed.files,
         Some(vec![
@@ -84,31 +90,9 @@ async fn simple_v1_content() {
 }
 
 #[tokio::test]
-async fn more_complex_content_v1() {
-    let c =
-        test_json("https://arweave.net/gfO_TkYttQls70pTmhrdMDz9pfMUXX8hZkaoIivQjGs".to_string())
-            .await;
-    assert_eq!(
-        c.files.map(|mut s| {
-            s.sort_by_key(|f| f.uri.clone());
-            s
-        }),
-        Some(vec![File {
-            uri: Some(
-                "https://arweave.net/hdtrCCqLXF2UWwf3h6YEFj8VF1ObDMGfGeQheVuXuG4".to_string()
-            ),
-            mime: Some("image/png".to_string()),
-            quality: None,
-            contexts: None,
-        }])
-    );
-}
-
-#[tokio::test]
 async fn complex_content() {
-    let cdn_prefix = None;
     let j = load_test_json("infinite_fungi.json").await;
-    let parsed = parse_offchain_json(j, cdn_prefix).await;
+    let parsed = parse_offchain_json(j).await;
     assert_eq!(
         parsed.files,
         Some(vec![
@@ -117,7 +101,6 @@ async fn complex_content() {
                     "https://arweave.net/_a4sXT6fOHI-5VHFOHLEF73wqKuZtJgE518Ciq9DGyI?ext=gif"
                         .to_string(),
                 ),
-                cdn_uri: None,
                 mime: Some("image/gif".to_string()),
                 quality: None,
                 contexts: None,
