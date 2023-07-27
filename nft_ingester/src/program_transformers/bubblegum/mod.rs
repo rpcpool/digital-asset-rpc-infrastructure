@@ -85,14 +85,10 @@ where
         InstructionName::UnverifyCreator => {
             creator_verification::process(parsing_result, bundle, txn, false, ix_str).await?;
         }
-        InstructionName::VerifyCollection => {
-            collection_verification::process(parsing_result, bundle, txn, true, ix_str).await?;
-        }
-        InstructionName::UnverifyCollection => {
-            collection_verification::process(parsing_result, bundle, txn, false, ix_str).await?;
-        }
-        InstructionName::SetAndVerifyCollection => {
-            collection_verification::process(parsing_result, bundle, txn, true, ix_str).await?;
+        InstructionName::VerifyCollection
+        | InstructionName::UnverifyCollection
+        | InstructionName::SetAndVerifyCollection => {
+            collection_verification::process(parsing_result, bundle, txn, ix_str).await?;
         }
         _ => debug!("Bubblegum: Not Implemented Instruction"),
     }
