@@ -8,29 +8,29 @@ pub struct Migration;
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-          .alter_table(
-            sea_query::Table::alter()
-              .table(asset_data::Entity)
-              .add_column(
-                ColumnDef::new(Alias::new("reindex"))
-                  .boolean()
-                  .default(false)
-              )
-              .to_owned(),
+            .alter_table(
+                sea_query::Table::alter()
+                    .table(asset_data::Entity)
+                    .add_column(
+                        ColumnDef::new(Alias::new("reindex"))
+                            .boolean()
+                            .default(false),
+                    )
+                    .to_owned(),
             )
             .await?;
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-      manager
-        .alter_table(
-          sea_query::Table::alter()
-            .table(asset_data::Entity)
-            .drop_column(Alias::new("reindex"))
-            .to_owned(),
-          )
-          .await?;
-      Ok(())
+        manager
+            .alter_table(
+                sea_query::Table::alter()
+                    .table(asset_data::Entity)
+                    .drop_column(Alias::new("reindex"))
+                    .to_owned(),
+            )
+            .await?;
+        Ok(())
     }
 }
