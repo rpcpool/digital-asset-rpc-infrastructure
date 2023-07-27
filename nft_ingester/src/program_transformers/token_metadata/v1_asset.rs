@@ -304,9 +304,7 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
                 "{} WHERE excluded.slot_updated > asset_grouping.slot_updated AND excluded.seq >= asset_grouping.seq",
                 query.sql
             );
-        txn.execute(query)
-            .await
-            .map_err(|db_err| IngesterError::AssetIndexError(db_err.to_string()))?;
+        txn.execute(query).await?;
     }
 
     // check if we need to index a newer update. This assumes that all creator rows with same AssetId have the same SlotUpdated
