@@ -40,7 +40,6 @@ pub async fn parse_offchain_json(json: serde_json::Value) -> Content {
     v1_content_from_json(&asset_data).unwrap()
 }
 
-
 #[tokio::test]
 async fn simple_v1_content() {
     let j = load_test_json("mad_lad.json").await;
