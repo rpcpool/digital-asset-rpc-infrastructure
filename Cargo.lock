@@ -26,7 +26,7 @@ dependencies = [
  "lazy_static",
  "log",
  "mpl-token-metadata",
- "plerkle_messenger 1.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "plerkle_messenger",
  "plerkle_serialization",
  "prometheus",
  "reqwest",
@@ -2862,7 +2862,7 @@ dependencies = [
  "log",
  "mpl-bubblegum",
  "num-traits",
- "plerkle_messenger 1.5.3 (git+https://github.com/metaplex-foundation/digital-asset-validator-plugin.git?branch=add_backfill-streams)",
+ "plerkle_messenger",
  "plerkle_serialization",
  "rand 0.8.5",
  "reqwest",
@@ -3334,23 +3334,6 @@ name = "pkg-config"
 version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
-
-[[package]]
-name = "plerkle_messenger"
-version = "1.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ef845a57af05e18a5cc47dbfa207246e66148ffbcb67e02b3e3eaceb20ffc44"
-dependencies = [
- "async-mutex",
- "async-trait",
- "blake3",
- "figment",
- "futures",
- "log",
- "redis",
- "serde",
- "thiserror",
-]
 
 [[package]]
 name = "plerkle_messenger"
@@ -6149,7 +6132,7 @@ dependencies = [
  "futures",
  "lazy_static",
  "log",
- "plerkle_messenger 1.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "plerkle_messenger",
  "plerkle_serialization",
  "prometheus",
  "serde",
