@@ -265,7 +265,10 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
 
         // Instantiate messenger.
         let mut messenger = T::new(config.get_messneger_client_config()).await.unwrap();
-        messenger.add_stream(TRANSACTION_BACKFILL_STREAM).await.unwrap();
+        messenger
+            .add_stream(TRANSACTION_BACKFILL_STREAM)
+            .await
+            .unwrap();
         messenger
             .set_buffer_size(TRANSACTION_BACKFILL_STREAM, 10_000_000)
             .await;
