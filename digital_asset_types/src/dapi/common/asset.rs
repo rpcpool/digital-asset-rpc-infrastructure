@@ -14,9 +14,9 @@ use jsonpath_lib::JsonPathError;
 use mime_guess::Mime;
 use sea_orm::DbErr;
 use serde_json::Value;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::Path;
-use std::cmp::Ordering;
 use url::Url;
 
 use log::warn;

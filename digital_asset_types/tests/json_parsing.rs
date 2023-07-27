@@ -93,16 +93,14 @@ async fn more_complex_content_v1() {
             s.sort_by_key(|f| f.uri.clone());
             s
         }),
-        Some(vec![
-            File {
-                uri: Some(
-                    "https://arweave.net/hdtrCCqLXF2UWwf3h6YEFj8VF1ObDMGfGeQheVuXuG4".to_string()
-                ),
-                mime: Some("image/png".to_string()),
-                quality: None,
-                contexts: None,
-            }
-        ])
+        Some(vec![File {
+            uri: Some(
+                "https://arweave.net/hdtrCCqLXF2UWwf3h6YEFj8VF1ObDMGfGeQheVuXuG4".to_string()
+            ),
+            mime: Some("image/png".to_string()),
+            quality: None,
+            contexts: None,
+        }])
     );
 }
 
