@@ -1,4 +1,3 @@
-use anchor_lang::prelude::Pubkey;
 use blockbuster::{
     instruction::InstructionBundle,
     programs::bubblegum::{BubblegumInstruction, LeafSchema, Payload},
@@ -7,7 +6,7 @@ use digital_asset_types::dao::{asset, asset_grouping, cl_items};
 use log::{debug, info, warn};
 use mpl_bubblegum::{hash_metadata, state::metaplex_adapter::Collection};
 use sea_orm::{entity::*, query::*, sea_query::OnConflict, DbBackend, Set, Unchanged};
-use solana_sdk::keccak;
+use solana_sdk::{keccak, pubkey::Pubkey};
 
 use super::{save_changelog_event, update_compressed_asset};
 use crate::error::IngesterError;
@@ -15,7 +14,6 @@ pub async fn process<'c, T>(
     parsing_result: &BubblegumInstruction,
     bundle: &InstructionBundle<'c>,
     txn: &'c T,
-    verify: bool,
 ) -> Result<(), IngesterError>
 where
     T: ConnectionTrait + TransactionTrait,
