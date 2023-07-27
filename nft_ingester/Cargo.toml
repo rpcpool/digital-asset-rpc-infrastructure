@@ -24,7 +24,7 @@ hex = "0.4.3"
 log = "0.4.17"
 mpl-bubblegum = "0.7.0"
 num-traits = "0.2.15"
-plerkle_messenger = { version = "1.5.2", features = ["redis"] }
+plerkle_messenger = { git = "https://github.com/metaplex-foundation/digital-asset-validator-plugin.git",  branch="add_backfill-streams", features = ['redis'] }
 plerkle_serialization = "1.5.2"
 rand = "0.8.5"
 reqwest = "0.11.11"
