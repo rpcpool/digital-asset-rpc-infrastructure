@@ -14,7 +14,7 @@ use {
     flatbuffers::FlatBufferBuilder,
     futures::{stream::FuturesUnordered, StreamExt},
     log::{debug, error, info},
-    plerkle_messenger::{Messenger, TRANSACTION_STREAM},
+    plerkle_messenger::{Messenger, TRANSACTION_BACKFILL_STREAM},
     plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
     sea_orm::{
         entity::*, query::*, sea_query::Expr, DatabaseConnection, DbBackend, DbErr,
@@ -265,9 +265,12 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
 
         // Instantiate messenger.
         let mut messenger = T::new(config.get_messneger_client_config()).await.unwrap();
-        messenger.add_stream(TRANSACTION_STREAM).await.unwrap();
         messenger
-            .set_buffer_size(TRANSACTION_STREAM, 10_000_000)
+            .add_stream(TRANSACTION_BACKFILL_STREAM)
+            .await
+            .unwrap();
+        messenger
+            .set_buffer_size(TRANSACTION_BACKFILL_STREAM, 10_000_000)
             .await;
 
         Self {
@@ -977,7 +980,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
                 };
                 let builder = seralize_encoded_transaction_with_status(builder, tx_wrap)?;
                 self.messenger
-                    .send(TRANSACTION_STREAM, builder.finished_data())
+                    .send(TRANSACTION_BACKFILL_STREAM, builder.finished_data())
                     .await?;
             }
             drop(block_ref);
