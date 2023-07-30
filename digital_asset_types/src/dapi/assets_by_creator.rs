@@ -18,10 +18,11 @@ pub async fn get_assets_by_creator(
     before: Option<Vec<u8>>,
     after: Option<Vec<u8>>,
     transform: &AssetTransform,
+    enable_grand_total_query: bool,
 ) -> Result<AssetList, DbErr> {
     let pagination = create_pagination(before, after, page)?;
     let (sort_direction, sort_column) = create_sorting(sorting);
-    let assets = scopes::asset::get_by_creator(
+    let (assets, grand_total) = scopes::asset::get_by_creator(
         db,
         creator,
         only_verified,
@@ -29,7 +30,14 @@ pub async fn get_assets_by_creator(
         sort_direction,
         &pagination,
         limit,
+        enable_grand_total_query,
     )
     .await?;
-    Ok(build_asset_response(assets, limit, &pagination, transform))
+    Ok(build_asset_response(
+        assets,
+        limit,
+        grand_total,
+        &pagination,
+        transform,
+    ))
 }

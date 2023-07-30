@@ -12,6 +12,7 @@ pub struct Config {
     pub server_port: u16,
     pub env: Option<String>,
     pub cdn_prefix: Option<String>,
+    pub enable_grand_total_query: Option<bool>,
 }
 
 pub fn load_config() -> Result<Config, DasApiError> {
