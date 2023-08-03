@@ -13,6 +13,7 @@ pub struct Config {
     pub env: Option<String>,
     pub cdn_prefix: Option<String>,
     pub enable_grand_total_query: Option<bool>,
+    pub enable_collection_metadata: Option<bool>,
 }
 
 pub fn load_config() -> Result<Config, DasApiError> {

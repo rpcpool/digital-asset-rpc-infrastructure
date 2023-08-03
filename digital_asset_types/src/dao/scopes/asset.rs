@@ -1,12 +1,16 @@
-use crate::dao::{
-    asset::{self, Entity},
-    asset_authority, asset_creators, asset_data, asset_grouping, cl_audits, FullAsset,
-    GroupingSize, Pagination,
+use crate::{
+    dao::{
+        asset::{self, Entity},
+        asset_authority, asset_creators, asset_data, asset_grouping, cl_audits, FullAsset,
+        GroupingSize, Pagination,
+    },
+    dapi::common::safe_select,
+    rpc::{response::AssetList, CollectionMetadata},
 };
 
 use indexmap::IndexMap;
 use sea_orm::{entity::*, query::*, ConnectionTrait, DbErr, Order};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::try_join;
 
 pub fn paginate<'db, T>(pagination: &Pagination, limit: u64, stmt: T) -> T
@@ -408,4 +412,92 @@ async fn get_grand_total(
 ) -> Result<Option<u64>, DbErr> {
     let grand_total = stmt.count(conn).await?;
     Ok(Some(grand_total))
+}
+
+pub async fn add_collection_metadata(
+    conn: &impl ConnectionTrait,
+    mut asset_list: AssetList,
+) -> Result<AssetList, DbErr> {
+    // compile a set of all the distinct group values (bs58 String) from the asset list
+    let mut group_values: HashSet<String> = HashSet::new();
+    for item in &asset_list.items {
+        if let Some(groups) = &item.grouping {
+            for group in groups {
+                if let Some(group_value) = &group.group_value {
+                    group_values.insert(group_value.clone());
+                }
+            }
+        }
+    }
+
+    // convert the group values to bytea by decoding them from bs58
+    let bytea_group_values: Vec<Vec<u8>> = group_values
+        .iter()
+        .map(|group_value| {
+            let bs58_decoded = bs58::decode(group_value).into_vec().unwrap_or_default();
+            bs58_decoded
+        })
+        .collect();
+
+    // make a query to fetch all the metadata
+    let asset_data = asset_data::Entity::find()
+        .filter(asset_data::Column::Id.is_in(bytea_group_values))
+        .limit(group_values.len() as u64)
+        .all(conn)
+        .await?;
+
+    // create a mapping of id -> collection_metadata
+    let mut hashmap: HashMap<String, CollectionMetadata> = HashMap::new();
+    for data in &asset_data {
+        let id = bs58::encode(&data.id).into_string();
+        let collection_metadata = get_collection_metadata(&data);
+        hashmap.insert(id, collection_metadata);
+    }
+
+    // add the metadata to the asset_list
+    for item in &mut asset_list.items {
+        if let Some(groups) = &mut item.grouping {
+            for group in groups {
+                if let Some(group_value) = &group.group_value {
+                    let collection_metadata = hashmap.get(group_value);
+                    if let Some(collection_metadata) = collection_metadata {
+                        group.group_key = group.group_key.clone();
+                        group.group_value = Some(group_value.clone());
+                        group.collection_metadata = Some(collection_metadata.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(asset_list)
+}
+
+fn get_collection_metadata(data: &asset_data::Model) -> CollectionMetadata {
+    let chain_data_selector = &mut jsonpath_lib::selector(&data.chain_data);
+    let metadata_selector = &mut jsonpath_lib::selector(&data.metadata);
+
+    let name = safe_select(chain_data_selector, "$.name");
+    let symbol = safe_select(chain_data_selector, "$.symbol");
+    let image = safe_select(metadata_selector, "$.image");
+
+    let mut col_metadata_name = "".to_string();
+    let mut col_metadata_symbol = "".to_string();
+    let mut col_metadata_image = "".to_string();
+
+    if let Some(name) = name {
+        col_metadata_name = name.to_owned().to_string().trim_matches('"').to_string();
+    }
+    if let Some(symbol) = symbol {
+        col_metadata_symbol = symbol.to_owned().to_string().trim_matches('"').to_string();
+    }
+    if let Some(image) = image {
+        col_metadata_image = image.to_owned().to_string().trim_matches('"').to_string();
+    }
+
+    CollectionMetadata {
+        name: Some(col_metadata_name),
+        symbol: Some(col_metadata_symbol),
+        image: Some(col_metadata_image),
+    }
 }

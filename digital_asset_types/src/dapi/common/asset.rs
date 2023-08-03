@@ -346,6 +346,7 @@ pub fn to_grouping(groups: Vec<asset_grouping::Model>) -> Vec<Group> {
         .map(|a| Group {
             group_key: a.group_key.clone(),
             group_value: a.group_value.clone(),
+            collection_metadata: None,
         })
         .collect()
 }

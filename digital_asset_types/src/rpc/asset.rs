@@ -203,6 +203,15 @@ pub type GroupValue = String;
 pub struct Group {
     pub group_key: String,
     pub group_value: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collection_metadata: Option<CollectionMetadata>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct CollectionMetadata {
+    pub name: Option<String>,
+    pub symbol: Option<String>,
+    pub image: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema)]
