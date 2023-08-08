@@ -102,7 +102,43 @@ impl DasApi {
         sort_by: &Option<AssetSorting>,
     ) -> Result<(), DasApiError> {
         // List of collections which contain more than 100k nfts
-        let collections: [&str; 1] = ["DRiP2Pn2K6fuMLKQmt5rZWyHiUZ6WK3GChEySUpHSS4x"];
+        let collections: [&str; 35] = [
+            "2bJpbZ5VNp48LpTh2DSwiuo6gJsTrh59TjcsAfRCLNXZ",
+            "39LNZjfJLUvUNDFfVWNQ6n3zhkiW7XXb4FqMH1CLeESq",
+            "3hCnRKCDDwjrjT9xSKnUf6wQW1k5CwiHwVs57Syh4LPc",
+            "3iqPoXFkHKU1TJBabqTNgUys1DDKHSDTQpjasjyo8Qft",
+            "3njr1Xyu4qY2Vg31YUECh9LiHw9etS5g6CdmwYaFXfx4",
+            "6hwFXiEXEgFg99XzA8So82MbXGyknQnp9y7ETgXqnC8L",
+            "7omUU7pnymgDFJg1xd3mrEZ85XuzqgP6bs5APDbzi1ur",
+            "7penmNt6hVXTSt83H8ibn5roa1j4aifzaEKUAsaVrLTs",
+            "8ckXtbcXATAwk5kz4aMBaxWreyHZ26pHtLkNhzE9NPMz",
+            "8drYRaD7csLTEqX89hyM1XpTmXkQh4Evr1xQue2XkdB5",
+            "8tWwfmudVrrRzACvtt18H5vHVxsYofMyeGt7L3LFPSqC",
+            "ACe5VywkVxwcx32eUL5cwKjZ58xAbUhWYo6tx4MpfKsV",
+            "AMSNskm2RZqPXCZ6P2z6JLyHWMQF6pQ8RA8Q6x42Xufq",
+            "Awd9uD28tFk6Faw8yevAgR1RBi8fK8uRArSNSAGvcFkL",
+            "BNGZBH4iBZqL4op5ZoyYE11UuogYvvMtPVxgakZMBjxB",
+            "BTDX3HWvRv16j4KUUbdegP3oazyVGCLxJpFqSQZ2bH6n",
+            "BZ3DohF6BHGkAnZAe1g8ohWVuh95bXT4FhiGw1BXJWfF",
+            "BoRKkxKPoAt7LcyVRPa9ZZT5MztkJuc4PiGrUXAgDHPH",
+            "CMPSxy4cEN634t4EpwwPkwVXcf7vEjG68CeX6q2b5Qfh",
+            "DAA1jBEYj2w4DgMRDVaXg5CWfjmTry5t8VEvLJQ9R8PY",
+            "DASHYFhWiCoe8PNCHZJAjmvGBBj8SLtkvW2uYV2e3FrV",
+            "DGPTxgKaBPJv3Ng7dc9AFDpX6E7kgUMZEgyTm3VGWPW6",
+            "DRiP2Pn2K6fuMLKQmt5rZWyHiUZ6WK3GChEySUpHSS4x",
+            "EjesHCUuJ6sSRRsK1kyTuRyNqH9qk7yW8Nf4nJ7XAt9e",
+            "F8FdDYD3PWndYoae9TrBcucXDWFwDvm6bZU2LQT1PwyB",
+            "F8sNs69kK8cc3np1GyWbz54p7uphFxQYQjHJ5ZZpQK1C",
+            "FLRxZJb7Kpd5i9Q7WdH7r5uRqDL7oJVpqW3ew8FpE336",
+            "GNFTLUHdRNHZd7t88ATpRK7uTZWkDAXkZYyseAcJpyUx",
+            "GRMEik8e6kMmoE5GL9b3Qpr4M1c4HtTWPzube9JR9bRs",
+            "JKEY4NAsmFyfyazqRGjUgxY7ZGNwKaRdns6ewi855SR",
+            "MAQNiWAYh5yGCQKeWFzHLypThEjfTJfBQxwiF8P5Vax",
+            "STKM3PzeFc6kdJiMXyQ3pRDa3ERCEGgM9NbPPGb2Rft",
+            "VLT1ERWF2SQ51ybTGAuSBDWFZCxYth8ox6faJG9WrmG",
+            "WoMbiTtXKwUtf4wosoffv45khVF8yA2mPkinGosCFQ4",
+            "tinyVrmxcEUyVufgmFzGYe7C4mrGXDC21uLJAGVKXkg",
+        ];
 
         if group == "collection" && sort_by.is_some() && collections.contains(&collection.as_str())
         {
