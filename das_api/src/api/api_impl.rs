@@ -94,6 +94,24 @@ impl DasApi {
 
         Ok(())
     }
+
+    fn validate_sorting_for_collection(
+        &self,
+        group: &String,
+        collection: &String,
+        sort_by: &Option<AssetSorting>,
+    ) -> Result<(), DasApiError> {
+        // List of collections which contain more than 100k nfts
+        let collections: [&str; 1] = ["DRiP2Pn2K6fuMLKQmt5rZWyHiUZ6WK3GChEySUpHSS4x"];
+
+        if group == "collection" && sort_by.is_some() && collections.contains(&collection.as_str())
+        {
+            return Err(DasApiError::ValidationError(
+                "Sorting is not allowed for the specified collection".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 pub fn not_found(asset_id: &String) -> DbErr {
@@ -190,6 +208,9 @@ impl ApiContract for DasApi {
             before,
             after,
         } = payload;
+
+        self.validate_sorting_for_collection(&group_key, &group_value, &sort_by)?;
+
         let before: Option<String> = before.filter(|before| !before.is_empty());
         let after: Option<String> = after.filter(|after| !after.is_empty());
         let sort_by = sort_by.unwrap_or_default();
