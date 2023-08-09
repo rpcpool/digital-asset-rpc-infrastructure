@@ -40,7 +40,7 @@ pub async fn get_by_creator(
     conn: &impl ConnectionTrait,
     creator: Vec<u8>,
     only_verified: bool,
-    sort_by: asset::Column,
+    sort_by: Option<asset::Column>,
     sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
@@ -85,7 +85,7 @@ pub async fn get_by_grouping(
     conn: &impl ConnectionTrait,
     group_key: String,
     group_value: String,
-    sort_by: asset::Column,
+    sort_by: Option<asset::Column>,
     sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
@@ -112,7 +112,7 @@ pub async fn get_by_grouping(
 pub async fn get_assets_by_owner(
     conn: &impl ConnectionTrait,
     owner: Vec<u8>,
-    sort_by: asset::Column,
+    sort_by: Option<asset::Column>,
     sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
@@ -137,7 +137,7 @@ pub async fn get_assets_by_owner(
 pub async fn get_by_authority(
     conn: &impl ConnectionTrait,
     authority: Vec<u8>,
-    sort_by: asset::Column,
+    sort_by: Option<asset::Column>,
     sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
@@ -159,12 +159,10 @@ pub async fn get_by_authority(
     .await
 }
 
-async fn get_by_related_condition<E>(
+async fn get_by_related_condition_unsorted<E>(
     conn: &impl ConnectionTrait,
     condition: Condition,
     relation: E,
-    sort_by: asset::Column,
-    sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
     enable_grand_total_query: bool,
@@ -174,9 +172,35 @@ where
 {
     let stmt = asset::Entity::find()
         .filter(condition)
-        .join(JoinType::LeftJoin, relation.def())
-        .order_by(sort_by, sort_direction.clone())
-        .order_by(asset::Column::Id, sort_direction);
+        .join(JoinType::LeftJoin, relation.def());
+
+    let (assets, grand_total) =
+        get_full_response(conn, stmt, pagination, limit, enable_grand_total_query).await?;
+    Ok((assets, grand_total))
+}
+
+async fn get_by_related_condition<E>(
+    conn: &impl ConnectionTrait,
+    condition: Condition,
+    relation: E,
+    sort_by: Option<asset::Column>,
+    sort_direction: Order,
+    pagination: &Pagination,
+    limit: u64,
+    enable_grand_total_query: bool,
+) -> Result<(Vec<FullAsset>, Option<u64>), DbErr>
+where
+    E: RelationTrait,
+{
+    let mut stmt = asset::Entity::find()
+        .filter(condition)
+        .join(JoinType::LeftJoin, relation.def());
+
+    if let Some(col) = sort_by {
+        stmt = stmt
+            .order_by(col, sort_direction.clone())
+            .order_by(asset::Column::Id, sort_direction);
+    }
 
     let (assets, grand_total) =
         get_full_response(conn, stmt, pagination, limit, enable_grand_total_query).await?;
@@ -259,7 +283,7 @@ pub async fn get_assets_by_condition(
     conn: &impl ConnectionTrait,
     condition: Condition,
     joins: Vec<RelationDef>,
-    sort_by: asset::Column,
+    sort_by: Option<asset::Column>,
     sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
@@ -269,10 +293,12 @@ pub async fn get_assets_by_condition(
     for def in joins {
         stmt = stmt.join(JoinType::LeftJoin, def);
     }
-    stmt = stmt
-        .filter(condition)
-        .order_by(sort_by, sort_direction.clone())
-        .order_by(asset::Column::Id, sort_direction);
+    stmt = stmt.filter(condition);
+    if let Some(col) = sort_by {
+        stmt = stmt
+            .order_by(col, sort_direction.clone())
+            .order_by(asset::Column::Id, sort_direction);
+    }
 
     let (assets, grand_total) =
         get_full_response(conn, stmt, pagination, limit, enable_grand_total_query).await?;

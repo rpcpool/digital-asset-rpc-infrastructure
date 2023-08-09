@@ -1,3 +1,5 @@
+use log::{debug, error};
+
 use {jsonrpsee::core::Error as RpcError, jsonrpsee::types::error::CallError, thiserror::Error};
 
 #[derive(Error, Debug)]
@@ -24,7 +26,14 @@ pub enum DasApiError {
 
 impl Into<RpcError> for DasApiError {
     fn into(self) -> RpcError {
-        println!("{}", self);
+        match self {
+            Self::ValidationError(_) => {
+                debug!("{}", self);
+            }
+            _ => {
+                error!("{}", self);
+            }
+        }
         RpcError::Call(CallError::from_std_error(self))
     }
 }
