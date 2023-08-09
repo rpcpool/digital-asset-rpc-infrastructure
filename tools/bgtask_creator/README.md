@@ -27,7 +27,14 @@ cargo run -- --mint 9xozKt1ZgKQqUvahDv1wi9eWuoNNEyR2uEiGRU8YmH87 find
 For a collection:
 
 ```
-cargo run -- --collection DASHYFhWiCoe8PNCHZJAjmvGBBj8SLtkvW2uYV2e3FrV create
+cargo run -- --collection 5PA96eCFHJSFPY9SWFeRJUHrpoNF5XZL6RrE1JADXhxf create
+```
+
+To force a re-index even if there is metadata:
+
+```
+cargo run -- --collection 5PA96eCFHJSFPY9SWFeRJUHrpoNF5XZL6RrE1JADXhxf --force-reindex create
+
 ```
 
 Specific NFT (works also for cNFTs):
