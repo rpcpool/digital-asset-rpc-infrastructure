@@ -322,17 +322,8 @@ pub async fn get_by_id(
     let asset_data: (asset::Model, asset_data::Model) =
         asset_data.one(conn).await.and_then(|o| match o {
             Some((a, Some(d))) => Ok((a, d)),
-            _ => {
-                println!(
-                    "a: {:?}, d {:?}",
-                    o.clone().map(|(a, _)| a),
-                    o.map(|(_, d)| d)
-                );
-                Err(DbErr::RecordNotFound("Asset Not Found".to_string()))
-            }
+            _ => Err(DbErr::RecordNotFound("Asset Not Found".to_string()))
         })?;
-
-    println!("asset found: {:?}", asset_data.0.id);
 
     let (asset, data) = asset_data;
     let authorities: Vec<asset_authority::Model> = asset_authority::Entity::find()
