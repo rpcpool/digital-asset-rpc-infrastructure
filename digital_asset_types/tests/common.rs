@@ -89,6 +89,7 @@ pub fn create_asset_data(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_asset(
     id: Vec<u8>,
     owner: Vec<u8>,
@@ -100,8 +101,8 @@ pub fn create_asset(
     compressed: bool,
     compressible: bool,
     tree_id: Option<Vec<u8>>,
-    specification_version: SpecificationVersions,
-    nonce: i64,
+    specification_version: Option<SpecificationVersions>,
+    nonce: Option<i64>,
     leaf: Option<Vec<u8>>,
     royalty_target_type: RoyaltyTargetType,
     royalty_target: Option<Vec<u8>>,
@@ -137,7 +138,7 @@ pub fn create_asset(
             supply_mint,
             compressed,
             compressible,
-            seq: 0,
+            seq: Some(0),
             tree_id,
             specification_version,
             nonce,
@@ -145,14 +146,17 @@ pub fn create_asset(
             royalty_target_type,
             royalty_target,
             royalty_amount,
-            asset_data: Some(id.clone()),
+            asset_data: Some(id),
             burnt: false,
             created_at: None,
-            specification_asset_class: SpecificationAssetClass::Nft,
-            slot_updated: 0,
+            specification_asset_class: Some(SpecificationAssetClass::Nft),
+            slot_updated: Some(0),
             data_hash: None,
             alt_id: None,
             creator_hash: None,
+            owner_delegate_seq: Some(0),
+            was_decompressed: false,
+            leaf_seq: Some(0),
         },
     )
 }
@@ -178,8 +182,8 @@ pub fn create_asset_creator(
             creator,
             share,
             verified,
-            seq: 0,
-            slot_updated: 0,
+            seq: Some(0),
+            slot_updated: Some(0),
             position: 0,
         },
     )
@@ -207,6 +211,7 @@ pub fn create_asset_authority(
     )
 }
 
+#[allow(dead_code)]
 pub fn create_asset_grouping(
     asset_id: Vec<u8>,
     collection: Pubkey,
@@ -222,10 +227,12 @@ pub fn create_asset_grouping(
         asset_grouping::Model {
             asset_id,
             group_value: Some(bs58::encode(collection).into_string()),
-            seq: 0,
+            seq: Some(0),
             id: row_num,
             group_key: "collection".to_string(),
-            slot_updated: 0,
+            slot_updated: Some(0),
+            verified: false,
+            group_info_seq: Some(0),
         },
     )
 }

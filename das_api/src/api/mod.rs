@@ -95,7 +95,6 @@ pub struct SearchAssets {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-
 pub struct GetAssetsByAuthority {
     pub authority_address: String,
     pub sort_by: Option<AssetSorting>,

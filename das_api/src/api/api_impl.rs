@@ -441,7 +441,7 @@ impl ApiContract for DasApi {
         } = payload;
         let gs = get_grouping(&self.db_connection, group_key.clone(), group_value.clone()).await?;
         Ok(GetGroupingResponse {
-            group_key: group_key,
+            group_key,
             group_name: group_value,
             group_size: gs.size,
         })

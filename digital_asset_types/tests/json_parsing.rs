@@ -8,7 +8,6 @@ use digital_asset_types::rpc::Content;
 use digital_asset_types::rpc::File;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
-use tokio;
 
 pub async fn load_test_json(file_name: &str) -> serde_json::Value {
     let json = tokio::fs::read_to_string(format!("tests/data/{}", file_name))

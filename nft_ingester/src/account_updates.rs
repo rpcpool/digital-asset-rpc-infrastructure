@@ -5,7 +5,6 @@ use crate::{
 };
 use cadence_macros::{is_global_default_set, statsd_count, statsd_time};
 use chrono::Utc;
-
 use log::{debug, error};
 use plerkle_messenger::{ConsumptionType, Messenger, MessengerConfig, RecvData, ACCOUNT_STREAM};
 use plerkle_serialization::root_as_account_info;

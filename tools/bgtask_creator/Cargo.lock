@@ -671,7 +671,7 @@ dependencies = [
  "bs58 0.4.0",
  "flatbuffers",
  "lazy_static",
- "mpl-bubblegum",
+ "mpl-bubblegum 0.7.0",
  "mpl-candy-guard",
  "mpl-candy-machine-core",
  "mpl-token-metadata",
@@ -693,7 +693,7 @@ dependencies = [
  "bs58 0.4.0",
  "flatbuffers",
  "lazy_static",
- "mpl-bubblegum",
+ "mpl-bubblegum 0.9.2",
  "mpl-candy-guard",
  "mpl-candy-machine-core",
  "mpl-token-metadata",
@@ -2583,6 +2583,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mpl-bubblegum"
+version = "0.9.2"
+dependencies = [
+ "anchor-lang",
+ "bytemuck",
+ "mpl-token-metadata",
+ "num-traits",
+ "solana-program",
+ "spl-account-compression",
+ "spl-associated-token-account",
+ "spl-token",
+]
+
+[[package]]
 name = "mpl-candy-guard"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2725,7 +2739,7 @@ dependencies = [
  "hex",
  "lazy_static",
  "log",
- "mpl-bubblegum",
+ "mpl-bubblegum 0.9.2",
  "num-integer",
  "num-traits",
  "plerkle_messenger",
@@ -3206,6 +3220,8 @@ dependencies = [
  "async-mutex",
  "async-trait",
  "blake3",
+ "cadence",
+ "cadence-macros",
  "figment",
  "futures",
  "log",

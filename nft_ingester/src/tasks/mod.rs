@@ -353,6 +353,9 @@ impl TaskManager {
                         }
                         continue;
                     }
+                    metric! {
+                        statsd_count!("ingester.bgtask.new", 1, "type" => &task.name);
+                    }
                     TaskManager::new_task_handler(
                         pool.clone(),
                         instance_name.clone(),
@@ -405,9 +408,15 @@ impl TaskManager {
                 let delete_res = TaskManager::purge_old_tasks(&conn, purge_time).await;
                 match delete_res {
                     Ok(res) => {
-                        debug!("deleted {} tasks entries", res.rows_affected);
+                        info!("deleted {} tasks entries", res.rows_affected);
+                        metric! {
+                            statsd_count!("ingester.bgtask.purged_tasks", i64::try_from(res.rows_affected).unwrap_or(1));
+                        }
                     }
                     Err(e) => {
+                        metric! {
+                            statsd_count!("ingester.bgtask.purge_error", 1);
+                        }
                         error!("error deleting tasks: {}", e);
                     }
                 };

@@ -1,12 +1,13 @@
 use anchor_lang::prelude::Pubkey;
 use log::debug;
-use sea_orm::entity::*;
 
-use crate::{error::IngesterError, program_transformers::bubblegum::update_compressed_asset};
-
-use super::{save_changelog_event, u32_to_u8_array};
+use crate::{
+    error::IngesterError,
+    program_transformers::bubblegum::{
+        save_changelog_event, u32_to_u8_array, upsert_asset_with_leaf_info, upsert_asset_with_seq,
+    },
+};
 use blockbuster::{instruction::InstructionBundle, programs::bubblegum::BubblegumInstruction};
-use digital_asset_types::dao::asset;
 use sea_orm::{ConnectionTrait, TransactionTrait};
 
 pub async fn redeem<'c, T>(
@@ -30,15 +31,26 @@ where
             &mpl_bubblegum::ID,
         );
         debug!("Indexing redeem for asset id: {:?}", asset_id);
-        let id_bytes = asset_id.to_bytes().to_vec();
-        let asset_to_update = asset::ActiveModel {
-            id: Unchanged(id_bytes.clone()),
-            leaf: Set(Some(vec![0; 32])),
-            seq: Set(seq as i64),
-            ..Default::default()
-        };
+        let id_bytes = asset_id.to_bytes();
+        let tree_id = cl.id.to_bytes();
+        let nonce = cl.index as i64;
 
-        update_compressed_asset(txn, id_bytes, Some(seq as u64), asset_to_update).await?;
+        // Partial update of asset table with just leaf.
+        upsert_asset_with_leaf_info(
+            txn,
+            id_bytes.to_vec(),
+            nonce,
+            tree_id.to_vec(),
+            vec![0; 32],
+            [0; 32],
+            [0; 32],
+            seq as i64,
+            false,
+        )
+        .await?;
+
+        upsert_asset_with_seq(txn, id_bytes.to_vec(), seq as i64).await?;
+
         return Ok(());
     }
     Err(IngesterError::ParsingError(

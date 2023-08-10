@@ -40,10 +40,10 @@ This spec is what providers of this api must implement against.
 Along with the above rust binaries, this repo also maintains examples and best practice settings for running the entire infrastructure.
 The example infrastructure is as follows.
 
-- A Solana No-Vote Validator - This validator is configured to only have secure access to the validator ledger and account data under consensus.
-- A Geyser Plugin (Plerkle) - The above validator is further configured to load this geyser plugin that sends Plerkle Serialized Messages over a messaging system.
-- A Redis Cluster (Stream Optimized) - The example messaging system is a light weight redis deployment that supports the streaming configuration.
-- A Kubernetes Cluster - The orchestration system for the API and Ingester processes. Probably overkill for a small installation, but it's a rock solid platform for critical software.
+-   A Solana No-Vote Validator - This validator is configured to only have secure access to the validator ledger and account data under consensus.
+-   A Geyser Plugin (Plerkle) - The above validator is further configured to load this geyser plugin that sends Plerkle Serialized Messages over a messaging system.
+-   A Redis Cluster (Stream Optimized) - The example messaging system is a light weight redis deployment that supports the streaming configuration.
+-   A Kubernetes Cluster - The orchestration system for the API and Ingester processes. Probably overkill for a small installation, but it's a rock solid platform for critical software.
 
 This repo houses Helm Charts, Docker files and Terraform files to assist in the deployment of the example infrastructure.
 
@@ -63,14 +63,18 @@ Then with a local `DATABASE_URL` var exported like this `export DATABASE_URL=pos
 
 If you need to install `sea-orm-cli` run `cargo install sea-orm-cli`.
 
+Note: The current SeaORM types were generated using version 0.9.3 so unless you want to upgrade you can install using `cargo install sea-orm-cli --version 0.9.3`.
+
+Also note: The migration `m20230224_093722_performance_improvements` needs to be commented out of the migration lib.rs in order for the Sea ORM `Relations` to generate correctly.
+
 #### Developing Locally
 
 _Prerequisites_
 
-- A Postgres Server running with the database setup according to ./init.sql
-- A Redis instance that has streams enabled or a version that supports streams
-- A local solana validator with the Plerkle plugin running.
-- Environment Variables set to allow your validator, ingester and api to access those prerequisites.
+-   A Postgres Server running with the database setup according to ./init.sql
+-   A Redis instance that has streams enabled or a version that supports streams
+-   A local solana validator with the Plerkle plugin running.
+-   Environment Variables set to allow your validator, ingester and api to access those prerequisites.
 
 See [Plugin Configuration](https://github.com/metaplex-foundation/digital-asset-validator-plugin#building-locally) for how to locally configure the test validator plugin to work.
 
@@ -118,11 +122,11 @@ For production you should split the components up.
 
 Developing with Docker is much easier, but has some nuances to it. This test docker compose system relies on a programs folder being accessible, this folder needs to have the shared object files for the following programs
 
-- Token Metadata
-- Bubblegum
-- Gummyroll
-- Token 2022
-- Latest version of the Associated token program
+-   Token Metadata
+-   Bubblegum
+-   Gummyroll
+-   Token 2022
+-   Latest version of the Associated token program
 
 You need to run the following script (which takes a long time) in order to get all those .so files.
 
@@ -195,25 +199,40 @@ And a Metrics System on
 http://localhost:3000
 ```
 
-Here is an example request to the API
+Here are some example requests to the Read API:
 
 ```bash
-curl --request POST \
-  --url http://localhost:9090 \
-  --header 'Content-Type: application/json' \
-  --data '{
-	"jsonrpc": "2.0",
-"method":"get_assets_by_owner",
-	"id": "rpd-op-123",
-	"params": [
-    "CMvMqPNKHikuGi7mrngvQzFeQ4rndDnopx3kc9drne8M",
-    "created",
-    50,
-    1,
-    "",
-    ""
-  ]
-}'
+curl --request POST --url http://localhost:9090 --header 'Content-Type: application/json' --data '{
+    "jsonrpc": "2.0",
+    "method": "getAssetsByOwner",
+    "params": [
+      "CMvMqPNKHikuGi7mrngvQzFeQ4rndDnopx3kc9drne8M",
+      { "sortBy": "created", "sortDirection": "asc"},
+      50,
+      1,
+      "",
+      ""
+    ],
+    "id": 0
+}' | json_pp
+
+curl --request POST --url http://localhost:9090 --header 'Content-Type: application/json' --data '{
+    "jsonrpc": "2.0",
+    "method": "getAsset",
+    "params": [
+      "8vw7tdLGE3FBjaetsJrZAarwsbc8UESsegiLyvWXxs5A"
+    ],
+    "id": 0
+}' | json_p
+
+curl --request POST --url http://localhost:9090 --header 'Content-Type: application/json' --data '{
+    "jsonrpc": "2.0",
+    "method": "getAssetProof",
+    "params": [
+      "8vw7tdLGE3FBjaetsJrZAarwsbc8UESsegiLyvWXxs5A"
+    ],
+    "id": 0
+}' | json_pp
 ```
 
 # Deploying to Kubernetes

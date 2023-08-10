@@ -74,7 +74,8 @@ pub async fn get_grouping(
         .filter(
             Condition::all()
                 .add(asset_grouping::Column::GroupKey.eq(group_key))
-                .add(asset_grouping::Column::GroupValue.eq(group_value)),
+                .add(asset_grouping::Column::GroupValue.eq(group_value))
+                .add(asset_grouping::Column::Verified.eq(true)),
         )
         .count(conn)
         .await?;
@@ -93,7 +94,8 @@ pub async fn get_by_grouping(
 ) -> Result<(Vec<FullAsset>, Option<u64>), DbErr> {
     let condition = asset_grouping::Column::GroupKey
         .eq(group_key)
-        .and(asset_grouping::Column::GroupValue.eq(group_value));
+        .and(asset_grouping::Column::GroupValue.eq(group_value))
+        .and(asset_grouping::Column::Verified.eq(true));
     get_by_related_condition(
         conn,
         Condition::all()
@@ -231,7 +233,7 @@ pub async fn get_related_for_assets(
         {
             let id = asset.id.clone();
             let fa = FullAsset {
-                asset: asset,
+                asset,
                 data: ad.clone(),
                 authorities: vec![],
                 creators: vec![],
@@ -256,6 +258,7 @@ pub async fn get_related_for_assets(
     let creators = asset_creators::Entity::find()
         .filter(asset_creators::Column::AssetId.is_in(ids.clone()))
         .order_by_asc(asset_creators::Column::AssetId)
+        .order_by_asc(asset_creators::Column::Position)
         .all(conn)
         .await?;
     for c in creators.into_iter() {
@@ -267,6 +270,7 @@ pub async fn get_related_for_assets(
     let grouping = asset_grouping::Entity::find()
         .filter(asset_grouping::Column::AssetId.is_in(ids.clone()))
         .filter(asset_grouping::Column::GroupValue.is_not_null())
+        .filter(asset_grouping::Column::Verified.eq(true))
         .order_by_asc(asset_grouping::Column::AssetId)
         .all(conn)
         .await?;
@@ -310,16 +314,25 @@ pub async fn get_by_id(
     asset_id: Vec<u8>,
     include_no_supply: bool,
 ) -> Result<FullAsset, DbErr> {
-    let mut asset_data = asset::Entity::find_by_id(asset_id).find_also_related(asset_data::Entity);
+    let mut asset_data =
+        asset::Entity::find_by_id(asset_id.clone()).find_also_related(asset_data::Entity);
     if !include_no_supply {
         asset_data = asset_data.filter(Condition::all().add(asset::Column::Supply.gt(0)));
     }
-
     let asset_data: (asset::Model, asset_data::Model) =
         asset_data.one(conn).await.and_then(|o| match o {
             Some((a, Some(d))) => Ok((a, d)),
-            _ => Err(DbErr::RecordNotFound("Asset Not Found".to_string())),
+            _ => {
+                println!(
+                    "a: {:?}, d {:?}",
+                    o.clone().map(|(a, _)| a),
+                    o.map(|(_, d)| d)
+                );
+                Err(DbErr::RecordNotFound("Asset Not Found".to_string()))
+            }
         })?;
+
+    println!("asset found: {:?}", asset_data.0.id);
 
     let (asset, data) = asset_data;
     let authorities: Vec<asset_authority::Model> = asset_authority::Entity::find()
@@ -335,6 +348,7 @@ pub async fn get_by_id(
     let grouping: Vec<asset_grouping::Model> = asset_grouping::Entity::find()
         .filter(asset_grouping::Column::AssetId.eq(asset.id.clone()))
         .filter(asset_grouping::Column::GroupValue.is_not_null())
+        .filter(asset_grouping::Column::Verified.eq(true))
         .order_by_asc(asset_grouping::Column::AssetId)
         .all(conn)
         .await?;
@@ -354,10 +368,9 @@ pub async fn fetch_transactions(
     pagination: &Pagination,
     limit: u64,
 ) -> Result<Vec<Vec<String>>, DbErr> {
-    let mut stmt = cl_audits::Entity::find()
-        .filter(cl_audits::Column::Tree.eq(tree))
-        .filter(cl_audits::Column::LeafIdx.eq(leaf_id))
-        .order_by(cl_audits::Column::CreatedAt, sea_orm::Order::Desc);
+    let mut stmt = cl_audits::Entity::find().filter(cl_audits::Column::Tree.eq(tree));
+    stmt = stmt.filter(cl_audits::Column::LeafIdx.eq(leaf_id));
+    stmt = stmt.order_by(cl_audits::Column::CreatedAt, sea_orm::Order::Desc);
 
     stmt = paginate(pagination, limit, stmt);
     let transactions = stmt.all(conn).await?;
@@ -404,7 +417,10 @@ pub async fn get_signatures_for_asset(
         if tree.is_empty() {
             return Err(DbErr::Custom("Empty tree for asset".to_string()));
         }
-        let transactions = fetch_transactions(conn, tree, asset.nonce, pagination, limit).await?;
+        let leaf_id = asset
+            .nonce
+            .ok_or(DbErr::RecordNotFound("Leaf ID does not exist".to_string()))?;
+        let transactions = fetch_transactions(conn, tree, leaf_id, pagination, limit).await?;
         Ok(transactions)
     } else {
         Ok(Vec::new())

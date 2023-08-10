@@ -1,15 +1,13 @@
-use anchor_lang::prelude::Pubkey;
+use crate::program_transformers::bubblegum::{upsert_asset_with_seq, upsert_collection_info};
 use blockbuster::{
     instruction::InstructionBundle,
     programs::bubblegum::{BubblegumInstruction, LeafSchema, Payload},
 };
-use digital_asset_types::dao::{asset, asset_grouping, cl_items};
-use log::{debug, info, warn};
-use mpl_bubblegum::{hash_metadata, state::metaplex_adapter::Collection};
-use sea_orm::{entity::*, query::*, sea_query::OnConflict, DbBackend, Set, Unchanged};
-use solana_sdk::keccak;
+use log::debug;
+use mpl_bubblegum::state::metaplex_adapter::Collection;
+use sea_orm::query::*;
 
-use super::{save_changelog_event, update_compressed_asset};
+use super::{save_changelog_event, upsert_asset_with_leaf_info};
 use crate::error::IngesterError;
 pub async fn process<'c, T>(
     parsing_result: &BubblegumInstruction,
@@ -25,12 +23,10 @@ where
         &parsing_result.tree_update,
         &parsing_result.payload,
     ) {
-        let (collection, verify, metadata) = match payload {
+        let (collection, verify) = match payload {
             Payload::CollectionVerification {
-                collection,
-                verify,
-                args,
-            } => (collection.clone(), verify.clone(), args.clone()),
+                collection, verify, ..
+            } => (collection.clone(), verify.clone()),
             _ => {
                 return Err(IngesterError::ParsingError(
                     "Ix not parsed correctly".to_string(),
@@ -45,67 +41,36 @@ where
         let id_bytes = match le.schema {
             LeafSchema::V1 { id, .. } => id.to_bytes().to_vec(),
         };
+        let tree_id = cl.id.to_bytes();
+        let nonce = cl.index as i64;
 
-        let mut updated_metadata = metadata.clone();
-        updated_metadata.collection = Some(Collection {
-            key: collection.clone(),
-            verified: verify,
-        });
+        // Partial update of asset table with just leaf.
+        upsert_asset_with_leaf_info(
+            txn,
+            id_bytes.to_vec(),
+            nonce,
+            tree_id.to_vec(),
+            le.leaf_hash.to_vec(),
+            le.schema.data_hash(),
+            le.schema.creator_hash(),
+            seq as i64,
+            false,
+        )
+        .await?;
 
-        let updated_data_hash = hash_metadata(&updated_metadata)
-            .map(|e| bs58::encode(e).into_string())
-            .unwrap_or("".to_string())
-            .trim()
-            .to_string();
+        upsert_asset_with_seq(txn, id_bytes.to_vec(), seq as i64).await?;
 
-        let asset_to_update = asset::ActiveModel {
-            id: Unchanged(id_bytes.clone()),
-            leaf: Set(Some(le.leaf_hash.to_vec())),
-            seq: Set(seq as i64),
-            data_hash: Set(Some(updated_data_hash.clone())), // todo remove clone
-            ..Default::default()
-        };
-        update_compressed_asset(txn, id_bytes.clone(), Some(seq), asset_to_update).await?;
-
-        if verify {
-            let grouping = asset_grouping::ActiveModel {
-                asset_id: Set(id_bytes.clone()),
-                group_key: Set("collection".to_string()),
-                group_value: Set(Some(collection.to_string())),
-                seq: Set(seq as i64),
-                slot_updated: Set(bundle.slot as i64),
-                ..Default::default()
-            };
-            let mut query = asset_grouping::Entity::insert(grouping)
-                .on_conflict(
-                    OnConflict::columns([
-                        asset_grouping::Column::AssetId,
-                        asset_grouping::Column::GroupKey,
-                    ])
-                    .update_columns([
-                        asset_grouping::Column::GroupKey,
-                        asset_grouping::Column::GroupValue,
-                        asset_grouping::Column::Seq,
-                        asset_grouping::Column::SlotUpdated,
-                    ])
-                    .to_owned(),
-                )
-                .build(DbBackend::Postgres);
-            query.sql = format!(
-                    "{} WHERE excluded.slot_updated > asset_grouping.slot_updated AND excluded.seq >= asset_grouping.seq",
-                    query.sql
-                );
-            txn.execute(query).await?;
-        } else {
-            // TODO: Support collection unverification.
-            // We will likely need to nullify the collection field so we can maintain
-            // the seq value and avoid out-of-order indexing bugs.
-            warn!(
-                "Collection unverification not processed for asset {} and collection {}",
-                bs58::encode(id_bytes).into_string(),
-                collection
-            );
-        }
+        upsert_collection_info(
+            txn,
+            id_bytes.to_vec(),
+            Some(Collection {
+                key: collection.clone(),
+                verified: verify,
+            }),
+            bundle.slot as i64,
+            seq as i64,
+        )
+        .await?;
 
         return Ok(());
     };
