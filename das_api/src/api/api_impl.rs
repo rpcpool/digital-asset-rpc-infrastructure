@@ -278,7 +278,7 @@ impl ApiContract for DasApi {
             page,
             before,
             after,
-            json_uri
+            json_uri,
         } = payload;
         // Deserialize search assets query
         self.validate_pagination(&limit, &page, &before, &after)?;
@@ -292,6 +292,7 @@ impl ApiContract for DasApi {
         });
         let owner_address = validate_opt_pubkey(&owner_address)?;
         let creator_address = validate_opt_pubkey(&creator_address)?;
+        let delegate = validate_opt_pubkey(&delegate)?;
 
         let authority_address = validate_opt_pubkey(&authority_address)?;
         let supply_mint = validate_opt_pubkey(&supply_mint)?;

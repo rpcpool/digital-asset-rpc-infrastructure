@@ -19,6 +19,7 @@ mod m20230317_121944_remove_indexes_for_perf;
 mod m20230508_142103_add_offchain_reindex;
 mod m20230510_224316_cl_audit_table;
 mod m20230510_183736_add_indices_to_assets;
+mod m20230726_013107_remove_not_null_constraint_from_group_value;
 
 pub struct Migrator;
 
@@ -45,6 +46,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20230508_142103_add_offchain_reindex::Migration),
             Box::new(m20230510_224316_cl_audit_table::Migration),
             Box::new(m20230510_183736_add_indices_to_assets::Migration),
+            Box::new(m20230726_013107_remove_not_null_constraint_from_group_value::Migration),
         ]
     }
 }
