@@ -426,7 +426,7 @@ where
         asset_id: Set(asset_id),
         group_key: Set("collection".to_string()),
         group_value: Set(group_value),
-        verified: Set(verified),
+        verified: Set(Some(verified)),
         slot_updated: Set(Some(slot_updated)),
         group_info_seq: Set(Some(seq)),
         ..Default::default()

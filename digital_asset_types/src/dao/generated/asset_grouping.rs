@@ -20,7 +20,7 @@ pub struct Model {
     pub group_value: Option<String>,
     pub seq: Option<i64>,
     pub slot_updated: Option<i64>,
-    pub verified: bool,
+    pub verified: Option<bool>,
     pub group_info_seq: Option<i64>,
 }
 

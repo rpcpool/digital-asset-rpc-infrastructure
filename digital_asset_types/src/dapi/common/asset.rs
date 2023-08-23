@@ -348,9 +348,9 @@ pub fn to_grouping(groups: Vec<asset_grouping::Model>) -> Result<Vec<Group>, DbE
             group_key: model.group_key.clone(),
             group_value: Some(
                 model
-                .group_value
-                .clone()
-                .ok_or(DbErr::Custom("Group value not found".to_string()))?,
+                    .group_value
+                    .clone()
+                    .ok_or(DbErr::Custom("Group value not found".to_string()))?,
             ),
             collection_metadata: None,
         })
@@ -408,12 +408,8 @@ pub fn asset_to_rpc(
         compression: Some(Compression {
             eligible: asset.compressible,
             compressed: asset.compressed,
-            leaf_id: asset
-                .nonce
-                .ok_or(DbErr::Custom("Nonce not found".to_string()))?,
-            seq: asset
-                .seq
-                .ok_or(DbErr::Custom("Seq not found".to_string()))?,
+            leaf_id: asset.nonce.unwrap_or(0 as i64),
+            seq: asset.seq.unwrap_or(0 as i64),
             tree: asset
                 .tree_id
                 .map(|s| bs58::encode(s).into_string())
