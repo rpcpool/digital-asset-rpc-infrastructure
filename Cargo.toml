@@ -15,12 +15,12 @@ exclude = [
 ]
 
 [patch.crates-io]
-solana-account-decoder = { git = "https://github.com/rpcpool/solana-public.git", tag = "v1.14.15-client-custom-header" }
-solana-client = { git = "https://github.com/rpcpool/solana-public.git", tag = "v1.14.15-client-custom-header" }
-solana-program = { git = "https://github.com/rpcpool/solana-public.git", tag = "v1.14.15-client-custom-header" }
-solana-sdk = { git = "https://github.com/rpcpool/solana-public.git", tag = "v1.14.15-client-custom-header" }
-solana-transaction-status = { git = "https://github.com/rpcpool/solana-public.git", tag = "v1.14.15-client-custom-header" }
-blockbuster = { git = "https://github.com/rpcpool/blockbuster", rev="b19fd3f33315fa9c2f3bcd20e9deddf3ae6e2472" }
+# solana-account-decoder = { git = "https://github.com/rpcpool/solana-public.git", tag = "v1.16.15-block-cache" }
+# solana-client = { git = "https://github.com/rpcpool/solana-public.git", tag = "v1.16.15-block-cache" }
+# solana-program = { git = "https://github.com/rpcpool/solana-public.git", tag = "v1.16.15-block-cache" }
+# solana-sdk = { git = "https://github.com/rpcpool/solana-public.git", tag = "v1.16.15-block-cache" }
+# solana-transaction-status = { git = "https://github.com/rpcpool/solana-public.git", tag = "v1.16.15-block-cache" }
+blockbuster = { git = "https://github.com/rpcpool/blockbuster", rev = "b19fd3f33315fa9c2f3bcd20e9deddf3ae6e2472" }
 
 [profile.release]
 lto = true
