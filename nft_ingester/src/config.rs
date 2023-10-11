@@ -29,7 +29,9 @@ pub struct IngesterConfig {
     pub role: Option<IngesterRole>,
     pub max_postgres_connections: Option<u32>,
     pub account_stream_worker_count: Option<u32>,
+    pub account_backfill_stream_worker_count: Option<u32>,
     pub transaction_stream_worker_count: Option<u32>,
+    pub transaction_backfill_stream_worker_count: Option<u32>,
     pub code_version: Option<&'static str>,
     pub background_task_runner_config: Option<BackgroundTaskRunnerConfig>,
 }
@@ -68,8 +70,18 @@ impl IngesterConfig {
         self.account_stream_worker_count.unwrap_or(2)
     }
 
+    pub fn get_account_backfill_stream_worker_count(&self) -> u32 {
+        self.account_backfill_stream_worker_count
+            .unwrap_or_else(|| self.get_account_stream_worker_count())
+    }
+
     pub fn get_transaction_stream_worker_count(&self) -> u32 {
         self.transaction_stream_worker_count.unwrap_or(2)
+    }
+
+    pub fn get_transaction_backfill_stream_worker_count(&self) -> u32 {
+        self.transaction_backfill_stream_worker_count
+            .unwrap_or_else(|| self.get_transaction_stream_worker_count())
     }
 }
 
