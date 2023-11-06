@@ -28,6 +28,7 @@ pub async fn update_metadata<'c, T>(
     bundle: &InstructionBundle<'c>,
     txn: &'c T,
     cl_audits: bool,
+    ix: &str,
 ) -> Result<Option<TaskData>, IngesterError>
 where
     T: ConnectionTrait + TransactionTrait,
@@ -45,7 +46,7 @@ where
         &parsing_result.tree_update,
         &parsing_result.payload,
     ) {
-        let seq = save_changelog_event(cl, bundle.slot, bundle.txn_id, txn, cl_audits).await?;
+        let seq = save_changelog_event(cl, bundle.slot, bundle.txn_id, txn, cl_audits, ix).await?;
 
         #[allow(unreachable_patterns)]
         return match le.schema {
