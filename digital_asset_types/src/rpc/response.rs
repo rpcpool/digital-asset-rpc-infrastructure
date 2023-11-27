@@ -48,5 +48,7 @@ pub struct TransactionSignatureList {
     pub before: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
     pub items: Vec<(String, Option<String>)>,
 }

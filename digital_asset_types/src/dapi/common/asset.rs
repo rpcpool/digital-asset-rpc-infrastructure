@@ -90,13 +90,17 @@ pub fn build_transaction_signatures_response(
     pagination: &Pagination,
 ) -> TransactionSignatureList {
     let total = items.len() as u32;
-    let (page, before, after) = match pagination {
+    let (page, before, after, cursor) = match pagination {
         Pagination::Keyset { before, after } => {
             let bef = before.clone().and_then(|x| String::from_utf8(x).ok());
             let aft = after.clone().and_then(|x| String::from_utf8(x).ok());
-            (None, bef, aft)
+            (None, bef, aft, None)
         }
-        Pagination::Page { page } => (Some(*page), None, None),
+        Pagination::Page { page } => (Some(*page), None, None, None),
+        Pagination::Cursor(_) => {
+            // tmp: helius please fix it ;)
+            (None, None, None, None)
+        }
     };
     TransactionSignatureList {
         total,
@@ -104,6 +108,7 @@ pub fn build_transaction_signatures_response(
         page: page.map(|x| x as u32),
         before,
         after,
+        cursor,
         items,
     }
 }
@@ -317,7 +322,7 @@ pub fn to_grouping(
         .filter_map(|model| {
             let verified = match display_options.show_unverified_collections {
                 // Null verified indicates legacy data, meaning it is verified.
-                true => Some(model.verified.unwrap_or(true)),
+                true => Some(model.verified),
                 false => None,
             };
             // Filter out items where group_value is None.

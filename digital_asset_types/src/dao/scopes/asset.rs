@@ -1,19 +1,19 @@
-<<<<<<< HEAD
-use crate::dao::{
-    asset::{self},
-    asset_authority, asset_creators, asset_data, asset_grouping, Cursor, FullAsset, GroupingSize,
-    Pagination,
-=======
+// <<<<<<< HEAD
+// use crate::dao::{
+//     asset::{self},
+//     asset_authority, asset_creators, asset_data, asset_grouping, Cursor, FullAsset, GroupingSize,
+//     Pagination,
+// =======
 use crate::{
     dao::{
         asset::{self, Entity},
-        asset_authority, asset_creators, asset_data, asset_grouping, FullAsset,
-        GroupingSize, Pagination, cl_audits,
+        asset_authority, asset_creators, asset_data, asset_grouping, cl_audits, Cursor, FullAsset,
+        GroupingSize, Pagination,
     },
     dapi::common::safe_select,
-    rpc::{response::AssetList},
->>>>>>> helius-nikhil/get-sigs-for-asset
+    rpc::response::AssetList,
 };
+// >>>>>>> helius-nikhil/get-sigs-for-asset
 
 use indexmap::IndexMap;
 use sea_orm::{entity::*, query::*, ConnectionTrait, DbErr, Order};
@@ -414,12 +414,13 @@ pub async fn get_signatures_for_asset(
     asset_id: Option<Vec<u8>>,
     tree_id: Option<Vec<u8>>,
     leaf_idx: Option<i64>,
+    sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
 ) -> Result<Vec<(String, Option<String>)>, DbErr> {
     // if tree_id and leaf_idx are provided, use them directly to fetch transactions
     if let (Some(tree_id), Some(leaf_idx)) = (tree_id, leaf_idx) {
-        let transactions = fetch_transactions(conn, tree_id, leaf_idx, pagination, limit).await?;
+        let transactions = fetch_transactions(conn, tree_id, leaf_idx, sort_direction, pagination, limit).await?;
         return Ok(transactions);
     }
 
@@ -447,7 +448,7 @@ pub async fn get_signatures_for_asset(
         let leaf_id = asset
             .nonce
             .ok_or(DbErr::RecordNotFound("Leaf ID does not exist".to_string()))?;
-        let transactions = fetch_transactions(conn, tree, leaf_id, pagination, limit).await?;
+        let transactions = fetch_transactions(conn, tree, leaf_id, sort_direction, pagination, limit).await?;
         Ok(transactions)
     } else {
         Ok(Vec::new())
@@ -458,6 +459,7 @@ pub async fn fetch_transactions(
     conn: &impl ConnectionTrait,
     tree: Vec<u8>,
     leaf_id: i64,
+    sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
 ) -> Result<Vec<(String, Option<String>)>, DbErr> {
@@ -465,11 +467,7 @@ pub async fn fetch_transactions(
     stmt = stmt.filter(cl_audits::Column::LeafIdx.eq(leaf_id));
     stmt = stmt.order_by(cl_audits::Column::CreatedAt, sea_orm::Order::Desc);
 
-    stmt = paginate(
-        pagination,
-        limit,
-        stmt
-    );
+    stmt = paginate(pagination, limit, stmt, sort_direction, cl_audits::Column::Id);
     let transactions = stmt.all(conn).await?;
     let transaction_list: Vec<(String, Option<String>)> = transactions
         .into_iter()

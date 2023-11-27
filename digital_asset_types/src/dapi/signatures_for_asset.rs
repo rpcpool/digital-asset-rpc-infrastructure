@@ -1,4 +1,5 @@
 use crate::dao::scopes;
+use crate::dao::PageOptions;
 use crate::rpc::filter::AssetSorting;
 use crate::rpc::response::TransactionSignatureList;
 use sea_orm::DatabaseConnection;
@@ -12,24 +13,24 @@ pub async fn get_signatures_for_asset(
     asset_id: Option<Vec<u8>>,
     tree: Option<Vec<u8>>,
     leaf_idx: Option<i64>,
-    limit: u64,
-    page: Option<u64>,
-    before: Option<Vec<u8>>,
-    after: Option<Vec<u8>>,
+    sorting: AssetSorting,
+    page_options: &PageOptions,
 ) -> Result<TransactionSignatureList, DbErr> {
-    let pagination = create_pagination(before, after, page)?;
+    let pagination = create_pagination(&page_options)?;
+    let (sort_direction, sort_column) = create_sorting(sorting);
     let transactions = scopes::asset::get_signatures_for_asset(
         db,
         asset_id,
         tree,
         leaf_idx,
+        sort_direction,
         &pagination,
-        limit
+        page_options.limit
     )
     .await?;
     Ok(build_transaction_signatures_response(
         transactions,
-        limit,
+        page_options.limit,
         &pagination,
     ))
 }
