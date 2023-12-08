@@ -36,7 +36,6 @@ sea-orm = { version = "0.10.6", features = [
   "runtime-tokio-rustls",
   "sqlx-postgres",
   "with-chrono",
-  "mock",
 ] }
 sea-query = { version = "0.28.1", features = ["postgres-array"] }
 chrono = "0.4.19"

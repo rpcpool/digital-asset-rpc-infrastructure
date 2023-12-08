@@ -1,30 +1,95 @@
+use crate::db;
 use crate::tree;
 use anyhow::Result;
 use clap::Parser;
+use digital_asset_types::dao::tree_transactions;
+use futures::FutureExt;
 use log::{debug, error, info};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Signature;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, Semaphore};
+use tokio::time::{timeout, Duration};
 
 #[derive(Debug, Parser, Clone)]
-pub struct Config {
+pub struct Args {
     /// Solana RPC URL
     #[arg(long, env)]
     pub solana_rpc_url: String,
 
     /// Number of tree crawler workers
-    #[arg(long, env, default_value = "100")]
+    #[arg(long, env, default_value = "1")]
     pub tree_crawler_count: usize,
 
     /// The size of the signature channel. This is the number of signatures that can be queued up. If the channel is full, the crawler will block until there is space in the channel.
-    #[arg(long, env, default_value = "1000")]
+    #[arg(long, env, default_value = "1")]
     pub signature_channel_size: usize,
+
+    #[arg(long, env, default_value = "3000")]
+    pub transaction_check_timeout: u64,
+
+    /// Database configuration
+    #[clap(flatten)]
+    pub database: db::PoolArgs,
 }
 
-pub async fn run(config: Config) -> Result<()> {
+/// A thread-safe counter.
+pub struct Counter(Arc<AtomicUsize>);
+
+impl Counter {
+    /// Creates a new counter initialized to zero.
+    pub fn new() -> Self {
+        Self(Arc::new(AtomicUsize::new(0)))
+    }
+
+    /// Increments the counter by one.
+    pub fn increment(&self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Decrements the counter by one.
+    pub fn decrement(&self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    /// Returns the current value of the counter.
+    pub fn get(&self) -> usize {
+        self.0.load(Ordering::SeqCst)
+    }
+
+    /// Returns a future that resolves when the counter reaches zero.
+    /// The future periodically checks the counter value and sleeps for a short duration.
+    pub fn zero(&self) -> impl std::future::Future<Output = ()> {
+        let counter = self.clone();
+        async move {
+            while counter.get() > 0 {
+                println!("Counter value: {}", counter.get());
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+    }
+}
+
+impl Clone for Counter {
+    /// Returns a clone of the counter.
+    /// The returned counter shares the same underlying atomic integer.
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+/// Runs the tree backfiller.
+///
+/// This function takes a `Config` as input and returns a `Result<()>`.
+/// It creates an `RpcClient` and retrieves all trees.
+/// It then spawns a thread for each tree and a separate thread to handle transaction workers.
+/// The function waits for all threads to finish before returning.
+pub async fn run(config: Args) -> Result<()> {
     let solana_rpc = Arc::new(RpcClient::new(config.solana_rpc_url));
+
+    let conn = db::connect(config.database).await?;
 
     let trees = tree::all(&solana_rpc).await?;
 
@@ -34,28 +99,47 @@ pub async fn run(config: Config) -> Result<()> {
     let (sig_sender, mut sig_receiver) = mpsc::channel::<Signature>(config.signature_channel_size);
     let sig_solana_rpc = Arc::clone(&solana_rpc);
 
-    let transaction_worker_count = Arc::new(AtomicUsize::new(0));
-    let transaction_worker_count_check = Arc::clone(&transaction_worker_count);
+    let transaction_worker_count = Counter::new();
+    let transaction_worker_count_check = transaction_worker_count.clone();
 
     tokio::spawn(async move {
         loop {
             tokio::select! {
                 Some(signature) = sig_receiver.recv() => {
-                    // TODO: possibly limit spawn rate. currently limited by the sign channel size
                     let solana_rpc = Arc::clone(&sig_solana_rpc);
-                    let transaction_worker_count = Arc::clone(&transaction_worker_count);
+                    let transaction_worker_count_sig = transaction_worker_count.clone();
+                    let transaction_worker_count_guard = transaction_worker_count.clone();
 
-                    transaction_worker_count.fetch_add(1, Ordering::SeqCst);
+                    transaction_worker_count_sig.increment();
 
-                    tokio::spawn(async move {
+                    let transaction_task = async move {
                         match tree::transaction(solana_rpc, signature).await {
                             Ok(builder) => {}
-                            Err(e) => error!("retrieving transaction: {:?}", e),
+                            Err(e) => println!("error retrieving transaction: {:?}", e),
                         }
 
-                        transaction_worker_count.fetch_sub(1, Ordering::SeqCst);
+                        transaction_worker_count_sig.decrement()
+                    };
+
+                    let guarded_task = AssertUnwindSafe(transaction_task).catch_unwind();
+                    let timed_task = tokio::spawn(async move {
+                        timeout(Duration::from_millis(config.transaction_check_timeout), guarded_task).await
                     });
-                }
+
+                    let _ = tokio::spawn(async move {
+                      match timed_task.await {
+                          Ok(Ok(_)) => {}
+                          Ok(Err(_)) => {
+                              println!("Task panicked");
+                              transaction_worker_count_guard.decrement()
+                          },
+                          Err(_) => {
+                              println!("Task timed out");
+                              transaction_worker_count_guard.decrement()
+                          }
+                      }});
+
+                },
                 else => break,
             }
         }
@@ -67,12 +151,13 @@ pub async fn run(config: Config) -> Result<()> {
         let solana_rpc = Arc::clone(&solana_rpc);
         let semaphore = Arc::clone(&semaphore);
         let sig_sender = sig_sender.clone();
+        let conn = conn.clone();
 
         let crawl_handler = tokio::spawn(async move {
             let _permit = semaphore.acquire().await?;
 
-            if let Err(e) = tree::crawl(solana_rpc, sig_sender, tree).await {
-                error!("crawling tree: {:?}", e);
+            if let Err(e) = tree::crawl(solana_rpc, sig_sender, &conn, tree).await {
+                println!("error crawling tree: {:?}", e);
             }
 
             Ok::<(), anyhow::Error>(())
@@ -82,10 +167,7 @@ pub async fn run(config: Config) -> Result<()> {
     }
 
     futures::future::try_join_all(crawl_handlers).await?;
-
-    while transaction_worker_count_check.load(Ordering::SeqCst) > 0 {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    transaction_worker_count_check.zero().await;
 
     Ok(())
 }

@@ -1,15 +1,17 @@
 use anyhow::Result;
 use borsh::BorshDeserialize;
 use clap::Args;
+use digital_asset_types::dao::tree_transactions;
 use flatbuffers::FlatBufferBuilder;
 use log::debug;
 use plerkle_messenger::{Messenger, TRANSACTION_BACKFILL_STREAM};
 use plerkle_serialization::serializer::seralize_encoded_transaction_with_status;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
     rpc_client::GetConfirmedSignaturesForAddress2Config,
-    rpc_config::{RpcAccountInfoConfig, RpcBlockConfig, RpcProgramAccountsConfig},
+    rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcTransactionConfig},
     rpc_filter::{Memcmp, RpcFilterType},
 };
 use solana_sdk::{account::Account, pubkey::Pubkey, signature::Signature};
@@ -19,6 +21,7 @@ use spl_account_compression::state::{
     merkle_tree_get_size, ConcurrentMerkleTreeHeader, ConcurrentMerkleTreeHeaderDataV1,
     CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1,
 };
+use sqlx::{Pool, Postgres};
 use std::str::FromStr;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -35,10 +38,10 @@ pub struct ConfigBackfiller {
 
 #[derive(ThisError, Debug)]
 pub enum TreeErrorKind {
-    #[error("solana tree gpa")]
-    FetchAll(#[from] solana_client::client_error::ClientError),
-    #[error("anchor struct deserialize")]
-    AchorDeserialize(#[from] anchor_client::anchor_lang::error::Error),
+    #[error("solana rpc")]
+    Rpc(#[from] solana_client::client_error::ClientError),
+    #[error("anchor")]
+    Achor(#[from] anchor_client::anchor_lang::error::Error),
     #[error("perkle serialize")]
     PerkleSerialize(#[from] plerkle_serialization::error::PlerkleSerializationError),
 }
@@ -104,8 +107,7 @@ pub async fn all(client: &Arc<RpcClient>) -> Result<Vec<TreeResponse>, TreeError
 
     Ok(client
         .get_program_accounts_with_config(&id(), config)
-        .await
-        .map_err(TreeErrorKind::FetchAll)?
+        .await?
         .into_iter()
         .filter_map(|(pubkey, account)| TreeResponse::from_rpc(pubkey, account).ok())
         .collect())
@@ -114,21 +116,26 @@ pub async fn all(client: &Arc<RpcClient>) -> Result<Vec<TreeResponse>, TreeError
 pub async fn crawl(
     client: Arc<RpcClient>,
     sig_sender: Sender<Signature>,
+    conn: &DatabaseConnection,
     tree: TreeResponse,
 ) -> Result<()> {
-    println!("crawl tree: {:?}", tree.pubkey);
+    let mut before = None;
 
-    // TODO: check db for tree_transactions picking the sig of the last processed transaction. `SELECT signature FROM tree_transactions WHERE tree = $1 ORDER BY position ASC LIMIT 1`
-    let mut last_sig = None;
+    let until = tree_transactions::Entity::find()
+        .filter(tree_transactions::Column::Tree.eq(tree.pubkey.as_ref()))
+        .order_by_desc(tree_transactions::Column::Slot)
+        .one(conn)
+        .await?
+        .map(|t| Signature::from_str(&t.signature).ok())
+        .flatten();
+
     loop {
-        let before = last_sig;
-
         let sigs = client
             .get_signatures_for_address_with_config(
                 &tree.pubkey,
                 GetConfirmedSignaturesForAddress2Config {
                     before,
-                    until: None,
+                    until,
                     ..GetConfirmedSignaturesForAddress2Config::default()
                 },
             )
@@ -136,11 +143,11 @@ pub async fn crawl(
 
         for sig in sigs.iter() {
             let sig = Signature::from_str(&sig.signature)?;
-            println!("send signature: {:?}", sig.clone());
+            println!("sig: {}", sig);
 
             sig_sender.send(sig.clone()).await?;
 
-            last_sig = Some(sig);
+            before = Some(sig);
         }
 
         if sigs.len() < GET_SIGNATURES_FOR_ADDRESS_LIMIT {
@@ -156,10 +163,15 @@ pub async fn transaction<'a>(
     signature: Signature,
 ) -> Result<FlatBufferBuilder<'a>, TreeErrorKind> {
     let transaction = client
-        .get_transaction(&signature, UiTransactionEncoding::Base58)
+        .get_transaction_with_config(
+            &signature,
+            RpcTransactionConfig {
+                encoding: Some(UiTransactionEncoding::Base58),
+                max_supported_transaction_version: Some(0),
+                ..RpcTransactionConfig::default()
+            },
+        )
         .await?;
-
-    println!("transaction: {:?}", signature);
 
     Ok(seralize_encoded_transaction_with_status(
         FlatBufferBuilder::new(),
