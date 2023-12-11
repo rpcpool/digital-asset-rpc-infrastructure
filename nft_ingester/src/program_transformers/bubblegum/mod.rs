@@ -96,6 +96,18 @@ where
         }
         _ => debug!("Bubblegum: Not Implemented Instruction"),
     }
+
+    // TODO: assuming tree update available on all transactions but need to confirm.
+    if let Some(tree_update) = &parsing_result.tree_update {
+        save_tree_transaction(
+            tree_update.id.to_bytes().to_vec(),
+            bundle.slot,
+            bundle.txn_id,
+            txn,
+        )
+        .await?;
+    }
+
     Ok(())
 }
 

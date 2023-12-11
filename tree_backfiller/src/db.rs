@@ -12,6 +12,15 @@ pub struct PoolArgs {
     pub database_min_connections: u32,
 }
 
+///// Establishes a connection to the database using the provided configuration.
+/////
+///// # Arguments
+/////
+///// * `config` - A `PoolArgs` struct containing the database URL and the minimum and maximum number of connections.
+/////
+///// # Returns
+/////
+///// * `Result<DatabaseConnection, DbErr>` - On success, returns a `DatabaseConnection`. On failure, returns a `DbErr`.
 pub async fn connect(config: PoolArgs) -> Result<DatabaseConnection, DbErr> {
     let mut options = ConnectOptions::new(config.database_url);
 

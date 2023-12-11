@@ -49,7 +49,7 @@ impl ColumnTrait for Column {
     type EntityName = Entity;
     fn def(&self) -> ColumnDef {
         match self {
-            Self::Signature => ColumnType::Char(Some(64u32)).def(),
+            Self::Signature => ColumnType::Char(Some(84u32)).def(),
             Self::Tree => ColumnType::Binary.def(),
             Self::Slot => ColumnType::BigInteger.def(),
             Self::CreatedAt => ColumnType::TimestampWithTimeZone.def().null(),

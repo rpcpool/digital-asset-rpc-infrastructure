@@ -1,12 +1,14 @@
+use crate::queue::Queue;
 use anyhow::Result;
 use borsh::BorshDeserialize;
 use clap::Args;
 use digital_asset_types::dao::tree_transactions;
 use flatbuffers::FlatBufferBuilder;
-use log::debug;
-use plerkle_messenger::{Messenger, TRANSACTION_BACKFILL_STREAM};
 use plerkle_serialization::serializer::seralize_encoded_transaction_with_status;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{
+    sea_query::OnConflict, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
+    QueryFilter, QueryOrder,
+};
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
@@ -18,10 +20,8 @@ use solana_sdk::{account::Account, pubkey::Pubkey, signature::Signature};
 use solana_transaction_status::UiTransactionEncoding;
 use spl_account_compression::id;
 use spl_account_compression::state::{
-    merkle_tree_get_size, ConcurrentMerkleTreeHeader, ConcurrentMerkleTreeHeaderDataV1,
-    CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1,
+    merkle_tree_get_size, ConcurrentMerkleTreeHeader, CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1,
 };
-use sqlx::{Pool, Postgres};
 use std::str::FromStr;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -44,6 +44,10 @@ pub enum TreeErrorKind {
     Achor(#[from] anchor_client::anchor_lang::error::Error),
     #[error("perkle serialize")]
     PerkleSerialize(#[from] plerkle_serialization::error::PlerkleSerializationError),
+    #[error("perkle messenger")]
+    PlerkleMessenger(#[from] plerkle_messenger::MessengerError),
+    #[error("queue send")]
+    QueueSend(#[from] tokio::sync::mpsc::error::SendError<Vec<u8>>),
 }
 #[derive(Debug, Clone)]
 pub struct TreeHeaderResponse {
@@ -115,8 +119,8 @@ pub async fn all(client: &Arc<RpcClient>) -> Result<Vec<TreeResponse>, TreeError
 
 pub async fn crawl(
     client: Arc<RpcClient>,
-    sig_sender: Sender<Signature>,
-    conn: &DatabaseConnection,
+    sender: Sender<Signature>,
+    conn: DatabaseConnection,
     tree: TreeResponse,
 ) -> Result<()> {
     let mut before = None;
@@ -124,7 +128,7 @@ pub async fn crawl(
     let until = tree_transactions::Entity::find()
         .filter(tree_transactions::Column::Tree.eq(tree.pubkey.as_ref()))
         .order_by_desc(tree_transactions::Column::Slot)
-        .one(conn)
+        .one(&conn)
         .await?
         .map(|t| Signature::from_str(&t.signature).ok())
         .flatten();
@@ -142,10 +146,26 @@ pub async fn crawl(
             .await?;
 
         for sig in sigs.iter() {
+            let slot = i64::try_from(sig.slot)?;
             let sig = Signature::from_str(&sig.signature)?;
-            println!("sig: {}", sig);
 
-            sig_sender.send(sig.clone()).await?;
+            let tree_transaction = tree_transactions::ActiveModel {
+                signature: Set(sig.to_string()),
+                tree: Set(tree.pubkey.as_ref().to_vec()),
+                slot: Set(slot),
+                ..Default::default()
+            };
+
+            tree_transactions::Entity::insert(tree_transaction)
+                .on_conflict(
+                    OnConflict::column(tree_transactions::Column::Signature)
+                        .do_nothing()
+                        .to_owned(),
+                )
+                .exec(&conn)
+                .await?;
+
+            sender.send(sig.clone()).await?;
 
             before = Some(sig);
         }
@@ -160,8 +180,9 @@ pub async fn crawl(
 
 pub async fn transaction<'a>(
     client: Arc<RpcClient>,
+    sender: Sender<Vec<u8>>,
     signature: Signature,
-) -> Result<FlatBufferBuilder<'a>, TreeErrorKind> {
+) -> Result<(), TreeErrorKind> {
     let transaction = client
         .get_transaction_with_config(
             &signature,
@@ -173,8 +194,9 @@ pub async fn transaction<'a>(
         )
         .await?;
 
-    Ok(seralize_encoded_transaction_with_status(
-        FlatBufferBuilder::new(),
-        transaction,
-    )?)
+    let message = seralize_encoded_transaction_with_status(FlatBufferBuilder::new(), transaction)?;
+
+    sender.send(message.finished_data().to_vec()).await?;
+
+    Ok(())
 }

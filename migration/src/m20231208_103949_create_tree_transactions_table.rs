@@ -13,7 +13,7 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(
                         ColumnDef::new(TreeTransactions::Signature)
-                            .char_len(64)
+                            .char_len(88)
                             .not_null()
                             .primary_key(),
                     )

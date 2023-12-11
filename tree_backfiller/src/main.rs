@@ -1,10 +1,10 @@
 mod backfiller;
 mod db;
+mod queue;
 mod tree;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use log::{debug, error, info};
 
 #[derive(Debug, Parser)]
 #[clap(author, version)]
