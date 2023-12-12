@@ -2,16 +2,14 @@ use crate::db;
 use crate::{queue, tree};
 use anyhow::Result;
 use clap::Parser;
-use digital_asset_types::dao::tree_transactions;
-use futures::FutureExt;
 use log::{debug, error, info};
+use sea_orm::SqlxPostgresConnector;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Signature;
-use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex, Semaphore};
-use tokio::time::{timeout, Duration};
+use tokio::sync::{mpsc, Semaphore};
+use tokio::time::Duration;
 
 #[derive(Debug, Parser, Clone)]
 pub struct Args {
@@ -97,7 +95,7 @@ pub async fn run(config: Args) -> Result<()> {
     let solana_rpc = Arc::new(RpcClient::new(config.solana_rpc_url));
     let sig_solana_rpc = Arc::clone(&solana_rpc);
 
-    let conn = db::connect(config.database).await?;
+    let pool = db::connect(config.database).await?;
 
     let (queue_sender, mut queue_receiver) = mpsc::channel::<Vec<u8>>(config.queue_channel_size);
     let (sig_sender, mut sig_receiver) = mpsc::channel::<Signature>(config.signature_channel_size);
@@ -117,7 +115,7 @@ pub async fn run(config: Args) -> Result<()> {
 
                     let transaction_task = async move {
                         if let Err(e) = tree::transaction(solana_rpc, queue_sender,  signature).await {
-                            println!("error retrieving transaction: {:?}", e);
+                            error!("retrieving transaction: {:?}", e);
                         }
 
                         transaction_worker_count_sig.decrement();
@@ -137,7 +135,7 @@ pub async fn run(config: Args) -> Result<()> {
 
         while let Some(data) = queue_receiver.recv().await {
             if let Err(e) = queue.push(&data).await {
-                println!("Error pushing to queue: {:?}", e);
+                error!("pushing to queue: {:?}", e);
             }
         }
 
@@ -153,13 +151,14 @@ pub async fn run(config: Args) -> Result<()> {
         let solana_rpc = Arc::clone(&solana_rpc);
         let semaphore = Arc::clone(&semaphore);
         let sig_sender = sig_sender.clone();
-        let conn = conn.clone();
+        let pool = pool.clone();
+        let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
 
         let crawl_handler = tokio::spawn(async move {
             let _permit = semaphore.acquire().await?;
 
-            if let Err(e) = tree::crawl(solana_rpc, sig_sender, conn, tree).await {
-                println!("error crawling tree: {:?}", e);
+            if let Err(e) = tree.crawl(solana_rpc, sig_sender, conn).await {
+                error!("crawling tree: {:?}", e);
             }
 
             Ok::<(), anyhow::Error>(())

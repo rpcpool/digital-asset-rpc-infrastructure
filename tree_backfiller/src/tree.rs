@@ -78,7 +78,7 @@ pub struct TreeResponse {
 }
 
 impl TreeResponse {
-    pub fn from_rpc(pubkey: Pubkey, account: Account) -> Result<Self> {
+    pub fn try_from_rpc(pubkey: Pubkey, account: Account) -> Result<Self> {
         let (header_bytes, _rest) = account.data.split_at(CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1);
         let header: ConcurrentMerkleTreeHeader =
             ConcurrentMerkleTreeHeader::try_from_slice(header_bytes)?;
@@ -113,69 +113,71 @@ pub async fn all(client: &Arc<RpcClient>) -> Result<Vec<TreeResponse>, TreeError
         .get_program_accounts_with_config(&id(), config)
         .await?
         .into_iter()
-        .filter_map(|(pubkey, account)| TreeResponse::from_rpc(pubkey, account).ok())
+        .filter_map(|(pubkey, account)| TreeResponse::try_from_rpc(pubkey, account).ok())
         .collect())
 }
 
-pub async fn crawl(
-    client: Arc<RpcClient>,
-    sender: Sender<Signature>,
-    conn: DatabaseConnection,
-    tree: TreeResponse,
-) -> Result<()> {
-    let mut before = None;
+impl TreeResponse {
+    pub async fn crawl(
+        &self,
+        client: Arc<RpcClient>,
+        sender: Sender<Signature>,
+        conn: DatabaseConnection,
+    ) -> Result<()> {
+        let mut before = None;
 
-    let until = tree_transactions::Entity::find()
-        .filter(tree_transactions::Column::Tree.eq(tree.pubkey.as_ref()))
-        .order_by_desc(tree_transactions::Column::Slot)
-        .one(&conn)
-        .await?
-        .map(|t| Signature::from_str(&t.signature).ok())
-        .flatten();
+        let until = tree_transactions::Entity::find()
+            .filter(tree_transactions::Column::Tree.eq(self.pubkey.as_ref()))
+            .order_by_desc(tree_transactions::Column::Slot)
+            .one(&conn)
+            .await?
+            .map(|t| Signature::from_str(&t.signature).ok())
+            .flatten();
 
-    loop {
-        let sigs = client
-            .get_signatures_for_address_with_config(
-                &tree.pubkey,
-                GetConfirmedSignaturesForAddress2Config {
-                    before,
-                    until,
-                    ..GetConfirmedSignaturesForAddress2Config::default()
-                },
-            )
-            .await?;
-
-        for sig in sigs.iter() {
-            let slot = i64::try_from(sig.slot)?;
-            let sig = Signature::from_str(&sig.signature)?;
-
-            let tree_transaction = tree_transactions::ActiveModel {
-                signature: Set(sig.to_string()),
-                tree: Set(tree.pubkey.as_ref().to_vec()),
-                slot: Set(slot),
-                ..Default::default()
-            };
-
-            tree_transactions::Entity::insert(tree_transaction)
-                .on_conflict(
-                    OnConflict::column(tree_transactions::Column::Signature)
-                        .do_nothing()
-                        .to_owned(),
+        loop {
+            let sigs = client
+                .get_signatures_for_address_with_config(
+                    &self.pubkey,
+                    GetConfirmedSignaturesForAddress2Config {
+                        before,
+                        until,
+                        ..GetConfirmedSignaturesForAddress2Config::default()
+                    },
                 )
-                .exec(&conn)
                 .await?;
 
-            sender.send(sig.clone()).await?;
+            for sig in sigs.iter() {
+                let slot = i64::try_from(sig.slot)?;
+                let sig = Signature::from_str(&sig.signature)?;
 
-            before = Some(sig);
+                let tree_transaction = tree_transactions::ActiveModel {
+                    signature: Set(sig.to_string()),
+                    tree: Set(self.pubkey.as_ref().to_vec()),
+                    slot: Set(slot),
+                    ..Default::default()
+                };
+
+                tree_transactions::Entity::insert(tree_transaction)
+                    .on_conflict(
+                        OnConflict::column(tree_transactions::Column::Signature)
+                            .do_nothing()
+                            .to_owned(),
+                    )
+                    .exec(&conn)
+                    .await?;
+
+                sender.send(sig.clone()).await?;
+
+                before = Some(sig);
+            }
+
+            if sigs.len() < GET_SIGNATURES_FOR_ADDRESS_LIMIT {
+                break;
+            }
         }
 
-        if sigs.len() < GET_SIGNATURES_FOR_ADDRESS_LIMIT {
-            break;
-        }
+        Ok(())
     }
-
-    Ok(())
 }
 
 pub async fn transaction<'a>(

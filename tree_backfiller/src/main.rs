@@ -25,6 +25,8 @@ enum Command {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    env_logger::init();
+
     match args.command {
         Command::Run(config) => backfiller::run(config).await,
     }

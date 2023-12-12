@@ -1,6 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
-use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr};
+use sqlx::{
+    postgres::{PgConnectOptions, PgPoolOptions},
+    PgPool,
+};
 
 #[derive(Debug, Parser, Clone)]
 pub struct PoolArgs {
@@ -21,12 +24,12 @@ pub struct PoolArgs {
 ///// # Returns
 /////
 ///// * `Result<DatabaseConnection, DbErr>` - On success, returns a `DatabaseConnection`. On failure, returns a `DbErr`.
-pub async fn connect(config: PoolArgs) -> Result<DatabaseConnection, DbErr> {
-    let mut options = ConnectOptions::new(config.database_url);
+pub async fn connect(config: PoolArgs) -> Result<PgPool, sqlx::Error> {
+    let options: PgConnectOptions = config.database_url.parse()?;
 
-    options
+    PgPoolOptions::new()
         .min_connections(config.database_min_connections)
-        .max_connections(config.database_max_connections);
-
-    Database::connect(options).await
+        .max_connections(config.database_max_connections)
+        .connect_with(options)
+        .await
 }
