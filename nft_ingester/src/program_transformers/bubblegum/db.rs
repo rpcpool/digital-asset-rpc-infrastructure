@@ -1,15 +1,16 @@
 use crate::error::IngesterError;
 use digital_asset_types::dao::{
-    asset, asset_creators, asset_grouping, cl_audits, cl_items, tree_transactions,
+    asset, asset_creators, asset_grouping, backfill_items, cl_audits, cl_items, tree_transactions,
 };
 use log::{debug, error, info};
 use mpl_bubblegum::types::Collection;
 use sea_orm::{
-    query::*, sea_query::OnConflict, ActiveValue::Set, ColumnTrait, DbBackend, EntityTrait,
+    query::*, sea_query::OnConflict, ActiveModelTrait, ActiveValue::Set, ColumnTrait, DbBackend,
+    EntityTrait,
 };
 use spl_account_compression::events::ChangeLogEventV1;
 
-use sea_orm::ActiveModelTrait;
+use std::convert::From;
 
 /// Mark tree transaction as processed. If the transaction already exists, update the `processed_at` field.
 ///
@@ -105,7 +106,6 @@ where
     let mut i: i64 = 0;
     let depth = change_log_event.path.len() - 1;
     let tree_id = change_log_event.id.as_ref();
-
     for p in change_log_event.path.iter() {
         let node_idx = p.index as i64;
         info!(
@@ -164,6 +164,8 @@ where
             }
         }
     }
+
+    // TODO: drop `backfill_items` table if not needed anymore for backfilling
 
     Ok(())
     //TODO -> set maximum size of path and break into multiple statements

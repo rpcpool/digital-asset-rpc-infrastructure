@@ -65,11 +65,7 @@ pub fn account_worker<T: Messenger>(
     })
 }
 
-async fn handle_account(
-    manager: Arc<ProgramTransformer>,
-    item: RecvData,
-    stream_key: &'static str,
-) -> Option<String> {
+async fn handle_account(manager: Arc<ProgramTransformer>, item: RecvData, stream_key: &'static str) -> Option<String> {
     let id = item.id;
     let mut ret_id = None;
     let data = item.data;
