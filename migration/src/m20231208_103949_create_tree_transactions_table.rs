@@ -32,7 +32,6 @@ impl MigrationTrait for Migration {
                     .table(TreeTransactions::Table)
                     .col(TreeTransactions::Tree)
                     .col(TreeTransactions::Slot)
-                    .unique()
                     .to_owned(),
             )
             .await

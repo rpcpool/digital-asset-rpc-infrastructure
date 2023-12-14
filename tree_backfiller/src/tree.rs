@@ -1,4 +1,3 @@
-use crate::queue::Queue;
 use anyhow::Result;
 use borsh::BorshDeserialize;
 use clap::Args;
@@ -16,7 +15,12 @@ use solana_client::{
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcTransactionConfig},
     rpc_filter::{Memcmp, RpcFilterType},
 };
-use solana_sdk::{account::Account, pubkey::Pubkey, signature::Signature};
+use solana_sdk::{
+    account::Account,
+    commitment_config::{CommitmentConfig, CommitmentLevel},
+    pubkey::Pubkey,
+    signature::Signature,
+};
 use solana_transaction_status::UiTransactionEncoding;
 use spl_account_compression::id;
 use spl_account_compression::state::{
@@ -29,7 +33,7 @@ use tokio::sync::mpsc::Sender;
 
 const GET_SIGNATURES_FOR_ADDRESS_LIMIT: usize = 1000;
 
-#[derive(Debug, Clone, Default, Args)]
+#[derive(Debug, Clone, Args)]
 pub struct ConfigBackfiller {
     /// Solana RPC URL
     #[arg(long, env)]
@@ -94,30 +98,7 @@ impl TreeResponse {
             tree_header,
         })
     }
-}
 
-pub async fn all(client: &Arc<RpcClient>) -> Result<Vec<TreeResponse>, TreeErrorKind> {
-    let config = RpcProgramAccountsConfig {
-        filters: Some(vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-            0,
-            vec![1u8],
-        ))]),
-        account_config: RpcAccountInfoConfig {
-            encoding: Some(UiAccountEncoding::Base64),
-            ..RpcAccountInfoConfig::default()
-        },
-        ..RpcProgramAccountsConfig::default()
-    };
-
-    Ok(client
-        .get_program_accounts_with_config(&id(), config)
-        .await?
-        .into_iter()
-        .filter_map(|(pubkey, account)| TreeResponse::try_from_rpc(pubkey, account).ok())
-        .collect())
-}
-
-impl TreeResponse {
     pub async fn crawl(
         &self,
         client: Arc<RpcClient>,
@@ -131,8 +112,7 @@ impl TreeResponse {
             .order_by_desc(tree_transactions::Column::Slot)
             .one(&conn)
             .await?
-            .map(|t| Signature::from_str(&t.signature).ok())
-            .flatten();
+            .and_then(|t| Signature::from_str(&t.signature).ok());
 
         loop {
             let sigs = client
@@ -166,7 +146,7 @@ impl TreeResponse {
                     .exec(&conn)
                     .await?;
 
-                sender.send(sig.clone()).await?;
+                sender.send(sig).await?;
 
                 before = Some(sig);
             }
@@ -180,6 +160,27 @@ impl TreeResponse {
     }
 }
 
+pub async fn all(client: &Arc<RpcClient>) -> Result<Vec<TreeResponse>, TreeErrorKind> {
+    let config = RpcProgramAccountsConfig {
+        filters: Some(vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+            0,
+            vec![1u8],
+        ))]),
+        account_config: RpcAccountInfoConfig {
+            encoding: Some(UiAccountEncoding::Base64),
+            ..RpcAccountInfoConfig::default()
+        },
+        ..RpcProgramAccountsConfig::default()
+    };
+
+    Ok(client
+        .get_program_accounts_with_config(&id(), config)
+        .await?
+        .into_iter()
+        .filter_map(|(pubkey, account)| TreeResponse::try_from_rpc(pubkey, account).ok())
+        .collect())
+}
+
 pub async fn transaction<'a>(
     client: Arc<RpcClient>,
     sender: Sender<Vec<u8>>,
@@ -191,6 +192,9 @@ pub async fn transaction<'a>(
             RpcTransactionConfig {
                 encoding: Some(UiTransactionEncoding::Base58),
                 max_supported_transaction_version: Some(0),
+                commitment: Some(CommitmentConfig {
+                    commitment: CommitmentLevel::Finalized,
+                }),
                 ..RpcTransactionConfig::default()
             },
         )
