@@ -120,6 +120,9 @@ impl TreeResponse {
                     GetConfirmedSignaturesForAddress2Config {
                         before,
                         until,
+                        commitment: Some(CommitmentConfig {
+                            commitment: CommitmentLevel::Finalized,
+                        }),
                         ..GetConfirmedSignaturesForAddress2Config::default()
                     },
                 )
@@ -167,6 +170,9 @@ pub async fn all(client: &Arc<RpcClient>) -> Result<Vec<TreeResponse>, TreeError
         ))]),
         account_config: RpcAccountInfoConfig {
             encoding: Some(UiAccountEncoding::Base64),
+            commitment: Some(CommitmentConfig {
+                commitment: CommitmentLevel::Finalized,
+            }),
             ..RpcAccountInfoConfig::default()
         },
         ..RpcProgramAccountsConfig::default()
