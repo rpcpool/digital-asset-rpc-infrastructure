@@ -1724,6 +1724,8 @@ dependencies = [
  "flatbuffers",
  "futures",
  "futures-util",
+ "hyper",
+ "indicatif",
  "lazy_static",
  "log",
  "mpl-bubblegum",
