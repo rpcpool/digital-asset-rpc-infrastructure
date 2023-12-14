@@ -3,6 +3,7 @@ use borsh::BorshDeserialize;
 use clap::Args;
 use digital_asset_types::dao::tree_transactions;
 use flatbuffers::FlatBufferBuilder;
+use log::info;
 use plerkle_serialization::serializer::seralize_encoded_transaction_with_status;
 use sea_orm::{
     sea_query::OnConflict, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
@@ -131,6 +132,20 @@ impl TreeResponse {
             for sig in sigs.iter() {
                 let slot = i64::try_from(sig.slot)?;
                 let sig = Signature::from_str(&sig.signature)?;
+
+                let tree_transaction_processed = tree_transactions::Entity::find()
+                    .filter(
+                        tree_transactions::Column::Signature
+                            .eq(sig.to_string())
+                            .and(tree_transactions::Column::ProcessedAt.is_not_null()),
+                    )
+                    .one(&conn)
+                    .await?;
+
+                if tree_transaction_processed.is_some() {
+                    info!("skipping previously processed transaction {}", sig);
+                    continue;
+                }
 
                 let tree_transaction = tree_transactions::ActiveModel {
                     signature: Set(sig.to_string()),
