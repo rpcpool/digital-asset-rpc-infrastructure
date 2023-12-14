@@ -98,7 +98,6 @@ impl TreeResponse {
             tree_header,
         })
     }
-
     pub async fn crawl(
         &self,
         client: Arc<RpcClient>,
