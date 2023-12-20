@@ -107,15 +107,6 @@ where
         // Insert the audit item after the insert into cl_items have been completed
         if let Some(audit_item) = audit_item {
             let query = cl_audits::Entity::insert(audit_item)
-                .on_conflict(
-                    OnConflict::columns([
-                        cl_audits::Column::Tree,
-                        cl_audits::Column::Seq,
-                        cl_audits::Column::NodeIdx,
-                    ])
-                    .do_nothing()
-                    .to_owned(),
-                )
                 .build(DbBackend::Postgres);
             match txn.execute(query).await {
                 Ok(_) => {}
