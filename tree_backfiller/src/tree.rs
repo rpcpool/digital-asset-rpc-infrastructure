@@ -1,6 +1,7 @@
 use anyhow::Result;
 use borsh::BorshDeserialize;
 use clap::Args;
+use digital_asset_types::dao::cl_audits_v2;
 use flatbuffers::FlatBufferBuilder;
 use log::error;
 use plerkle_serialization::serializer::seralize_encoded_transaction_with_status;
@@ -57,6 +58,63 @@ pub struct TreeHeaderResponse {
     pub size: usize,
 }
 
+pub struct TreeGap {
+    tree: Pubkey,
+    upper: Signature,
+    lower: Signature,
+};
+
+impl TreeGap {
+    pub fn new(tree: Pubkey, upper: Signature, lower: Signature) -> Self {
+        Self {
+            tree,
+            upper,
+            lower,
+        }
+    }
+    pub fn find(conn: &DatabaseConnection) -> Result<Vec<Self>, TreeErrorKind> {
+        let gaps = cl_audits_v2::Entity::find()
+            .filter(cl_audits_v2::Column::Tree.eq(tree.to_string()))
+            .order_by(cl_audits_v2::Column::Upper, QueryOrder::Desc)
+            .all(conn)?;
+
+        Ok(gaps
+            .into_iter()
+            .map(|gap| {
+                let upper = Signature::from_str(&gap.upper).unwrap();
+                let lower = Signature::from_str(&gap.lower).unwrap();
+
+                Self::new(tree, upper, lower)
+            })
+            .collect())
+    }
+
+    pub async fn crawl(&self, client: &Rpc, sender: Sender<Signature>) -> Result<()> {
+        let mut before = self.upper;
+        let until = self.lower;
+
+        loop {
+            let sigs = client
+                .get_signatures_for_address(&self.tree, Some(before), Some(until))
+                .await?;
+
+            for sig in sigs.iter() {
+                let sig = Signature::from_str(&sig.signature)?;
+
+                sender.send(sig).await?;
+
+                before = sig;
+            }
+
+            if sigs.len() < GET_SIGNATURES_FOR_ADDRESS_LIMIT {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl TryFrom<ConcurrentMerkleTreeHeader> for TreeHeaderResponse {
     type Error = TreeErrorKind;
 
@@ -94,84 +152,62 @@ impl TreeResponse {
             tree_header,
         })
     }
-    pub async fn crawl(&self, client: &Rpc, sender: Sender<Signature>) -> Result<()> {
-        let mut before = None;
 
-        loop {
-            let sigs = client
-                .get_signatures_for_address(&self.pubkey, before)
-                .await?;
+    pub async fn all(client: &Rpc) -> Result<Vec<Self>, TreeErrorKind> {
+        Ok(client
+            .get_program_accounts(
+                &id(),
+                Some(vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+                    0,
+                    vec![1u8],
+                ))]),
+            )
+            .await?
+            .into_iter()
+            .filter_map(|(pubkey, account)| Self::try_from_rpc(pubkey, account).ok())
+            .collect())
+    }
 
-            for sig in sigs.iter() {
-                let sig = Signature::from_str(&sig.signature)?;
+    pub async fn find(client: &Rpc, pubkeys: Vec<String>) -> Result<Vec<Self>, TreeErrorKind> {
+        let pubkeys: Vec<Pubkey> = pubkeys
+            .into_iter()
+            .map(|p| Pubkey::from_str(&p))
+            .collect::<Result<Vec<Pubkey>, _>>()?;
+        let pubkey_batches = pubkeys.chunks(100);
+        let pubkey_batches_count = pubkey_batches.len();
 
-                sender.send(sig).await?;
+        let mut gma_handles = Vec::with_capacity(pubkey_batches_count);
 
-                before = Some(sig);
-            }
+        for batch in pubkey_batches {
+            gma_handles.push(async move {
+                let accounts = client.get_multiple_accounts(batch).await?;
 
-            if sigs.len() < GET_SIGNATURES_FOR_ADDRESS_LIMIT {
-                break;
-            }
+                let results: Vec<(&Pubkey, Option<Account>)> =
+                    batch.into_iter().zip(accounts).collect();
+
+                Ok::<_, TreeErrorKind>(results)
+            })
         }
 
-        Ok(())
+        let result = futures::future::try_join_all(gma_handles).await?;
+
+        let trees = result
+            .into_iter()
+            .flatten()
+            .filter_map(|(pubkey, account)| {
+                if let Some(account) = account {
+                    Some(Self::try_from_rpc(*pubkey, account))
+                } else {
+                    None
+                }
+            })
+            .collect::<Result<Vec<TreeResponse>, _>>()
+            .map_err(|_| TreeErrorKind::SerializeTreeResponse)?;
+
+        Ok(trees)
     }
 }
 
-pub async fn all(client: &Rpc) -> Result<Vec<TreeResponse>, TreeErrorKind> {
-    Ok(client
-        .get_program_accounts(
-            &id(),
-            Some(vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
-                0,
-                vec![1u8],
-            ))]),
-        )
-        .await?
-        .into_iter()
-        .filter_map(|(pubkey, account)| TreeResponse::try_from_rpc(pubkey, account).ok())
-        .collect())
-}
-
-pub async fn find(client: &Rpc, pubkeys: Vec<String>) -> Result<Vec<TreeResponse>, TreeErrorKind> {
-    let pubkeys: Vec<Pubkey> = pubkeys
-        .into_iter()
-        .map(|p| Pubkey::from_str(&p))
-        .collect::<Result<Vec<Pubkey>, _>>()?;
-    let pubkey_batches = pubkeys.chunks(100);
-    let pubkey_batches_count = pubkey_batches.len();
-
-    let mut gma_handles = Vec::with_capacity(pubkey_batches_count);
-
-    for batch in pubkey_batches {
-        gma_handles.push(async move {
-            let accounts = client.get_multiple_accounts(batch).await?;
-
-            let results: Vec<(&Pubkey, Option<Account>)> =
-                batch.into_iter().zip(accounts).collect();
-
-            Ok::<_, TreeErrorKind>(results)
-        })
-    }
-
-    let result = futures::future::try_join_all(gma_handles).await?;
-
-    let trees = result
-        .into_iter()
-        .flatten()
-        .filter_map(|(pubkey, account)| {
-            if let Some(account) = account {
-                Some(TreeResponse::try_from_rpc(*pubkey, account))
-            } else {
-                None
-            }
-        })
-        .collect::<Result<Vec<TreeResponse>, _>>()
-        .map_err(|_| TreeErrorKind::SerializeTreeResponse)?;
-
-    Ok(trees)
-}
 
 pub async fn transaction<'a>(
     client: &Rpc,
