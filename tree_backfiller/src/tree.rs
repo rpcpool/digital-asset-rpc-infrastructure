@@ -1,13 +1,10 @@
 use anyhow::Result;
 use borsh::BorshDeserialize;
 use clap::Args;
-use digital_asset_types::dao::cl_audits_v2;
 use flatbuffers::FlatBufferBuilder;
 use log::error;
 use plerkle_serialization::serializer::seralize_encoded_transaction_with_status;
-use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-};
+use sea_orm::{DatabaseConnection, DbBackend, FromQueryResult, Statement, Value};
 use solana_client::rpc_filter::{Memcmp, RpcFilterType};
 use solana_sdk::{account::Account, pubkey::Pubkey, signature::Signature};
 use spl_account_compression::id;
@@ -18,7 +15,6 @@ use std::str::FromStr;
 use thiserror::Error as ThisError;
 use tokio::sync::mpsc::Sender;
 
-use crate::backfiller::CrawlDirection;
 use crate::{
     queue::{QueuePool, QueuePoolError},
     rpc::Rpc,
@@ -49,53 +45,111 @@ pub enum TreeErrorKind {
     ParsePubkey(#[from] solana_sdk::pubkey::ParsePubkeyError),
     #[error("serialize tree response")]
     SerializeTreeResponse,
-}
-#[derive(Debug, Clone)]
-pub struct TreeHeaderResponse {
-    pub max_depth: u32,
-    pub max_buffer_size: u32,
-    pub creation_slot: u64,
-    pub size: usize,
+    #[error("sea orm")]
+    Database(#[from] sea_orm::DbErr),
+    #[error("try from pubkey")]
+    TryFromPubkey,
+    #[error("try from signature")]
+    TryFromSignature,
 }
 
-pub struct TreeGap {
+const TREE_GAP_SQL: &str = r#"
+WITH sequenced_data AS (
+    SELECT
+        tree,
+        seq,
+        LEAD(seq) OVER (ORDER BY seq ASC) AS next_seq,
+        tx AS current_tx,
+        LEAD(tx) OVER (ORDER BY seq ASC) AS next_tx
+    FROM
+        cl_audits_v2
+    WHERE
+        tree = $1
+),
+gaps AS (
+    SELECT
+        tree,
+        seq AS gap_start_seq,
+        next_seq AS gap_end_seq,
+        current_tx AS lower_bound_tx,
+        next_tx AS upper_bound_tx
+    FROM
+        sequenced_data
+    WHERE
+        next_seq IS NOT NULL AND
+        next_seq - seq > 1
+)
+SELECT
+    tree,
+    gap_start_seq,
+    gap_end_seq,
+    lower_bound_tx,
+    upper_bound_tx
+FROM
+    gaps
+ORDER BY
+    gap_start_seq;
+"#;
+
+#[derive(Debug, FromQueryResult, PartialEq, Clone)]
+pub struct TreeGapModel {
+    pub tree: Vec<u8>,
+    pub gap_start_seq: i64,
+    pub gap_end_seq: i64,
+    pub lower_bound_tx: Vec<u8>,
+    pub upper_bound_tx: Vec<u8>,
+}
+
+impl TreeGapModel {
+    pub async fn find(conn: &DatabaseConnection, tree: Pubkey) -> Result<Vec<Self>, TreeErrorKind> {
+        let statement = Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            TREE_GAP_SQL,
+            vec![Value::Bytes(Some(Box::new(tree.as_ref().to_vec())))],
+        );
+
+        TreeGapModel::find_by_statement(statement)
+            .all(conn)
+            .await
+            .map_err(Into::into)
+    }
+}
+
+impl TryFrom<TreeGapModel> for TreeGapFill {
+    type Error = TreeErrorKind;
+
+    fn try_from(model: TreeGapModel) -> Result<Self, Self::Error> {
+        let tree = Pubkey::try_from(model.tree).map_err(|_| TreeErrorKind::TryFromPubkey)?;
+        let upper = Signature::try_from(model.upper_bound_tx)
+            .map_err(|_| TreeErrorKind::TryFromSignature)?;
+        let lower = Signature::try_from(model.lower_bound_tx)
+            .map_err(|_| TreeErrorKind::TryFromSignature)?;
+
+        Ok(Self::new(tree, Some(upper), Some(lower)))
+    }
+}
+
+pub struct TreeGapFill {
     tree: Pubkey,
-    upper: Signature,
-    lower: Signature,
-};
+    before: Option<Signature>,
+    until: Option<Signature>,
+}
 
-impl TreeGap {
-    pub fn new(tree: Pubkey, upper: Signature, lower: Signature) -> Self {
+impl TreeGapFill {
+    pub fn new(tree: Pubkey, before: Option<Signature>, until: Option<Signature>) -> Self {
         Self {
             tree,
-            upper,
-            lower,
+            before,
+            until,
         }
-    }
-    pub fn find(conn: &DatabaseConnection) -> Result<Vec<Self>, TreeErrorKind> {
-        let gaps = cl_audits_v2::Entity::find()
-            .filter(cl_audits_v2::Column::Tree.eq(tree.to_string()))
-            .order_by(cl_audits_v2::Column::Upper, QueryOrder::Desc)
-            .all(conn)?;
-
-        Ok(gaps
-            .into_iter()
-            .map(|gap| {
-                let upper = Signature::from_str(&gap.upper).unwrap();
-                let lower = Signature::from_str(&gap.lower).unwrap();
-
-                Self::new(tree, upper, lower)
-            })
-            .collect())
     }
 
     pub async fn crawl(&self, client: &Rpc, sender: Sender<Signature>) -> Result<()> {
-        let mut before = self.upper;
-        let until = self.lower;
+        let mut before = self.before;
 
         loop {
             let sigs = client
-                .get_signatures_for_address(&self.tree, Some(before), Some(until))
+                .get_signatures_for_address(&self.tree, before, self.until)
                 .await?;
 
             for sig in sigs.iter() {
@@ -103,7 +157,7 @@ impl TreeGap {
 
                 sender.send(sig).await?;
 
-                before = sig;
+                before = Some(sig);
             }
 
             if sigs.len() < GET_SIGNATURES_FOR_ADDRESS_LIMIT {
@@ -115,11 +169,20 @@ impl TreeGap {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct TreeHeaderResponse {
+    pub max_depth: u32,
+    pub max_buffer_size: u32,
+    pub creation_slot: u64,
+    pub size: usize,
+}
+
 impl TryFrom<ConcurrentMerkleTreeHeader> for TreeHeaderResponse {
     type Error = TreeErrorKind;
 
     fn try_from(payload: ConcurrentMerkleTreeHeader) -> Result<Self, Self::Error> {
         let size = merkle_tree_get_size(&payload)?;
+
         Ok(Self {
             max_depth: payload.get_max_depth(),
             max_buffer_size: payload.get_max_buffer_size(),
@@ -133,13 +196,22 @@ impl TryFrom<ConcurrentMerkleTreeHeader> for TreeHeaderResponse {
 pub struct TreeResponse {
     pub pubkey: Pubkey,
     pub tree_header: TreeHeaderResponse,
+    pub seq: u64,
 }
 
 impl TreeResponse {
     pub fn try_from_rpc(pubkey: Pubkey, account: Account) -> Result<Self> {
-        let (header_bytes, _rest) = account.data.split_at(CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1);
+        let bytes = account.data.as_slice();
+
+        let (header_bytes, rest) = bytes.split_at(CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1);
         let header: ConcurrentMerkleTreeHeader =
             ConcurrentMerkleTreeHeader::try_from_slice(header_bytes)?;
+
+        let merkle_tree_size = merkle_tree_get_size(&header)?;
+        let (tree_bytes, _canopy_bytes) = rest.split_at(merkle_tree_size);
+
+        let seq_bytes = tree_bytes[0..8].try_into()?;
+        let seq = u64::from_le_bytes(seq_bytes);
 
         let (auth, _) = Pubkey::find_program_address(&[pubkey.as_ref()], &mpl_bubblegum::ID);
 
@@ -150,6 +222,7 @@ impl TreeResponse {
         Ok(Self {
             pubkey,
             tree_header,
+            seq,
         })
     }
 
@@ -207,7 +280,6 @@ impl TreeResponse {
         Ok(trees)
     }
 }
-
 
 pub async fn transaction<'a>(
     client: &Rpc,
