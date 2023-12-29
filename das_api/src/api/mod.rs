@@ -151,12 +151,15 @@ pub struct GetGrouping {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct GetSignaturesForAsset {
     pub id: Option<String>,
-    pub limit: Option<u64>,
-    pub page: Option<u64>,
+    pub limit: Option<u32>,
+    pub page: Option<u32>,
     pub before: Option<String>,
     pub after: Option<String>,
     pub tree: Option<String>,
     pub leaf_index: Option<i64>,
+    pub sort_by: Option<AssetSorting>,
+    #[serde(default)]
+    pub cursor: Option<String>,
 }
 
 #[document_rpc]

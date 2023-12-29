@@ -36,7 +36,6 @@ mod m20230908_160822_add_cl_audits_v2;
 mod m20231222_110618_add_indices_to_cl_audits_v2;
 mod m20231019_120101_add_seq_numbers_bgum_update_metadata;
 mod m20231206_120101_remove_was_decompressed;
-mod m20231208_103949_create_tree_transactions_table;
 
 pub struct Migrator;
 
@@ -75,21 +74,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20230908_160822_add_cl_audits_v2::Migration),
             Box::new(m20230918_182123_add_raw_name_symbol::Migration),
             Box::new(m20230919_072154_cl_audits::Migration),
-<<<<<<< HEAD
             Box::new(m20231019_120101_add_seq_numbers_bgum_update_metadata::Migration),
             Box::new(m20231206_120101_remove_was_decompressed::Migration),
-=======
             Box::new(m20231101_120101_add_instruction_into_cl_audit::Migration),
             Box::new(m20231101_120101_cl_audit_table_index::Migration),
-<<<<<<< HEAD
-<<<<<<< HEAD
->>>>>>> 4295c8f... feat: Add GetSigntaturesForAsset API
-=======
-            Box::new(m20231208_103949_create_tree_transactions_table::Migration),
->>>>>>> 1968c00... [WIP] Tree Transaction Backfiller (#114)
-=======
             Box::new(m20231222_110618_add_indices_to_cl_audits_v2::Migration),
->>>>>>> cff8e67... feat(backfiller): add cl_audit_v2 to ingestion for recording every seq for a tree (#120)
         ]
     }
 }
