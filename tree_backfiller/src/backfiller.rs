@@ -1,5 +1,5 @@
 use crate::db;
-use crate::tree::{TreeGapFill, TreeGapModel};
+use crate::tree::{TreeGapFill, TreeGapModel, TreeSequence};
 use crate::{
     metrics::{Metrics, MetricsArgs},
     queue,
@@ -111,6 +111,10 @@ impl Clone for Counter {
         Self(Arc::clone(&self.0))
     }
 }
+
+// TODO: check clones of arc wrapped types to make sure using Arc::clone is correct
+// TODO: use batching for channel communication
+// TODO: keep metrics gauge for number of workers
 
 /// Runs the backfilling process for trees.
 ///
@@ -274,10 +278,14 @@ pub async fn run(config: Args) -> Result<()> {
             if let Some(upper_seq) = upper_known_seq {
                 let signature = Signature::try_from(upper_seq.tx.as_ref())?;
                 info!(
-                    "tree {} has known highest seq {} filling tree from {}",
+                    "tree {} has known highest seq {} filling tree from head to {}",
                     tree.pubkey, upper_seq.seq, signature
                 );
-                gaps.push(TreeGapFill::new(tree.pubkey, None, Some(signature)));
+                gaps.push(TreeGapFill::new(
+                    tree.pubkey,
+                    None,
+                    Some(TreeSequence::new(upper_seq.seq, signature)),
+                ));
             } else if tree.seq > 0 {
                 info!(
                     "tree {} has no known highest seq but the actual seq is {} filling whole tree",
@@ -287,25 +295,44 @@ pub async fn run(config: Args) -> Result<()> {
             }
 
             if let Some(lower_seq) = lower_known_seq {
-                let signature = Signature::try_from(lower_seq.tx.as_ref())?;
+                if lower_seq.seq == 1 {
+                    info!(
+                        "tree {} has known lowest seq 1 so skipping tail backfills",
+                        tree.pubkey
+                    );
+                } else {
+                    let signature = Signature::try_from(lower_seq.tx.as_ref())?;
+                    info!(
+                        "tree {} has known lowest seq {} filling tree after signature {}",
+                        tree.pubkey, lower_seq.seq, signature
+                    );
 
-                info!(
-                    "tree {} has known lowest seq {} filling tree starting at {}",
-                    tree.pubkey, lower_seq.seq, signature
-                );
-                gaps.push(TreeGapFill::new(tree.pubkey, Some(signature), None));
+                    gaps.push(TreeGapFill::new(
+                        tree.pubkey,
+                        Some(TreeSequence::new(lower_seq.seq, signature)),
+                        None,
+                    ));
+                }
             }
 
             let gap_count = gaps.len();
 
             for gap in gaps {
+                let before = gap.before.map(|g| g.signature);
+                let until = gap.until.map(|g| g.signature);
+
+                info!(
+                    "tree {} has gap between transaction {:?} and {:?}",
+                    tree.pubkey, before, until
+                );
+
                 if let Err(e) = gap_sender.send(gap).await {
                     metrics.increment("gap.failed");
                     error!("send gap: {:?}", e);
                 }
             }
 
-            info!("crawling tree {} with {} gaps", tree.pubkey, gap_count);
+            info!("tree {} has {} gaps", tree.pubkey, gap_count);
 
             metrics.increment("tree.succeeded");
             metrics.time("tree.crawled", timing.elapsed());

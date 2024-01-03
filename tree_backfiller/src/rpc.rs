@@ -27,8 +27,13 @@ pub struct SolanaRpcArgs {
     pub solana_rpc_url: String,
 }
 
-#[derive(Clone)]
 pub struct Rpc(Arc<RpcClient>);
+
+impl Clone for Rpc {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
 
 impl Rpc {
     pub fn from_config(config: SolanaRpcArgs) -> Self {

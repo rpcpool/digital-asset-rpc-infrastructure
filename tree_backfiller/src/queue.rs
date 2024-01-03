@@ -57,6 +57,7 @@ pub enum QueuePoolError {
     SendMessengerChannel(#[from] mpsc::error::SendError<Box<dyn Messenger>>),
 }
 
+// TODO: write custom clone impl for QueePool so Arc:clone is used for the rx
 #[derive(Debug, Clone)]
 pub struct QueuePool {
     tx: mpsc::Sender<Box<dyn plerkle_messenger::Messenger>>,

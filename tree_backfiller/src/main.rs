@@ -23,6 +23,7 @@ enum Command {
     #[command(name = "run")]
     Run(backfiller::Args),
 }
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();

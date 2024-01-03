@@ -1,5 +1,5 @@
 use anyhow::Result;
-use cadence::{BufferedUdpMetricSink, Counted, Gauged, QueuingMetricSink, StatsdClient, Timed};
+use cadence::{BufferedUdpMetricSink, Counted, QueuingMetricSink, StatsdClient, Timed};
 use clap::Parser;
 use log::error;
 use std::time::Duration;
@@ -15,8 +15,14 @@ pub struct MetricsArgs {
     pub metrics_port: u16,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Metrics(Arc<StatsdClient>);
+
+impl Clone for Metrics {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
 
 impl Metrics {
     pub fn try_from_config(config: MetricsArgs) -> Result<Self> {

@@ -125,18 +125,34 @@ impl TryFrom<TreeGapModel> for TreeGapFill {
         let lower = Signature::try_from(model.lower_bound_tx)
             .map_err(|_| TreeErrorKind::TryFromSignature)?;
 
-        Ok(Self::new(tree, Some(upper), Some(lower)))
+        Ok(Self::new(
+            tree,
+            Some(TreeSequence::new(model.gap_start_seq, upper)),
+            Some(TreeSequence::new(model.gap_end_seq, lower)),
+        ))
+    }
+}
+#[derive(Debug, Clone, Copy)]
+pub struct TreeSequence {
+    pub seq: i64,
+    pub signature: Signature,
+}
+
+impl TreeSequence {
+    pub fn new(seq: i64, signature: Signature) -> Self {
+        Self { seq, signature }
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct TreeGapFill {
-    tree: Pubkey,
-    before: Option<Signature>,
-    until: Option<Signature>,
+    pub tree: Pubkey,
+    pub before: Option<TreeSequence>,
+    pub until: Option<TreeSequence>,
 }
 
 impl TreeGapFill {
-    pub fn new(tree: Pubkey, before: Option<Signature>, until: Option<Signature>) -> Self {
+    pub fn new(tree: Pubkey, before: Option<TreeSequence>, until: Option<TreeSequence>) -> Self {
         Self {
             tree,
             before,
@@ -145,11 +161,12 @@ impl TreeGapFill {
     }
 
     pub async fn crawl(&self, client: &Rpc, sender: Sender<Signature>) -> Result<()> {
-        let mut before = self.before;
+        let mut before = self.before.map(|g| g.signature);
+        let until = self.until.map(|g| g.signature);
 
         loop {
             let sigs = client
-                .get_signatures_for_address(&self.tree, before, self.until)
+                .get_signatures_for_address(&self.tree, before, until)
                 .await?;
 
             for sig in sigs.iter() {

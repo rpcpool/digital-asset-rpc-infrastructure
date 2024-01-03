@@ -1,16 +1,16 @@
 use crate::{
     dao::{
         asset::{self, Entity},
-        asset_authority, asset_creators, asset_data, asset_grouping, cl_audits, Cursor, FullAsset,
-        GroupingSize, Pagination,
+        asset_authority, asset_creators, asset_data, asset_grouping, cl_audits, cl_audits_v2,
+        Cursor, FullAsset, GroupingSize, Pagination,
     },
     dapi::common::safe_select,
     rpc::response::AssetList,
 };
-// >>>>>>> helius-nikhil/get-sigs-for-asset
 
 use indexmap::IndexMap;
 use sea_orm::{entity::*, query::*, ConnectionTrait, DbErr, Order};
+use solana_sdk::signature::Signature;
 use std::collections::HashMap;
 
 pub fn paginate<'db, T, C>(
@@ -459,22 +459,26 @@ pub async fn fetch_transactions(
     pagination: &Pagination,
     limit: u64,
 ) -> Result<Vec<(String, Option<String>)>, DbErr> {
-    let mut stmt = cl_audits::Entity::find().filter(cl_audits::Column::Tree.eq(tree));
-    stmt = stmt.filter(cl_audits::Column::LeafIdx.eq(leaf_id));
-    stmt = stmt.order_by(cl_audits::Column::CreatedAt, sea_orm::Order::Desc);
+    let mut stmt = cl_audits_v2::Entity::find().filter(cl_audits_v2::Column::Tree.eq(tree));
+    stmt = stmt.filter(cl_audits_v2::Column::LeafIdx.eq(leaf_id));
+    stmt = stmt.order_by_desc(cl_audits_v2::Column::CreatedAt);
 
     stmt = paginate(
         pagination,
         limit,
         stmt,
         sort_direction,
-        cl_audits::Column::Id,
+        cl_audits_v2::Column::Id,
     );
-    let transactions = stmt.all(conn).await?;
-    let transaction_list: Vec<(String, Option<String>)> = transactions
+    Ok(stmt
+        .all(conn)
+        .await?
         .into_iter()
-        .map(|transaction| (transaction.tx, transaction.instruction))
-        .collect();
+        .map(|cl| {
+            let sig = Signature::try_from(cl.tx)
+                .map_err(|_| DbErr::Custom("Signature parsing failed".to_string()))?;
 
-    Ok(transaction_list)
+            Ok::<_, DbErr>((sig.to_string(), Some(cl.instruction.to_string())))
+        })
+        .collect::<Result<Vec<_>, _>>()?)
 }
