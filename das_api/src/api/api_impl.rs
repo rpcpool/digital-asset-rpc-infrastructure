@@ -493,7 +493,7 @@ impl ApiContract for DasApi {
             sort_by,
             cursor,
         } = payload;
-        
+
         if !((id.is_some() && tree.is_none() && leaf_index.is_none())
             || (id.is_none() && tree.is_some() && leaf_index.is_some()))
         {
@@ -505,7 +505,7 @@ impl ApiContract for DasApi {
         let tree = validate_opt_pubkey(&tree)?;
         let sort_by = sort_by.unwrap_or_default();
         let page_options =
-            self.validate_pagination(&limit, &page, &before, &after, &cursor, &Some(&sort_by))?;
+            self.validate_pagination(limit, page, &before, &after, &cursor, Some(sort_by))?;
 
         get_signatures_for_asset(&self.db_connection, id, tree, leaf_index, sort_by, &page_options)
             .await

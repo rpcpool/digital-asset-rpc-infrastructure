@@ -146,7 +146,7 @@ pub async fn run(config: Args) -> Result<()> {
             let solana_rpc = transaction_solana_rpc.clone();
             let metrics = transaction_metrics.clone();
             let queue = queue.clone();
-            let semaphore = semaphore.clone();
+            let semaphore = Arc::<tokio::sync::Semaphore>::clone(&semaphore);
             let count = transaction_worker_transaction_count.clone();
 
             count.increment();
@@ -194,7 +194,7 @@ pub async fn run(config: Args) -> Result<()> {
 
     for tree in trees {
         let client = solana_rpc.clone();
-        let semaphore = semaphore.clone();
+        let semaphore = Arc::<tokio::sync::Semaphore>::clone(&semaphore);
         let sig_sender = sig_sender.clone();
         let metrics = tree_metrics.clone();
 

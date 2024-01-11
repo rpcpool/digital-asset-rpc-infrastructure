@@ -747,7 +747,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
             let (header_bytes, rest) = account
                 .data
                 .split_at_mut(CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1);
-            let header = match ConcurrentMerkleTreeHeader::try_from_slice(&mut header_bytes) {
+            let header = match ConcurrentMerkleTreeHeader::try_from_slice(&header_bytes) {
                 Ok(header) => header,
                 Err(e) => {
                     error!("Failed to parse header: {}", e);
