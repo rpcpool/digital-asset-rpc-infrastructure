@@ -136,7 +136,7 @@ pub struct TreeGapFill {
 }
 
 impl TreeGapFill {
-    pub fn new(tree: Pubkey, before: Option<Signature>, until: Option<Signature>) -> Self {
+    pub const fn new(tree: Pubkey, before: Option<Signature>, until: Option<Signature>) -> Self {
         Self {
             tree,
             before,

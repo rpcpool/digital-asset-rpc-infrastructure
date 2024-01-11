@@ -195,7 +195,7 @@ pub async fn run(config: Args) -> Result<()> {
             let solana_rpc = gap_solana_rpc.clone();
             let metrics = gap_metrics.clone();
             let sig_sender = sig_sender.clone();
-            let semaphore = semaphore.clone();
+            let semaphore = Arc::<tokio::sync::Semaphore>::clone(&semaphore);
             let count = gap_worker_gap_count.clone();
 
             count.increment();
