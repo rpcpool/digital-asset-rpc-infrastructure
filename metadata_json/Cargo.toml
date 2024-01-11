@@ -1,16 +1,13 @@
 [package]
-name = "das-tree-backfiller"
+name = "das-metadata-json"
 version = "0.1.0"
 edition = "2021"
-publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-
 [lib]
 
 [[bin]]
-name = "das-tree-backfiller"
+name = "das-metadata-json"
 
 [dependencies]
 
@@ -18,6 +15,7 @@ backon = "0.4.1"
 log = "0.4.17"
 env_logger = "0.10.0"
 anyhow = "1.0.75"
+derive_more = "0.99.17"
 redis = { version = "0.22.3", features = [
   "aio",
   "tokio-comp",
@@ -34,6 +32,7 @@ cadence = "0.29.0"
 cadence-macros = "0.29.0"
 hyper = "0.14.23"
 anchor-client = "0.28.0"
+das-tree-backfiller = { path = "../tree_backfiller" }
 tokio = { version = "1.26.0", features = ["full", "tracing"] }
 sqlx = { version = "0.6.2", features = [
   "macros",

@@ -17,6 +17,8 @@ pub struct QueueArgs {
     pub messenger_redis_batch_size: String,
     #[arg(long, env, default_value = "25")]
     pub messenger_queue_connections: u64,
+    #[arg(long, env, default_value = "TXNFILL")]
+    pub messenger_queue_stream: String,
 }
 
 impl From<QueueArgs> for MessengerConfig {
