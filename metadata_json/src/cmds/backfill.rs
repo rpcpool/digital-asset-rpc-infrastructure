@@ -1,17 +1,13 @@
 use {
     crate::worker::{Worker, WorkerArgs},
-    backon::{ExponentialBuilder, Retryable},
     clap::Parser,
     das_tree_backfiller::db,
-    das_tree_backfiller::metrics::{Metrics, MetricsArgs},
+    das_tree_backfiller::metrics::{setup_metrics, MetricsArgs},
     digital_asset_types::dao::asset_data,
     log::info,
     reqwest::ClientBuilder,
     sea_orm::{entity::*, prelude::*, query::*, EntityTrait, SqlxPostgresConnector},
-    tokio::{
-        sync::mpsc,
-        time::{Duration, Instant},
-    },
+    tokio::time::Duration,
 };
 
 #[derive(Parser, Clone, Debug)]
@@ -37,7 +33,7 @@ pub async fn run(args: BackfillArgs) -> Result<(), anyhow::Error> {
 
     let pool = db::connect(args.database).await?;
 
-    let metrics = Metrics::try_from_config(args.metrics)?;
+    setup_metrics(args.metrics)?;
 
     let client = ClientBuilder::new()
         .timeout(Duration::from_millis(args.timeout))
@@ -45,7 +41,7 @@ pub async fn run(args: BackfillArgs) -> Result<(), anyhow::Error> {
 
     let worker = Worker::from(args.worker);
 
-    let (tx, handle) = worker.start(pool.clone(), metrics.clone(), client.clone());
+    let (tx, handle) = worker.start(pool.clone(), client.clone());
 
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
 

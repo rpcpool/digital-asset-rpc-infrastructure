@@ -1,11 +1,9 @@
+use super::METADATA_JSON_STREAM;
 use clap::Parser;
 use figment::value::{Dict, Value};
-use plerkle_messenger::{
-    select_messenger, Messenger, MessengerConfig, MessengerError, MessengerType, RecvData,
-};
+use plerkle_messenger::{select_messenger, Messenger, MessengerConfig, MessengerType, RecvData};
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use std::sync::{Arc, Mutex};
-
-const METADATA_JSON_STREAM: &'static str = "METADATA_JSON";
 
 #[derive(Clone, Debug, Parser)]
 pub struct ReceiverArgs {
@@ -13,6 +11,14 @@ pub struct ReceiverArgs {
     pub messenger_redis_url: String,
     #[arg(long, env, default_value = "100")]
     pub messenger_redis_batch_size: String,
+}
+
+fn rand_string() -> String {
+    thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(30)
+        .map(char::from)
+        .collect()
 }
 
 impl From<ReceiverArgs> for MessengerConfig {
@@ -31,10 +37,11 @@ impl From<ReceiverArgs> for MessengerConfig {
             "pipeline_size_bytes".to_string(),
             Value::from(1u128.to_string()),
         );
+        connection_config.insert("consumer_id".to_string(), Value::from(rand_string()));
 
         Self {
             messenger_type: MessengerType::Redis,
-            connection_config: connection_config,
+            connection_config,
         }
     }
 }

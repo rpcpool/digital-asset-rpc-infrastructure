@@ -3,12 +3,11 @@ use crate::worker::{Worker, WorkerArgs};
 use clap::Parser;
 use das_tree_backfiller::{
     db,
-    metrics::{Metrics, MetricsArgs},
+    metrics::{setup_metrics, MetricsArgs},
 };
-use digital_asset_types::dao::asset_data;
 use log::info;
-use reqwest::{Client, ClientBuilder};
-use tokio::{sync::mpsc, time::Duration};
+use reqwest::ClientBuilder;
+use tokio::time::Duration;
 
 #[derive(Parser, Clone, Debug)]
 pub struct IngestArgs {
@@ -33,7 +32,7 @@ pub async fn run(args: IngestArgs) -> Result<(), anyhow::Error> {
 
     let pool = db::connect(args.database).await?;
 
-    let metrics = Metrics::try_from_config(args.metrics)?;
+    setup_metrics(args.metrics)?;
 
     let client = ClientBuilder::new()
         .timeout(Duration::from_millis(args.timeout))
@@ -41,7 +40,7 @@ pub async fn run(args: IngestArgs) -> Result<(), anyhow::Error> {
 
     let worker = Worker::from(args.worker);
 
-    let (tx, handle) = worker.start(pool.clone(), metrics.clone(), client.clone());
+    let (tx, handle) = worker.start(pool.clone(), client.clone());
 
     while let Ok(messages) = rx.recv().await {
         for message in messages.clone() {

@@ -1,21 +1,14 @@
 use {
     backon::{ExponentialBuilder, Retryable},
+    cadence_macros::{statsd_count, statsd_time},
     clap::Parser,
-    das_tree_backfiller::{
-        db,
-        metrics::{Metrics, MetricsArgs},
-    },
     digital_asset_types::dao::asset_data,
     futures::{stream::FuturesUnordered, StreamExt},
     indicatif::HumanDuration,
-    log::{debug, error, info},
-    reqwest::{Client, ClientBuilder, Url},
-    sea_orm::{entity::*, prelude::*, query::*, EntityTrait, SqlxPostgresConnector},
-    tokio::{
-        sync::mpsc,
-        task::JoinHandle,
-        time::{Duration, Instant},
-    },
+    log::{debug, error},
+    reqwest::{Client, Url},
+    sea_orm::{entity::*, prelude::*, EntityTrait, SqlxPostgresConnector},
+    tokio::{sync::mpsc, task::JoinHandle, time::Instant},
 };
 
 #[derive(Parser, Clone, Debug)]
@@ -52,7 +45,6 @@ impl Worker {
     pub fn start(
         &self,
         pool: sqlx::PgPool,
-        metrics: Metrics,
         client: Client,
     ) -> (mpsc::Sender<Vec<u8>>, JoinHandle<()>) {
         let (tx, mut rx) = mpsc::channel::<Vec<u8>>(self.queue_size);
@@ -67,10 +59,9 @@ impl Worker {
                 }
 
                 let pool = pool.clone();
-                let metrics = metrics.clone();
                 let client = client.clone();
 
-                handlers.push(spawn_task(client, pool, metrics, asset_data));
+                handlers.push(spawn_task(client, pool, asset_data));
             }
 
             while let Some(_) = handlers.next().await {}
@@ -80,12 +71,7 @@ impl Worker {
     }
 }
 
-fn spawn_task(
-    client: Client,
-    pool: sqlx::PgPool,
-    metrics: Metrics,
-    asset_data: Vec<u8>,
-) -> JoinHandle<()> {
+fn spawn_task(client: Client, pool: sqlx::PgPool, asset_data: Vec<u8>) -> JoinHandle<()> {
     tokio::spawn(async move {
         let timing = Instant::now();
 
@@ -95,9 +81,36 @@ fn spawn_task(
         if let Err(e) = perform_metadata_json_task(client, pool, asset_data).await {
             error!("Asset {} {}", asset_data_id, e);
 
-            metrics.increment("ingester.bgtask.error");
+            match e {
+                MetadataJsonTaskError::Fetch(FetchMetadataJsonError::Response {
+                    status,
+                    url,
+                    ..
+                }) => {
+                    let status = &status.to_string();
+                    let host = url.host_str().unwrap_or("unknown");
+
+                    statsd_count!("ingester.bgtask.error", 1, "type" => "DownloadMetadata", "status" => status, "host" => host);
+                }
+                MetadataJsonTaskError::Fetch(FetchMetadataJsonError::Parse { url, .. }) => {
+                    let host = url.host_str().unwrap_or("unknown");
+
+                    statsd_count!("ingester.bgtask.error", 1, "type" => "DownloadMetadata", "host" => host);
+                }
+                MetadataJsonTaskError::Fetch(FetchMetadataJsonError::GenericReqwest(e)) => {
+                    let host = e
+                        .url()
+                        .map(|url| url.host_str().unwrap_or("unknown"))
+                        .unwrap_or("unknown");
+
+                    statsd_count!("ingester.bgtask.error", 1, "type" => "DownloadMetadata", "host" => host);
+                }
+                _ => {
+                    statsd_count!("ingester.bgtask.error", 1, "type" => "DownloadMetadata");
+                }
+            }
         } else {
-            metrics.increment("ingester.bgtask.success");
+            statsd_count!("ingester.bgtask.success", 1, "type" => "DownloadMetadata");
         }
 
         debug!(
@@ -106,7 +119,7 @@ fn spawn_task(
             HumanDuration(timing.elapsed())
         );
 
-        metrics.time("ingester.bgtask.finished", timing.elapsed());
+        statsd_time!("ingester.bgtask.finished", timing.elapsed(), "type" => "DownloadMetadata");
     })
 }
 
@@ -135,17 +148,12 @@ async fn perform_metadata_json_task(
 
     let metadata = fetch_metadata_json(client, &asset_data.metadata_url).await?;
 
-    let asset_data_active_model = asset_data::ActiveModel {
-        id: Set(asset_data.id),
-        metadata: Set(metadata),
-        reindex: Set(Some(false)),
-        ..Default::default()
-    };
+    let mut asset_data: asset_data::ActiveModel = asset_data.into();
 
-    asset_data_active_model
-        .update(&conn)
-        .await
-        .map_err(Into::into)
+    asset_data.metadata = Set(metadata);
+    asset_data.reindex = Set(Some(false));
+
+    asset_data.update(&conn).await.map_err(Into::into)
 }
 
 #[derive(thiserror::Error, Debug)]
