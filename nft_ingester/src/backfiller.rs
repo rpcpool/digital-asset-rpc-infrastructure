@@ -257,7 +257,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
         let rpc_client = RpcClient::new_with_commitment(rpc_url, rpc_commitment);
 
         // Instantiate messenger.
-        let mut messenger = T::new(config.get_messneger_client_config()).await.unwrap();
+        let mut messenger = T::new(config.get_messenger_client_config()).await.unwrap();
         messenger
             .add_stream(TRANSACTION_BACKFILL_STREAM)
             .await
@@ -515,7 +515,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
             .map(|(k, s)| MissingTree { tree: k, slot: s.0 })
             .collect::<Vec<MissingTree>>();
         if !missing_trees.is_empty() {
-            info!("Number of Missing local trees: {}", missing_trees.len());
+            debug!("Number of Missing local trees: {}", missing_trees.len());
         } else {
             debug!("No missing trees");
         }

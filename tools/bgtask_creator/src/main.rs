@@ -360,7 +360,6 @@ WHERE
                             let res = TaskManager::new_task_handler(
                                 database_pool.clone(),
                                 name.clone(),
-                                name,
                                 task_data,
                                 Arc::clone(&task_map),
                                 false,

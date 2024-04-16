@@ -85,8 +85,15 @@ pub async fn main() -> Result<(), IngesterError> {
         )),
     })];
 
-    let mut background_task_manager =
-        TaskManager::new(rand_string(), database_pool.clone(), bg_task_definitions);
+    let mut background_task_manager = TaskManager::try_new_async(
+        rand_string(),
+        database_pool.clone(),
+        config.metadata_json_sender.clone(),
+        bg_task_definitions,
+    )
+    .await
+    .unwrap();
+
     // This is how we send new bg tasks
     let bg_task_listener = background_task_manager
         .start_listener(role == IngesterRole::BackgroundTaskRunner || role == IngesterRole::All);
@@ -101,7 +108,7 @@ pub async fn main() -> Result<(), IngesterError> {
         let workers = config.get_worker_config().clone();
 
         let (_ack_task, ack_sender) =
-            ack_worker::<RedisMessenger>(config.get_messneger_client_config());
+            ack_worker::<RedisMessenger>(config.get_messenger_client_config());
 
         // iterate all the workers
         for worker in workers {
@@ -121,7 +128,7 @@ pub async fn main() -> Result<(), IngesterError> {
                 if worker.worker_type == WorkerType::Account {
                     let _account = account_worker::<RedisMessenger>(
                         database_pool.clone(),
-                        config.get_messneger_client_config(),
+                        config.get_messenger_client_config(),
                         bg_task_sender.clone(),
                         ack_sender.clone(),
                         if i == 0 {
@@ -134,7 +141,7 @@ pub async fn main() -> Result<(), IngesterError> {
                 } else if worker.worker_type == WorkerType::Transaction {
                     let _txn = transaction_worker::<RedisMessenger>(
                         database_pool.clone(),
-                        config.get_messneger_client_config(),
+                        config.get_messenger_client_config(),
                         bg_task_sender.clone(),
                         ack_sender.clone(),
                         if i == 0 {

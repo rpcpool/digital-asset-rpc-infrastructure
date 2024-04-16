@@ -4,6 +4,7 @@ members = [
   "das_api",
   "digital_asset_types",
   "integration_tests",
+  "metadata_json",
   "metaplex-rpc-proxy",
   "migration",
   "nft_ingester",
@@ -47,6 +48,7 @@ chrono = "0.4.19"
 clap = "4.2.2"
 das_api = { path = "das_api" }
 das-core = { path = "core" }
+das-metadata-json = { path = "metadata_json" }
 digital_asset_types = { path = "digital_asset_types" }
 enum-iterator = "1.2.0"
 enum-iterator-derive = "1.1.0"

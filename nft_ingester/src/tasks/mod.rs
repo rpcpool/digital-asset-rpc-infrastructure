@@ -3,8 +3,9 @@ use async_trait::async_trait;
 use cadence_macros::{is_global_default_set, statsd_count, statsd_histogram};
 use chrono::{Duration, NaiveDateTime, Utc};
 use crypto::{digest::Digest, sha2::Sha256};
+use das_metadata_json::sender::{SenderArgs, SenderPool};
 use digital_asset_types::dao::{sea_orm_active_enums::TaskStatus, tasks};
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
 use sea_orm::{
     entity::*, query::*, sea_query::Expr, ActiveValue::Set, ColumnTrait, DatabaseConnection,
     DeleteResult, SqlxPostgresConnector,
@@ -98,6 +99,7 @@ pub struct TaskManager {
     instance_name: String,
     pool: Pool<Postgres>,
     producer: Option<UnboundedSender<TaskData>>,
+    metadata_json_sender: Option<SenderPool>,
     registered_task_types: Arc<HashMap<String, Box<dyn BgTask>>>,
 }
 
@@ -232,27 +234,39 @@ impl TaskManager {
         task.locked_by = Set(Some(instance_name));
     }
 
-    pub fn new(
+    pub async fn try_new_async(
         instance_name: String,
         pool: Pool<Postgres>,
+        metadata_json_sender_config: Option<SenderArgs>,
         task_defs: Vec<Box<dyn BgTask>>,
-    ) -> Self {
+    ) -> Result<Self, IngesterError> {
         let mut tasks = HashMap::new();
         for task in task_defs {
             tasks.insert(task.name().to_string(), task);
         }
-        TaskManager {
+
+        let metadata_json_sender = if let Some(config) = metadata_json_sender_config {
+            Some(SenderPool::try_from_config(config).await.map_err(|_| {
+                IngesterError::TaskManagerError(
+                    "Failed to connect to metadata json sender".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        Ok(TaskManager {
             instance_name,
             pool,
             producer: None,
+            metadata_json_sender,
             registered_task_types: Arc::new(tasks),
-        }
+        })
     }
 
     pub fn new_task_handler(
         pool: Pool<Postgres>,
         instance_name: String,
-        _name: String,
         task: TaskData,
         tasks_def: Arc<HashMap<String, Box<dyn BgTask>>>,
         process_now: bool,
@@ -314,15 +328,19 @@ impl TaskManager {
         let act: tasks::ActiveModel = task;
         act.save(txn).await.map_err(|e| e.into())
     }
+
     pub fn start_listener(&mut self, process_on_receive: bool) -> JoinHandle<()> {
         let (producer, mut receiver) = mpsc::unbounded_channel::<TaskData>();
         self.producer = Some(producer);
         let task_map = Arc::clone(&self.registered_task_types);
         let pool = self.pool.clone();
         let instance_name = self.instance_name.clone();
+        let sender_pool = self.metadata_json_sender.clone();
 
         tokio::task::spawn(async move {
             while let Some(task) = receiver.recv().await {
+                let task_name = task.name;
+
                 if let Some(task_created_time) = task.created_at {
                     let bus_time = Utc::now().timestamp_millis()
                         - task_created_time.and_utc().timestamp_millis();
@@ -330,7 +348,34 @@ impl TaskManager {
                         statsd_histogram!("ingester.bgtask.bus_time", bus_time as u64, "type" => task.name);
                     }
                 }
-                let name = instance_name.clone();
+                if task_name == "DownloadMetadata" {
+                    if let Some(sender_pool) = sender_pool.clone() {
+                        let download_metadata_task = DownloadMetadata::from_task_data(task);
+
+                        if let Ok(download_metadata_task) = download_metadata_task {
+                            if sender_pool
+                                .push(&download_metadata_task.asset_data_id)
+                                .await
+                                .is_err()
+                            {
+                                metric! {
+                                    statsd_count!("ingester.metadata_json.send.failed", 1);
+                                }
+                            } else {
+                                metric! {
+                                    statsd_count!("ingester.bgtask.new", 1, "type" => task_name);
+                                }
+                            }
+                        } else {
+                            metric! {
+                                statsd_count!("ingester.metadata_json.send.failed", 1);
+                            }
+                        }
+
+                        continue;
+                    }
+                }
+
                 if let Ok(hash) = task.hash() {
                     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone());
                     let task_entry = tasks::Entity::find_by_id(hash.clone())
@@ -349,7 +394,6 @@ impl TaskManager {
                     TaskManager::new_task_handler(
                         pool.clone(),
                         instance_name.clone(),
-                        name,
                         task,
                         Arc::clone(&task_map),
                         process_on_receive,
@@ -402,7 +446,7 @@ impl TaskManager {
                 let delete_res = TaskManager::purge_old_tasks(&conn, purge_time).await;
                 match delete_res {
                     Ok(res) => {
-                        info!("deleted {} tasks entries", res.rows_affected);
+                        debug!("deleted {} tasks entries", res.rows_affected);
                         metric! {
                             statsd_count!("ingester.bgtask.purged_tasks", i64::try_from(res.rows_affected).unwrap_or(1));
                         }
