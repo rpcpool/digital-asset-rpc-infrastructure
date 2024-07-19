@@ -43,6 +43,7 @@ chrono = "0.4.19"
 clap = "4.2.2"
 das-core = { path = "core" }
 das_api = { path = "das_api" }
+derive_more = { version = "0.99.17" }
 digital_asset_types = { path = "digital_asset_types" }
 enum-iterator = "1.2.0"
 enum-iterator-derive = "1.1.0"
@@ -85,6 +86,7 @@ rand = "0.8.5"
 regex = "1.6.0"
 reqwest = "0.11.13"
 rust-crypto = "0.2.36"
+rust_decimal = "1.35"
 schemars = "0.8.6"
 schemars_derive = "0.8.6"
 sea-orm = "0.10.6"
