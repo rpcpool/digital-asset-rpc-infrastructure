@@ -335,3 +335,6 @@ impl ConfigIngesterDownloadMetadata {
         Duration::from_millis(3_000)
     }
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConfigMonitor {}

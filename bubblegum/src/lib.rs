@@ -1,12 +1,13 @@
+mod backfill;
 mod error;
-mod gap;
 mod tree;
-mod worker;
 
 use das_core::{MetadataJsonDownloadWorkerArgs, Rpc};
 pub use error::ErrorKind;
+mod verify;
 
 use anyhow::Result;
+use backfill::worker::{ProgramTransformerWorkerArgs, SignatureWorkerArgs, TreeWorkerArgs};
 use clap::Parser;
 use digital_asset_types::dao::cl_audits_v2;
 use futures::{stream::FuturesUnordered, StreamExt};
@@ -17,18 +18,16 @@ use sea_orm::{EntityTrait, QueryFilter};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use std::str::FromStr;
-use tracing::error;
+use tracing::{error, info};
 use tree::TreeResponse;
-use worker::ProgramTransformerWorkerArgs;
-use worker::{SignatureWorkerArgs, TreeWorkerArgs};
 
 #[derive(Clone)]
-pub struct BubblegumBackfillContext {
+pub struct BubblegumContext {
     pub database_pool: sqlx::PgPool,
     pub solana_rpc: Rpc,
 }
 
-impl BubblegumBackfillContext {
+impl BubblegumContext {
     pub const fn new(database_pool: sqlx::PgPool, solana_rpc: Rpc) -> Self {
         Self {
             database_pool,
@@ -38,7 +37,7 @@ impl BubblegumBackfillContext {
 }
 
 #[derive(Debug, Parser, Clone)]
-pub struct BubblegumBackfillArgs {
+pub struct BackfillArgs {
     /// Number of tree crawler workers
     #[arg(long, env, default_value = "20")]
     pub tree_crawler_count: usize,
@@ -51,10 +50,17 @@ pub struct BubblegumBackfillArgs {
     pub tree_worker: TreeWorkerArgs,
 }
 
-pub async fn start_bubblegum_backfill(
-    context: BubblegumBackfillContext,
-    args: BubblegumBackfillArgs,
-) -> Result<()> {
+#[derive(Debug, Parser, Clone)]
+pub struct VerifyArgs {
+    /// The list of trees to verify. If not specified, all trees will be crawled.
+    #[arg(long, env, use_value_delimiter = true)]
+    pub only_trees: Option<Vec<String>>,
+
+    #[arg(long, env, default_value = "20")]
+    pub max_concurrency: usize,
+}
+
+pub async fn start_backfill(context: BubblegumContext, args: BackfillArgs) -> Result<()> {
     let trees = if let Some(ref only_trees) = args.only_trees {
         TreeResponse::find(&context.solana_rpc, only_trees.clone()).await?
     } else {
@@ -99,7 +105,7 @@ pub struct BubblegumReplayArgs {
 }
 
 pub async fn start_bubblegum_replay(
-    context: BubblegumBackfillContext,
+    context: BubblegumContext,
     args: BubblegumReplayArgs,
 ) -> Result<()> {
     let pubkey = Pubkey::from_str(&args.tree)
@@ -151,6 +157,29 @@ pub async fn start_bubblegum_replay(
         metadata_json_download_worker,
     )
     .await?;
+
+    Ok(())
+}
+
+pub async fn verify_bubblegum(context: BubblegumContext, args: VerifyArgs) -> Result<()> {
+    let trees = if let Some(ref only_trees) = args.only_trees {
+        TreeResponse::find(&context.solana_rpc, only_trees.clone()).await?
+    } else {
+        TreeResponse::all(&context.solana_rpc).await?
+    };
+
+    for tree in trees {
+        let report = verify::check(context.clone(), tree, args.max_concurrency).await?;
+
+        info!(
+            "Tree: {}, Total Leaves: {}, Incorrect Proofs: {}, Not Found Proofs: {}, Correct Proofs: {}",
+            report.tree_pubkey,
+            report.total_leaves,
+            report.incorrect_proofs,
+            report.not_found_proofs,
+            report.correct_proofs
+        );
+    }
 
     Ok(())
 }
