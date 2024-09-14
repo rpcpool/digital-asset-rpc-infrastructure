@@ -1,4 +1,4 @@
-use super::ErrorKind;
+use super::error::ErrorKind;
 use anyhow::Result;
 use borsh::BorshDeserialize;
 use das_core::Rpc;
@@ -10,7 +10,7 @@ use spl_account_compression::state::{
 };
 use std::str::FromStr;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TreeHeaderResponse {
     pub max_depth: u32,
     pub max_buffer_size: u32,
@@ -33,10 +33,11 @@ impl TryFrom<ConcurrentMerkleTreeHeader> for TreeHeaderResponse {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct TreeResponse {
     pub pubkey: Pubkey,
     pub tree_header: TreeHeaderResponse,
+    pub concurrent_merkle_tree_header: ConcurrentMerkleTreeHeader,
+    pub bytes: Vec<u8>,
     pub seq: u64,
 }
 
@@ -46,6 +47,8 @@ impl TreeResponse {
 
         let (header_bytes, rest) = bytes.split_at(CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1);
         let header: ConcurrentMerkleTreeHeader =
+            ConcurrentMerkleTreeHeader::try_from_slice(header_bytes)?;
+        let concurrent_merkle_tree_header: ConcurrentMerkleTreeHeader =
             ConcurrentMerkleTreeHeader::try_from_slice(header_bytes)?;
 
         let merkle_tree_size = merkle_tree_get_size(&header)?;
@@ -63,6 +66,8 @@ impl TreeResponse {
         Ok(Self {
             pubkey,
             tree_header,
+            concurrent_merkle_tree_header,
+            bytes: tree_bytes.to_vec(),
             seq,
         })
     }

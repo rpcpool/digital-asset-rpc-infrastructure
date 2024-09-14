@@ -6,7 +6,7 @@ use program_transformers::{ProgramTransformer, TransactionInfo};
 use tokio::sync::mpsc::{channel, Sender, UnboundedSender};
 use tokio::task::JoinHandle;
 
-use crate::BubblegumBackfillContext;
+use crate::BubblegumContext;
 
 #[derive(Parser, Debug, Clone)]
 pub struct ProgramTransformerWorkerArgs {
@@ -17,7 +17,7 @@ pub struct ProgramTransformerWorkerArgs {
 impl ProgramTransformerWorkerArgs {
     pub fn start(
         &self,
-        context: BubblegumBackfillContext,
+        context: BubblegumContext,
         forwarder: UnboundedSender<DownloadMetadataInfo>,
     ) -> Result<(JoinHandle<()>, Sender<TransactionInfo>)> {
         let (sender, mut receiver) =
@@ -35,7 +35,7 @@ impl ProgramTransformerWorkerArgs {
                 transactions.push(gap);
             }
 
-            transactions.sort_by(|a, b| b.signature.cmp(&a.signature));
+            transactions.sort_by(|(a, _), (b, _)| a.cmp(b));
 
             for transaction in transactions {
                 if let Err(e) = program_transformer.handle_transaction(&transaction).await {

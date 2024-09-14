@@ -1,24 +1,22 @@
+mod backfill;
 mod error;
-mod gap;
 mod tree;
-mod worker;
-
-pub use error::ErrorKind;
+mod verify;
 
 use anyhow::Result;
+use backfill::worker::TreeWorkerArgs;
 use clap::Parser;
 use das_core::Rpc;
 use futures::{stream::FuturesUnordered, StreamExt};
 use tree::TreeResponse;
-use worker::TreeWorkerArgs;
 
 #[derive(Clone)]
-pub struct BubblegumBackfillContext {
+pub struct BubblegumContext {
     pub database_pool: sqlx::PgPool,
     pub solana_rpc: Rpc,
 }
 
-impl BubblegumBackfillContext {
+impl BubblegumContext {
     pub const fn new(database_pool: sqlx::PgPool, solana_rpc: Rpc) -> Self {
         Self {
             database_pool,
@@ -28,7 +26,7 @@ impl BubblegumBackfillContext {
 }
 
 #[derive(Debug, Parser, Clone)]
-pub struct BubblegumBackfillArgs {
+pub struct BackfillArgs {
     /// Number of tree crawler workers
     #[arg(long, env, default_value = "20")]
     pub tree_crawler_count: usize,
@@ -41,10 +39,14 @@ pub struct BubblegumBackfillArgs {
     pub tree_worker: TreeWorkerArgs,
 }
 
-pub async fn start_bubblegum_backfill(
-    context: BubblegumBackfillContext,
-    args: BubblegumBackfillArgs,
-) -> Result<()> {
+#[derive(Debug, Parser, Clone)]
+pub struct VerifyArgs {
+    /// The list of trees to verify. If not specified, all trees will be crawled.
+    #[arg(long, env, use_value_delimiter = true)]
+    pub only_trees: Option<Vec<String>>,
+}
+
+pub async fn start_backfill(context: BubblegumContext, args: BackfillArgs) -> Result<()> {
     let trees = if let Some(ref only_trees) = args.only_trees {
         TreeResponse::find(&context.solana_rpc, only_trees.clone()).await?
     } else {
@@ -64,6 +66,20 @@ pub async fn start_bubblegum_backfill(
     }
 
     futures::future::try_join_all(crawl_handles).await?;
+
+    Ok(())
+}
+
+pub async fn verify_bubblegum(context: BubblegumContext, args: VerifyArgs) -> Result<()> {
+    let trees = if let Some(ref only_trees) = args.only_trees {
+        TreeResponse::find(&context.solana_rpc, only_trees.clone()).await?
+    } else {
+        TreeResponse::all(&context.solana_rpc).await?
+    };
+
+    for tree in trees {
+        verify::check(context.clone(), tree).await?;
+    }
 
     Ok(())
 }
