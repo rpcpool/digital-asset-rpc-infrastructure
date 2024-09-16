@@ -129,8 +129,8 @@ pub async fn run_v2(config: ConfigIngester) -> anyhow::Result<()> {
             })
         })
         .start()?;
-    let account_stream = IngestStream::build()
-        .config(config.accounts.clone())
+    let snapshot_stream = IngestStream::build()
+        .config(config.snapshots.clone())
         .connection(connection.clone())
         .handler(move |info| {
             let pt_accounts = Arc::clone(&pt_accounts);

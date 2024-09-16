@@ -46,9 +46,6 @@ enum ArgsAction {
     /// Run ingester process (process events from Redis)
     #[command(name = "ingester")]
     Ingester,
-    /// Run metadata downloader
-    #[command(name = "download-metadata")]
-    DownloadMetadata,
 }
 
 #[tokio::main]
@@ -78,12 +75,6 @@ async fn main() -> anyhow::Result<()> {
                 .await
                 .with_context(|| format!("failed to parse config from: {}", args.config))?;
             ingester::run_v2(config).await
-        }
-        ArgsAction::DownloadMetadata => {
-            let config = config_load::<ConfigDownloadMetadata>(&args.config)
-                .await
-                .with_context(|| format!("failed to parse config from: {}", args.config))?;
-            download_metadata::run(config).await
         }
     }
 }
