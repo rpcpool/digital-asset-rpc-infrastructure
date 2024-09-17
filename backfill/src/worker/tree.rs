@@ -60,55 +60,71 @@ impl TreeWorkerArgs {
             let (signature_worker, signature_sender) =
                 signature_worker_args.start(signature_context, transaction_info_sender)?;
 
-            let (gap_worker, tree_gap_sender) = gap_worker_args.start(context, signature_sender)?;
+            let tree_gap_siganture_sender = signature_sender.clone();
+            let (gap_worker, tree_gap_sender) =
+                gap_worker_args.start(context, tree_gap_siganture_sender)?;
 
-            {
-                let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(db_pool);
+            let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(db_pool);
 
-                let mut gaps = TreeGapModel::find(&conn, tree.pubkey)
-                    .await?
-                    .into_iter()
-                    .map(TryInto::try_into)
-                    .collect::<Result<Vec<_>, _>>()?;
+            let mut gaps = TreeGapModel::find(&conn, tree.pubkey)
+                .await?
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<Vec<_>, _>>()?;
 
-                let upper_known_seq = if force {
-                    None
+            let upper_known_seq = cl_audits_v2::Entity::find()
+                .filter(cl_audits_v2::Column::Tree.eq(tree.pubkey.as_ref().to_vec()))
+                .order_by_desc(cl_audits_v2::Column::Seq)
+                .one(&conn)
+                .await?
+                .filter(|_| !force);
+
+            let lower_known_seq = cl_audits_v2::Entity::find()
+                .filter(cl_audits_v2::Column::Tree.eq(tree.pubkey.as_ref().to_vec()))
+                .order_by_asc(cl_audits_v2::Column::Seq)
+                .one(&conn)
+                .await?
+                .filter(|_| !force);
+
+            if let Some(upper_seq) = upper_known_seq {
+                let signature = Signature::try_from(upper_seq.tx.as_ref())?;
+                gaps.push(TreeGapFill::new(tree.pubkey, None, Some(signature)));
+                log::info!("Added gap with upper known sequence: {:?}", upper_seq);
+            // Reprocess the entire tree if force is true or if the tree has a seq of 0 to keep the current behavior
+            } else if force || tree.seq > 0 {
+                gaps.push(TreeGapFill::new(tree.pubkey, None, None));
+                log::info!(
+                    "Added gap for entire tree reprocessing. Force: {}, Tree Seq: {}",
+                    force,
+                    tree.seq
+                );
+            }
+
+            if let Some(lower_seq) = lower_known_seq.filter(|seq| seq.seq > 1) {
+                let signature = Signature::try_from(lower_seq.tx.as_ref())?;
+                gaps.push(TreeGapFill::new(tree.pubkey, Some(signature), None));
+                log::info!("Added gap with lower known sequence: {:?}", lower_seq);
+            }
+
+            for gap in gaps {
+                if let Err(e) = tree_gap_sender.send(gap).await {
+                    error!("send gap: {:?}", e);
                 } else {
-                    cl_audits_v2::Entity::find()
-                        .filter(cl_audits_v2::Column::Tree.eq(tree.pubkey.as_ref().to_vec()))
-                        .order_by_desc(cl_audits_v2::Column::Seq)
-                        .one(&conn)
-                        .await?
-                };
-
-                let lower_known_seq = if force {
-                    None
-                } else {
-                    cl_audits_v2::Entity::find()
-                        .filter(cl_audits_v2::Column::Tree.eq(tree.pubkey.as_ref().to_vec()))
-                        .order_by_asc(cl_audits_v2::Column::Seq)
-                        .one(&conn)
-                        .await?
-                };
-
-                if let Some(upper_seq) = upper_known_seq {
-                    let signature = Signature::try_from(upper_seq.tx.as_ref())?;
-                    gaps.push(TreeGapFill::new(tree.pubkey, None, Some(signature)));
-                // Reprocess the entire tree if force is true or if the tree has a seq of 0 to keep the current behavior
-                } else if force || tree.seq > 0 {
-                    gaps.push(TreeGapFill::new(tree.pubkey, None, None));
                 }
+            }
 
-                if let Some(lower_seq) = lower_known_seq.filter(|seq| seq.seq > 1) {
-                    let signature = Signature::try_from(lower_seq.tx.as_ref())?;
+            // New block to handle reindexing based on cl_audit_v2 records ordered by seq desc
 
-                    gaps.push(TreeGapFill::new(tree.pubkey, Some(signature), None));
-                }
+            let audit_records = cl_audits_v2::Entity::find()
+                .filter(cl_audits_v2::Column::Tree.eq(tree.pubkey.as_ref().to_vec()))
+                .order_by_desc(cl_audits_v2::Column::Seq)
+                .all(&conn)
+                .await?;
 
-                for gap in gaps {
-                    if let Err(e) = tree_gap_sender.send(gap).await {
-                        error!("send gap: {:?}", e);
-                    }
+            for record in audit_records {
+                let signature = Signature::try_from(record.tx.as_ref())?;
+                if let Err(e) = signature_sender.send(signature).await {
+                    error!("send signature: {:?}", e);
                 }
             }
 

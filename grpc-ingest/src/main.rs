@@ -1,9 +1,6 @@
 use {
     crate::{
-        config::{
-            load as config_load, ConfigDownloadMetadata, ConfigGrpc, ConfigIngester,
-            ConfigPrometheus,
-        },
+        config::{load as config_load, ConfigGrpc, ConfigIngester, ConfigPrometheus},
         prom::run_server as prometheus_run_server,
         tracing::init as tracing_init,
     },
@@ -13,7 +10,6 @@ use {
 };
 
 mod config;
-mod download_metadata;
 mod grpc;
 mod ingester;
 mod postgres;
