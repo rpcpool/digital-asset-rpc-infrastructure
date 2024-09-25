@@ -701,21 +701,6 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
         Ok(Vec::from_iter(slots))
     }
 
-    #[allow(dead_code)]
-    async fn get_max_seq(&self, tree: &[u8]) -> Result<Option<i64>, DbErr> {
-        let query = backfill_items::Entity::find()
-            .select_only()
-            .column(backfill_items::Column::Seq)
-            .filter(backfill_items::Column::Tree.eq(tree))
-            .order_by_desc(backfill_items::Column::Seq)
-            .limit(1)
-            .build(DbBackend::Postgres);
-
-        let start_seq_vec = MaxSeqItem::find_by_statement(query).all(&self.db).await?;
-
-        Ok(start_seq_vec.last().map(|row| row.seq))
-    }
-
     async fn clear_force_chk_flag(&self, tree: &[u8]) -> Result<UpdateResult, DbErr> {
         backfill_items::Entity::update_many()
             .col_expr(backfill_items::Column::ForceChk, Expr::value(false))
