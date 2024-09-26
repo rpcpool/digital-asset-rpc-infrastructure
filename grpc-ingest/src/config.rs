@@ -10,6 +10,7 @@ use {
 };
 
 pub const REDIS_STREAM_ACCOUNTS: &str = "ACCOUNTS";
+pub const REDIS_STREAM_SNAPSHOTS: &str = "SNAPSHOTS";
 pub const REDIS_STREAM_TRANSACTIONS: &str = "TRANSACTIONS";
 pub const REDIS_STREAM_METADATA_JSON: &str = "METADATA_JSON";
 pub const REDIS_STREAM_DATA_KEY: &str = "data";
@@ -375,6 +376,7 @@ impl<'de> Deserialize<'de> for ConfigIngesterRedisStream {
                 ConfigIngesterRedisStreamType::Account => REDIS_STREAM_ACCOUNTS,
                 ConfigIngesterRedisStreamType::Transaction => REDIS_STREAM_TRANSACTIONS,
                 ConfigIngesterRedisStreamType::MetadataJson => REDIS_STREAM_METADATA_JSON,
+                ConfigIngesterRedisStreamType::Snapshot => REDIS_STREAM_SNAPSHOTS,
             },
             xack_batch_max_size: raw.xack_batch_max_size,
             xack_batch_max_idle: raw.xack_batch_max_idle,
@@ -389,6 +391,7 @@ pub enum ConfigIngesterRedisStreamType {
     Account,
     Transaction,
     MetadataJson,
+    Snapshot,
 }
 
 #[derive(Debug, Clone, Deserialize)]
