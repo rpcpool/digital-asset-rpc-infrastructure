@@ -65,6 +65,11 @@ pub async fn run_v2(config: ConfigIngester) -> anyhow::Result<()> {
         download_metadata_stream.clone(),
         download_metadata_stream_maxlen,
     )?;
+    let snapshots_download_metadata_notifier = download_metadata_notifier_v2(
+        connection.clone(),
+        download_metadata_stream.clone(),
+        download_metadata_stream_maxlen,
+    )?;
     let transactions_download_metadata_notifier = download_metadata_notifier_v2(
         connection.clone(),
         download_metadata_stream.clone(),
@@ -74,6 +79,10 @@ pub async fn run_v2(config: ConfigIngester) -> anyhow::Result<()> {
     let pt_accounts = Arc::new(ProgramTransformer::new(
         pool.clone(),
         accounts_download_metadata_notifier,
+    ));
+    let pt_snapshots = Arc::new(ProgramTransformer::new(
+        pool.clone(),
+        snapshots_download_metadata_notifier,
     ));
     let pt_transactions = Arc::new(ProgramTransformer::new(
         pool.clone(),
@@ -136,13 +145,15 @@ pub async fn run_v2(config: ConfigIngester) -> anyhow::Result<()> {
         .config(config.accounts.clone())
         .connection(connection.clone())
         .handler(move |info| {
-            // let pt_snapshots = Arc::clone(&pt_snapshots);
-            //Box::pin(async move {
-            //    let info = AccountInfo::try_parse_msg(info)?;
-            //    // TODO: handle snapshots
-            //})
+            let pt_snapshots = Arc::clone(&pt_snapshots);
+
             Box::pin(async move {
-                Ok(())
+                let info = AccountInfo::try_parse_msg(info)?;
+
+                pt_snapshots
+                    .handle_account_update(&info)
+                    .await
+                    .map_err(Into::into)
             })
         })
         .start()?;
