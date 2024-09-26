@@ -132,6 +132,20 @@ pub async fn run_v2(config: ConfigIngester) -> anyhow::Result<()> {
             })
         })
         .start()?;
+    let snapshot_stream = IngestStream::build()
+        .config(config.accounts.clone())
+        .connection(connection.clone())
+        .handler(move |info| {
+            // let pt_snapshots = Arc::clone(&pt_snapshots);
+            //Box::pin(async move {
+            //    let info = AccountInfo::try_parse_msg(info)?;
+            //    // TODO: handle snapshots
+            //})
+            Box::pin(async move {
+                Ok(())
+            })
+        })
+        .start()?;
 
     let mut shutdown = create_shutdown()?;
 
@@ -153,6 +167,7 @@ pub async fn run_v2(config: ConfigIngester) -> anyhow::Result<()> {
     account_stream.stop().await?;
     transactions_stream.stop().await?;
     download_metadata_stream.stop().await?;
+    snapshot_stream.stop().await?;
 
     pool.close().await;
 
