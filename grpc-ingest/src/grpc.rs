@@ -111,7 +111,7 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
     }
 }
 
-pub async fn run_v2(config: ConfigGrpc) -> anyhow::Result<()> {
+pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
     let redis_client = redis::Client::open(config.redis.url.clone())?;
     let config = Arc::new(config);
     let connection = redis_client.get_multiplexed_tokio_connection().await?;
@@ -140,7 +140,6 @@ pub async fn run_v2(config: ConfigGrpc) -> anyhow::Result<()> {
             .x_token(config.x_token.clone())?
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(10))
-            .set_x_request_snapshot(config.request_snapshot)?
             .connect()
             .await
             .context("failed to connect to gRPC")?;

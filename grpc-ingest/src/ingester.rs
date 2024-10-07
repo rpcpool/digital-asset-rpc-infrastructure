@@ -52,8 +52,8 @@ fn download_metadata_notifier_v2(
     )
 }
 
-pub async fn run_v2(config: ConfigIngester) -> anyhow::Result<()> {
-    let redis_client = redis::Client::open(config.redis.url.clone())?;
+pub async fn run(config: ConfigIngester) -> anyhow::Result<()> {
+    let redis_client = redis::Client::open(config.redis)?;
     let connection = redis_client.get_multiplexed_tokio_connection().await?;
     let pool = pg_create_pool(config.postgres).await?;
 
@@ -62,17 +62,17 @@ pub async fn run_v2(config: ConfigIngester) -> anyhow::Result<()> {
 
     let accounts_download_metadata_notifier = download_metadata_notifier_v2(
         connection.clone(),
-        download_metadata_stream.clone(),
+        download_metadata_stream.name.clone(),
         download_metadata_stream_maxlen,
     )?;
     let snapshots_download_metadata_notifier = download_metadata_notifier_v2(
         connection.clone(),
-        download_metadata_stream.clone(),
+        download_metadata_stream.name.clone(),
         download_metadata_stream_maxlen,
     )?;
     let transactions_download_metadata_notifier = download_metadata_notifier_v2(
         connection.clone(),
-        download_metadata_stream.clone(),
+        download_metadata_stream.name.clone(),
         download_metadata_stream_maxlen,
     )?;
 
@@ -94,7 +94,7 @@ pub async fn run_v2(config: ConfigIngester) -> anyhow::Result<()> {
     let download_metadata = Arc::new(DownloadMetadata::new(http_client, pool.clone()));
 
     let download_metadata_stream = IngestStream::build()
-        .config(config.download_metadata.stream_config.clone())
+        .config(config.download_metadata.stream.clone())
         .connection(connection.clone())
         .handler(move |info| {
             let download_metadata = Arc::clone(&download_metadata);

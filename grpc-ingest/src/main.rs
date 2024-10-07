@@ -64,13 +64,13 @@ async fn main() -> anyhow::Result<()> {
             let config = config_load::<ConfigGrpc>(&args.config)
                 .await
                 .with_context(|| format!("failed to parse config from: {}", args.config))?;
-            grpc::run_v2(config).await
+            grpc::run(config).await
         }
         ArgsAction::Ingester => {
             let config = config_load::<ConfigIngester>(&args.config)
                 .await
                 .with_context(|| format!("failed to parse config from: {}", args.config))?;
-            ingester::run_v2(config).await
+            ingester::run(config).await
         }
     }
 }
