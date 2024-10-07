@@ -9,7 +9,6 @@ use {
     },
 };
 
-pub const REDIS_STREAM_ACCOUNTS: &str = "ACCOUNTS";
 pub const REDIS_STREAM_DATA_KEY: &str = "data";
 
 pub async fn load<T>(path: impl AsRef<Path> + Copy) -> anyhow::Result<T>
@@ -139,7 +138,6 @@ impl ConfigGrpc {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ConfigGrpcAccounts {
-    #[serde(default = "ConfigGrpcAccounts::default_stream")]
     pub stream: String,
     #[serde(
         default = "ConfigGrpcAccounts::default_stream_maxlen",
@@ -153,10 +151,6 @@ pub struct ConfigGrpcAccounts {
 }
 
 impl ConfigGrpcAccounts {
-    pub fn default_stream() -> String {
-        REDIS_STREAM_ACCOUNTS.to_owned()
-    }
-
     pub const fn default_stream_maxlen() -> usize {
         100_000_000
     }
@@ -232,6 +226,7 @@ pub struct ConfigIngester {
     pub redis: String,
     pub postgres: ConfigIngesterPostgres,
     pub download_metadata: ConfigIngesterDownloadMetadata,
+    pub snapshots: ConfigIngestStream,
     pub accounts: ConfigIngestStream,
     pub transactions: ConfigIngestStream,
 }
@@ -318,10 +313,6 @@ impl ConfigIngesterDownloadMetadata {
 
     pub const fn default_stream_max_size() -> usize {
         10
-    }
-
-    pub fn default_stream() -> String {
-        REDIS_STREAM_METADATA_JSON.to_owned()
     }
 
     pub const fn default_stream_maxlen() -> usize {
