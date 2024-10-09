@@ -13,7 +13,7 @@ use {
         prelude::*,
         AsyncHandler,
     },
-    tracing::{info, warn},
+    tracing::{debug, warn},
     yellowstone_grpc_client::GeyserGrpcClient,
     yellowstone_grpc_proto::{
         geyser::{SubscribeRequest, SubscribeRequestPing, SubscribeUpdate},
@@ -68,7 +68,7 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                     let counts = flush.as_ref().unwrap_or_else(|counts| counts);
 
                     for (stream, count) in counts.iter() {
-                        info!(message = "Redis pipe flushed", ?stream, ?status, ?count);
+                        debug!(message = "Redis pipe flushed", ?stream, ?status, ?count);
                         redis_xadd_status_inc(stream, status, *count);
                     }
                 }
@@ -101,26 +101,29 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                                 );
                             }
                             UpdateOneof::Ping(_) => {
-                                subscribe_tx
+                                let ping = subscribe_tx
                                     .lock()
                                     .await
                                     .send(SubscribeRequest {
                                         ping: Some(SubscribeRequestPing { id: PING_ID }),
                                         ..Default::default()
                                     })
-                                    .await
-                                    .map_err(|err| {
-                                        warn!(message = "Failed to send ping", ?err);
-                                    })
-                                    .ok();
+                                    .await;
 
-                                debug!(message = "Ping", id = PING_ID);
+                                match ping {
+                                    Ok(_) => {
+                                        debug!(message = "Ping sent successfully", id = PING_ID)
+                                    }
+                                    Err(err) => {
+                                        warn!(message = "Failed to send ping", ?err, id = PING_ID)
+                                    }
+                                }
                             }
                             UpdateOneof::Pong(pong) => {
                                 if pong.id == PING_ID {
-                                    debug!(message = "Pong", id = PING_ID);
+                                    debug!(message = "Pong received", id = PING_ID);
                                 } else {
-                                    warn!(message = "Unknown pong id", id = pong.id);
+                                    warn!(message = "Unknown pong id received", id = pong.id);
                                 }
                             }
                             var => warn!(message = "Unknown update variant", ?var),
