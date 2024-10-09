@@ -13,7 +13,7 @@ use {
         prelude::*,
         AsyncHandler,
     },
-    tracing::{debug, warn},
+    tracing::{info, warn},
     yellowstone_grpc_client::GeyserGrpcClient,
     yellowstone_grpc_proto::{
         geyser::{SubscribeRequest, SubscribeRequestPing, SubscribeUpdate},
@@ -48,7 +48,7 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
     fn handle(
         &self,
         job: GrpcJob,
-        handle: topograph::executor::Handle<'a, GrpcJob, Nonblock<Tokio>>,
+        _handle: topograph::executor::Handle<'a, GrpcJob, Nonblock<Tokio>>,
     ) -> impl futures::Future<Output = Self::Output> + Send + 'a {
         let config = Arc::clone(&self.config);
         let connection = self.connection.clone();
@@ -68,10 +68,9 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                     let counts = flush.as_ref().unwrap_or_else(|counts| counts);
 
                     for (stream, count) in counts.iter() {
+                        info!(message = "Redis pipe flushed", ?stream, ?status, ?count);
                         redis_xadd_status_inc(stream, status, *count);
                     }
-
-                    debug!(message = "Redis pipe flushed", ?status, ?counts);
                 }
                 GrpcJob::ProcessSubscribeUpdate(update) => {
                     let accounts_stream = config.accounts.stream.clone();
@@ -92,8 +91,6 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                                     "*",
                                     account.encode_to_vec(),
                                 );
-
-                                debug!(message = "Account update", ?account,);
                             }
                             UpdateOneof::Transaction(transaction) => {
                                 pipe.xadd_maxlen(
@@ -102,8 +99,6 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                                     "*",
                                     transaction.encode_to_vec(),
                                 );
-
-                                debug!(message = "Transaction update", ?transaction);
                             }
                             UpdateOneof::Ping(_) => {
                                 subscribe_tx
@@ -130,10 +125,6 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                             }
                             var => warn!(message = "Unknown update variant", ?var),
                         }
-                    }
-
-                    if pipe.size() >= config.redis.pipeline_max_size {
-                        handle.push(GrpcJob::FlushRedisPipe);
                     }
                 }
             }
@@ -197,7 +188,6 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
                 exec.push(GrpcJob::FlushRedisPipe);
             }
             Some(Ok(msg)) = stream.next() => {
-                debug!(message = "Received gRPC message", ?msg);
                 exec.push(GrpcJob::ProcessSubscribeUpdate(Box::new(msg)));
             }
             _ = shutdown.next() => {
