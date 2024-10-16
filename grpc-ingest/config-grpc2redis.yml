@@ -1,4 +1,4 @@
-prometheus: 127.0.0.1:8873
+prometheus: 0.0.0.0:8873
 geyser_endpoint: http://127.0.0.1:10000
 x_token: null
 commitment: finalized
