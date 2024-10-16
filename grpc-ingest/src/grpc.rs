@@ -1,7 +1,10 @@
 use {
     crate::{
         config::{ConfigGrpc, ConfigGrpcRequestFilter, StreamConfig, SubscriptionConfig},
-        prom::{grpc_tasks_total_dec, grpc_tasks_total_inc, redis_xadd_status_inc},
+        prom::{
+            grpc_subscription_task_inc, grpc_tasks_total_dec, grpc_tasks_total_inc,
+            redis_xadd_status_inc,
+        },
         redis::TrackedPipeline,
         util::create_shutdown,
     },
@@ -15,7 +18,7 @@ use {
         prelude::*,
         AsyncHandler,
     },
-    tracing::{debug, warn},
+    tracing::{debug, error, warn},
     yellowstone_grpc_client::GeyserGrpcClient,
     yellowstone_grpc_proto::{
         geyser::{SubscribeRequest, SubscribeRequestPing, SubscribeUpdate},
@@ -37,6 +40,7 @@ pub struct GrpcJobHandler {
     connection: redis::aio::MultiplexedConnection,
     stream_config: Arc<StreamConfig>,
     pipe: Arc<Mutex<TrackedPipeline>>,
+    subscription_label: String,
 }
 
 impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock<Tokio>>>
@@ -52,6 +56,7 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
         let stream_config = Arc::clone(&self.stream_config);
         let connection = self.connection.clone();
         let pipe = Arc::clone(&self.pipe);
+        let subscription_label = self.subscription_label.clone();
 
         grpc_tasks_total_inc();
 
@@ -89,7 +94,12 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                                     account.encode_to_vec(),
                                 );
                                 debug!(target: "grpc2redis", action = "process_account_update", stream = ?stream, maxlen = ?stream_maxlen);
+                                grpc_subscription_task_inc(
+                                    &subscription_label,
+                                    &stream.to_string(),
+                                );
                             }
+
                             UpdateOneof::Transaction(transaction) => {
                                 pipe.xadd_maxlen(
                                     &stream.to_string(),
@@ -98,6 +108,10 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                                     transaction.encode_to_vec(),
                                 );
                                 debug!(target: "grpc2redis", action = "process_transaction_update", stream = ?stream, maxlen = ?stream_maxlen);
+                                grpc_subscription_task_inc(
+                                    &subscription_label,
+                                    &stream.to_string(),
+                                );
                             }
                             _ => {
                                 warn!(target: "grpc2redis", action = "unknown_update_variant", message = "Unknown update variant")
@@ -141,11 +155,16 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
 
                 match filter {
                     ConfigGrpcRequestFilter::Accounts(accounts_filter) => {
-                        accounts.insert(subscription_label, accounts_filter.clone().to_proto());
+                        accounts.insert(
+                            subscription_label.clone(),
+                            accounts_filter.clone().to_proto(),
+                        );
                     }
                     ConfigGrpcRequestFilter::Transactions(transactions_filter) => {
-                        transactions
-                            .insert(subscription_label, transactions_filter.clone().to_proto());
+                        transactions.insert(
+                            subscription_label.clone(),
+                            transactions_filter.clone().to_proto(),
+                        );
                     }
                 }
 
@@ -176,6 +195,7 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
                         stream_config: Arc::clone(&stream_config),
                         connection: connection.clone(),
                         pipe: Arc::clone(&pipe),
+                        subscription_label: subscription_label.clone(),
                     })?;
 
                 let deadline_config = Arc::clone(&config);
@@ -236,7 +256,15 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
     }
 
     // Wait for all subscription tasks to finish
-    futures::future::join_all(subscription_tasks).await;
+    let task_results = futures::future::join_all(subscription_tasks).await;
+
+    for task_result in task_results {
+        if let Err(e) = task_result {
+            error!(target: "grpc2redis", action = "subscription_task_error", message = "Subscription task failed", ?e);
+        } else if let Ok(Err(e)) = task_result {
+            error!(target: "grpc2redis", action = "subscription_task_error", message = "Subscription task failed", ?e);
+        }
+    }
 
     Ok(())
 }

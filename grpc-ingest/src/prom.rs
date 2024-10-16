@@ -74,6 +74,12 @@ lazy_static::lazy_static! {
         &[]
     ).unwrap();
 
+    static ref GRPC_SUBSCRIPTION_TASK: IntGaugeVec = IntGaugeVec::new(
+        Opts::new("grpc_subscription_task", "Number of tasks spawned for writing grpc messages to redis "),
+        &["subscription_label", "stream"]
+    ).unwrap();
+
+
     static ref BUBBLEGUM_TREE_TOTAL_LEAVES: IntGaugeVec = IntGaugeVec::new(
         Opts::new("bubblegum_tree_total_leaves", "Total number of leaves in the bubblegum tree"),
         &["tree"]
@@ -122,11 +128,6 @@ pub fn run_server(address: SocketAddr) -> anyhow::Result<()> {
         register!(INGEST_TASKS);
         register!(ACK_TASKS);
         register!(GRPC_TASKS);
-        register!(BUBBLEGUM_TREE_TOTAL_LEAVES);
-        register!(BUBBLEGUM_TREE_INCORRECT_PROOFS);
-        register!(BUBBLEGUM_TREE_NOT_FOUND_PROOFS);
-        register!(BUBBLEGUM_TREE_CORRECT_PROOFS);
-        register!(BUBBLEGUM_TREE_CORRUPT_PROOFS);
 
         VERSION_INFO_METRIC
             .with_label_values(&[
@@ -151,7 +152,7 @@ pub fn run_server(address: SocketAddr) -> anyhow::Result<()> {
         }))
     });
     let server = Server::try_bind(&address)?.serve(make_service);
-    info!("prometheus server started: {address:?}");
+    info!("prometheus server started: http://{address:?}/metrics");
     tokio::spawn(async move {
         if let Err(error) = server.await {
             error!("prometheus server failed: {error:?}");
@@ -239,6 +240,12 @@ pub fn grpc_tasks_total_inc() {
 
 pub fn grpc_tasks_total_dec() {
     GRPC_TASKS.with_label_values(&[]).dec()
+}
+
+pub fn grpc_subscription_task_inc(subscription_label: &str, stream: &str) {
+    GRPC_SUBSCRIPTION_TASK
+        .with_label_values(&[subscription_label, stream])
+        .inc()
 }
 
 #[derive(Debug, Clone, Copy)]
