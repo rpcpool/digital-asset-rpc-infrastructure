@@ -1,7 +1,7 @@
 use {
     anyhow::Context,
     serde::{de, Deserialize},
-    std::{net::SocketAddr, path::Path, time::Duration},
+    std::{collections::HashMap, net::SocketAddr, path::Path, time::Duration},
     tokio::fs,
     yellowstone_grpc_tools::config::{
         deserialize_usize_str, ConfigGrpcRequestAccounts, ConfigGrpcRequestCommitment,
@@ -121,12 +121,58 @@ pub struct ConfigPrometheus {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum StreamName {
+    Accounts,
+    Transactions,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StreamConfig {
+    pub name: StreamName,
+    #[serde(
+        default = "StreamConfig::default_stream_maxlen",
+        deserialize_with = "deserialize_usize_str"
+    )]
+    pub max_len: usize,
+}
+
+impl StreamConfig {
+    pub const fn default_stream_maxlen() -> usize {
+        10_000_000
+    }
+}
+
+impl ToString for StreamName {
+    fn to_string(&self) -> String {
+        match self {
+            StreamName::Accounts => "ACCOUNTS".to_string(),
+            StreamName::Transactions => "TRANSACTIONS".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum ConfigGrpcRequestFilter {
+    Transactions(ConfigGrpcRequestTransactions),
+    Accounts(ConfigGrpcRequestAccounts),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SubscriptionConfig {
+    pub stream: StreamConfig,
+    pub filter: ConfigGrpcRequestFilter,
+}
+
+pub type ConfigGrpcSubscriptions = HashMap<String, SubscriptionConfig>;
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct ConfigGrpc {
     pub x_token: Option<String>,
 
     pub commitment: ConfigGrpcRequestCommitment,
-    pub accounts: ConfigGrpcAccounts,
-    pub transactions: ConfigGrpcTransactions,
+    pub subscriptions: ConfigGrpcSubscriptions,
 
     pub geyser_endpoint: String,
 
@@ -142,48 +188,6 @@ pub struct ConfigGrpc {
 impl ConfigGrpc {
     pub const fn default_max_concurrency() -> usize {
         10
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ConfigGrpcAccounts {
-    pub stream: String,
-    #[serde(
-        default = "ConfigGrpcAccounts::default_stream_maxlen",
-        deserialize_with = "deserialize_usize_str"
-    )]
-    pub stream_maxlen: usize,
-    #[serde(default = "ConfigGrpcAccounts::default_stream_data_key")]
-    pub stream_data_key: String,
-
-    pub filter: ConfigGrpcRequestAccounts,
-}
-
-impl ConfigGrpcAccounts {
-    pub const fn default_stream_maxlen() -> usize {
-        100_000_000
-    }
-
-    pub fn default_stream_data_key() -> String {
-        REDIS_STREAM_DATA_KEY.to_owned()
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ConfigGrpcTransactions {
-    pub stream: String,
-    #[serde(
-        default = "ConfigGrpcTransactions::default_stream_maxlen",
-        deserialize_with = "deserialize_usize_str"
-    )]
-    pub stream_maxlen: usize,
-
-    pub filter: ConfigGrpcRequestTransactions,
-}
-
-impl ConfigGrpcTransactions {
-    pub const fn default_stream_maxlen() -> usize {
-        10_000_000
     }
 }
 
