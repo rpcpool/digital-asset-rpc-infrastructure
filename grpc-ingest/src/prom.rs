@@ -71,12 +71,7 @@ lazy_static::lazy_static! {
 
     static ref GRPC_TASKS: IntGaugeVec = IntGaugeVec::new(
         Opts::new("grpc_tasks", "Number of tasks spawned for writing grpc messages to redis "),
-        &[]
-    ).unwrap();
-
-    static ref GRPC_SUBSCRIPTION_TASK: IntGaugeVec = IntGaugeVec::new(
-        Opts::new("grpc_subscription_task", "Number of tasks spawned for writing grpc messages to redis "),
-        &["subscription_label", "stream"]
+        &["label","stream"]
     ).unwrap();
 
 
@@ -234,18 +229,12 @@ pub fn ack_tasks_total_dec(stream: &str) {
     ACK_TASKS.with_label_values(&[stream]).dec()
 }
 
-pub fn grpc_tasks_total_inc() {
-    GRPC_TASKS.with_label_values(&[]).inc()
+pub fn grpc_tasks_total_inc(label: &str, stream: &str) {
+    GRPC_TASKS.with_label_values(&[label, stream]).inc()
 }
 
-pub fn grpc_tasks_total_dec() {
-    GRPC_TASKS.with_label_values(&[]).dec()
-}
-
-pub fn grpc_subscription_task_inc(subscription_label: &str, stream: &str) {
-    GRPC_SUBSCRIPTION_TASK
-        .with_label_values(&[subscription_label, stream])
-        .inc()
+pub fn grpc_tasks_total_dec(label: &str, stream: &str) {
+    GRPC_TASKS.with_label_values(&[label, stream]).dec()
 }
 
 #[derive(Debug, Clone, Copy)]
