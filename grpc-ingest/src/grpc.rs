@@ -1,10 +1,7 @@
 use {
     crate::{
-        config::{ConfigGrpc, ConfigGrpcRequestFilter, StreamConfig, SubscriptionConfig},
-        prom::{
-            grpc_subscription_task_inc, grpc_tasks_total_dec, grpc_tasks_total_inc,
-            redis_xadd_status_inc,
-        },
+        config::{ConfigGrpc, ConfigGrpcRequestFilter, ConfigStream, ConfigSubscription},
+        prom::{grpc_tasks_total_dec, grpc_tasks_total_inc, redis_xadd_status_inc},
         redis::TrackedPipeline,
         util::create_shutdown,
     },
@@ -12,7 +9,7 @@ use {
     futures::{stream::StreamExt, SinkExt},
     redis::streams::StreamMaxlen,
     std::{collections::HashMap, sync::Arc, time::Duration},
-    tokio::{sync::Mutex, task::JoinHandle, time::sleep},
+    tokio::{sync::Mutex, time::sleep},
     topograph::{
         executor::{Executor, Nonblock, Tokio},
         prelude::*,
@@ -38,9 +35,9 @@ enum GrpcJob {
 #[derive(Clone)]
 pub struct GrpcJobHandler {
     connection: redis::aio::MultiplexedConnection,
-    stream_config: Arc<StreamConfig>,
+    stream_config: Arc<ConfigStream>,
     pipe: Arc<Mutex<TrackedPipeline>>,
-    subscription_label: String,
+    label: String,
 }
 
 impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock<Tokio>>>
@@ -56,9 +53,9 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
         let stream_config = Arc::clone(&self.stream_config);
         let connection = self.connection.clone();
         let pipe = Arc::clone(&self.pipe);
-        let subscription_label = self.subscription_label.clone();
+        let label = self.label.clone();
 
-        grpc_tasks_total_inc();
+        grpc_tasks_total_inc(&label, &stream_config.name.to_string());
 
         async move {
             match job {
@@ -94,10 +91,6 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                                     account.encode_to_vec(),
                                 );
                                 debug!(target: "grpc2redis", action = "process_account_update", stream = ?stream, maxlen = ?stream_maxlen);
-                                grpc_subscription_task_inc(
-                                    &subscription_label,
-                                    &stream.to_string(),
-                                );
                             }
 
                             UpdateOneof::Transaction(transaction) => {
@@ -108,10 +101,6 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                                     transaction.encode_to_vec(),
                                 );
                                 debug!(target: "grpc2redis", action = "process_transaction_update", stream = ?stream, maxlen = ?stream_maxlen);
-                                grpc_subscription_task_inc(
-                                    &subscription_label,
-                                    &stream.to_string(),
-                                );
                             }
                             _ => {
                                 warn!(target: "grpc2redis", action = "unknown_update_variant", message = "Unknown update variant")
@@ -121,85 +110,153 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                 }
             }
 
-            grpc_tasks_total_dec();
+            grpc_tasks_total_dec(&label, &stream_config.name.to_string());
         }
     }
 }
 
 pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
     let redis_client = redis::Client::open(config.redis.url.clone())?;
-    let config = Arc::new(config);
     let connection = redis_client.get_multiplexed_tokio_connection().await?;
 
-    let pipe = Arc::new(Mutex::new(TrackedPipeline::default()));
+    let mut shutdown = create_shutdown()?;
 
-    let subscriptions = config.subscriptions.clone();
+    let subscription_tasks = SubscriptionTask::build()
+        .config(config)
+        .pipeline(TrackedPipeline::default())
+        .connection(connection)
+        .start()
+        .await?;
 
-    let mut subscription_tasks: Vec<JoinHandle<Result<(), anyhow::Error>>> =
-        Vec::with_capacity(subscriptions.len());
+    if let Some(signal) = shutdown.next().await {
+        warn!(
+            target: "grpc2redis",
+            action = "shutdown_signal_received",
+            message = "Shutdown signal received, waiting for spawned tasks to complete",
+            signal = ?signal
+        );
+    }
 
-    for subscription in subscriptions {
-        let subscription_label = subscription.0.clone();
-        let subscription_config = Arc::new(subscription.1);
-        let config = Arc::clone(&config);
-        let connection = connection.clone();
-        let pipe = Arc::clone(&pipe);
-        let subscription_task_handle: JoinHandle<Result<(), anyhow::Error>> = tokio::spawn(
-            async move {
-                let mut shutdown = create_shutdown()?;
-                let SubscriptionConfig { stream, filter } = subscription_config.as_ref();
+    let res = futures::future::join_all(
+        subscription_tasks
+            .into_iter()
+            .map(|task| task.stop())
+            .collect::<Vec<_>>(),
+    )
+    .await;
 
-                let stream_config = Arc::new(stream.clone());
-                let mut accounts = HashMap::with_capacity(1);
-                let mut transactions = HashMap::with_capacity(1);
+    res.into_iter().collect::<Result<(), anyhow::Error>>()?;
 
-                match filter {
-                    ConfigGrpcRequestFilter::Accounts(accounts_filter) => {
-                        accounts.insert(
-                            subscription_label.clone(),
-                            accounts_filter.clone().to_proto(),
-                        );
-                    }
-                    ConfigGrpcRequestFilter::Transactions(transactions_filter) => {
-                        transactions.insert(
-                            subscription_label.clone(),
-                            transactions_filter.clone().to_proto(),
-                        );
-                    }
-                }
+    Ok(())
+}
 
-                let request = SubscribeRequest {
-                    accounts,
-                    transactions,
-                    ..Default::default()
-                };
+#[derive(Default)]
+pub struct SubscriptionTask {
+    pub config: Arc<ConfigGrpc>,
+    pub pipe: Option<Arc<Mutex<TrackedPipeline>>>,
+    pub connection: Option<redis::aio::MultiplexedConnection>,
+}
 
-                let mut dragon_mouth_client =
-                    GeyserGrpcClient::build_from_shared(config.geyser_endpoint.clone())?
-                        .x_token(config.x_token.clone())?
-                        .connect_timeout(Duration::from_secs(10))
-                        .timeout(Duration::from_secs(10))
+impl SubscriptionTask {
+    pub fn build() -> Self {
+        Self::default()
+    }
+
+    pub fn config(mut self, config: ConfigGrpc) -> Self {
+        self.config = Arc::new(config);
+        self
+    }
+
+    pub fn pipeline(mut self, pipe: TrackedPipeline) -> Self {
+        self.pipe = Some(Arc::new(Mutex::new(pipe)));
+        self
+    }
+
+    pub fn connection(mut self, connection: redis::aio::MultiplexedConnection) -> Self {
+        self.connection = Some(connection);
+        self
+    }
+
+    pub async fn start(mut self) -> anyhow::Result<Vec<SubscriptionTaskStop>> {
+        let mut subscription_tasks: Vec<SubscriptionTaskStop> = Vec::new();
+
+        let config = Arc::clone(&self.config);
+        let connection = self
+            .connection
+            .take()
+            .expect("Redis Connection is required");
+        let pipe = self.pipe.take().expect("Pipeline is required");
+
+        let subscriptions = config.subscriptions.clone();
+
+        for subscription in subscriptions {
+            let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
+            let label = subscription.0.clone();
+            let subscription_config = Arc::new(subscription.1);
+            let config = Arc::clone(&config);
+            let connection = connection.clone();
+            let pipe = Arc::clone(&pipe);
+
+            let ConfigSubscription { stream, filter } = subscription_config.as_ref().clone();
+
+            let stream_config = Arc::new(stream.clone());
+            let mut req_accounts = HashMap::with_capacity(1);
+            let mut req_transactions = HashMap::with_capacity(1);
+
+            let ConfigGrpcRequestFilter {
+                accounts,
+                transactions,
+            } = filter;
+
+            if let Some(accounts) = accounts {
+                req_accounts.insert(label.clone(), accounts.to_proto());
+            }
+
+            if let Some(transactions) = transactions {
+                req_transactions.insert(label.clone(), transactions.to_proto());
+            }
+
+            let request = SubscribeRequest {
+                accounts: req_accounts,
+                transactions: req_transactions,
+                ..Default::default()
+            };
+
+            let mut dragon_mouth_client =
+                    GeyserGrpcClient::build_from_shared(config.geyser.endpoint.clone())?
+                        .x_token(config.geyser.x_token.clone())?
+                        .connect_timeout(Duration::from_secs(config.geyser.connect_timeout as u64))
+                        .timeout(Duration::from_secs(config.geyser.timeout as u64))
                         .connect()
                         .await
-                        .context("failed to connect to gRPC")?;
+                        .context("failed to connect to gRPC").map_err(|err| {
+                            error!(target: "grpc2redis", action = "grpc_connection_failed", message = "Failed to connect to gRPC", ?err);
+                            err
+                        })?;
 
-                let (mut subscribe_tx, stream) = dragon_mouth_client
+            let (mut subscribe_tx, stream) = dragon_mouth_client
                     .subscribe_with_request(Some(request))
-                    .await?;
+                    .await.map_err(|err| {
+                        error!(target: "grpc2redis", action = "subscribe_failed", message = "Failed to subscribe", ?err);
+                        err
+                    })?;
 
-                tokio::pin!(stream);
-
-                let exec = Executor::builder(Nonblock(Tokio))
-                    .max_concurrency(Some(config.max_concurrency))
+            let exec = Executor::builder(Nonblock(Tokio))
+                    .max_concurrency(Some(stream_config.max_concurrency))
                     .build_async(GrpcJobHandler {
                         stream_config: Arc::clone(&stream_config),
                         connection: connection.clone(),
                         pipe: Arc::clone(&pipe),
-                        subscription_label: subscription_label.clone(),
+                        label: label.clone(),
+                    }).map_err(|err| {
+                        warn!(target: "grpc2redis", action = "executor_failed", message = "Failed to create executor", ?err);
+                        err
                     })?;
 
-                let deadline_config = Arc::clone(&config);
+            let deadline_config = Arc::clone(&config);
 
+            let control = tokio::spawn(async move {
+                tokio::pin!(stream);
                 loop {
                     tokio::select! {
                         _ = sleep(deadline_config.redis.pipeline_max_idle) => {
@@ -239,7 +296,8 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
                                 }
                             }
                         }
-                        _ = shutdown.next() => {
+                        _ = &mut shutdown_rx => {
+                            debug!(target: "grpc2redis", action = "shutdown_signal_received", message = "Shutdown signal received, stopping subscription task", ?label);
                             exec.push(GrpcJob::FlushRedisPipe);
                             break;
                         }
@@ -247,24 +305,32 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
                 }
 
                 exec.join_async().await;
+            });
 
-                Ok(())
-            },
-        );
-
-        subscription_tasks.push(subscription_task_handle);
-    }
-
-    // Wait for all subscription tasks to finish
-    let task_results = futures::future::join_all(subscription_tasks).await;
-
-    for task_result in task_results {
-        if let Err(e) = task_result {
-            error!(target: "grpc2redis", action = "subscription_task_error", message = "Subscription task failed", ?e);
-        } else if let Ok(Err(e)) = task_result {
-            error!(target: "grpc2redis", action = "subscription_task_error", message = "Subscription task failed", ?e);
+            subscription_tasks.push(SubscriptionTaskStop {
+                shutdown_tx,
+                control,
+            });
         }
-    }
 
-    Ok(())
+        Ok(subscription_tasks)
+    }
+}
+
+#[derive(Debug)]
+pub struct SubscriptionTaskStop {
+    pub shutdown_tx: tokio::sync::oneshot::Sender<()>,
+    pub control: tokio::task::JoinHandle<()>,
+}
+
+impl SubscriptionTaskStop {
+    pub async fn stop(self) -> anyhow::Result<()> {
+        self.shutdown_tx
+            .send(())
+            .map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
+
+        self.control.await?;
+
+        Ok(())
+    }
 }

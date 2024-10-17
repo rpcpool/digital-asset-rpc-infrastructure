@@ -120,26 +120,70 @@ pub struct ConfigPrometheus {
     pub prometheus: Option<SocketAddr>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
-pub enum StreamName {
-    Accounts,
-    Transactions,
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ConfigGeyser {
+    pub endpoint: String,
+    pub x_token: Option<String>,
+    #[serde(default = "ConfigGeyser::default_commitment")]
+    pub commitment: ConfigGrpcRequestCommitment,
+    #[serde(
+        default = "ConfigGeyser::default_connection_timeout",
+        deserialize_with = "deserialize_usize_str"
+    )]
+    pub connect_timeout: usize,
+    #[serde(
+        default = "ConfigGeyser::default_timeout",
+        deserialize_with = "deserialize_usize_str"
+    )]
+    pub timeout: usize,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct StreamConfig {
+impl ConfigGeyser {
+    pub const fn default_commitment() -> ConfigGrpcRequestCommitment {
+        ConfigGrpcRequestCommitment::Finalized
+    }
+
+    pub const fn default_connection_timeout() -> usize {
+        10
+    }
+
+    pub const fn default_timeout() -> usize {
+        10
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum StreamName {
+    #[default]
+    Accounts,
+    Transactions,
+    #[serde(rename = "ACCOUNTS_WITH_TRANSACTIONS")]
+    AccountsWithTransactions,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ConfigStream {
     pub name: StreamName,
     #[serde(
-        default = "StreamConfig::default_stream_maxlen",
+        default = "ConfigStream::default_stream_maxlen",
         deserialize_with = "deserialize_usize_str"
     )]
     pub max_len: usize,
+    #[serde(
+        default = "ConfigStream::default_max_concurrency",
+        deserialize_with = "deserialize_usize_str"
+    )]
+    pub max_concurrency: usize,
 }
 
-impl StreamConfig {
+impl ConfigStream {
     pub const fn default_stream_maxlen() -> usize {
         10_000_000
+    }
+
+    pub const fn default_max_concurrency() -> usize {
+        10
     }
 }
 
@@ -148,50 +192,35 @@ impl ToString for StreamName {
         match self {
             StreamName::Accounts => "ACCOUNTS".to_string(),
             StreamName::Transactions => "TRANSACTIONS".to_string(),
+            StreamName::AccountsWithTransactions => "ACCOUNTS_WITH_TRANSACTIONS".to_string(),
         }
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
-pub enum ConfigGrpcRequestFilter {
-    Transactions(ConfigGrpcRequestTransactions),
-    Accounts(ConfigGrpcRequestAccounts),
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ConfigGrpcRequestFilter {
+    pub accounts: Option<ConfigGrpcRequestAccounts>,
+    pub transactions: Option<ConfigGrpcRequestTransactions>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct SubscriptionConfig {
-    pub stream: StreamConfig,
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ConfigSubscription {
+    pub stream: ConfigStream,
     pub filter: ConfigGrpcRequestFilter,
 }
 
-pub type ConfigGrpcSubscriptions = HashMap<String, SubscriptionConfig>;
+pub type ConfigGrpcSubscriptions = HashMap<String, ConfigSubscription>;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct ConfigGrpc {
-    pub x_token: Option<String>,
+    pub geyser: ConfigGeyser,
 
-    pub commitment: ConfigGrpcRequestCommitment,
     pub subscriptions: ConfigGrpcSubscriptions,
 
-    pub geyser_endpoint: String,
-
     pub redis: ConfigGrpcRedis,
-
-    #[serde(
-        default = "ConfigGrpc::default_max_concurrency",
-        deserialize_with = "deserialize_usize_str"
-    )]
-    pub max_concurrency: usize,
 }
 
-impl ConfigGrpc {
-    pub const fn default_max_concurrency() -> usize {
-        10
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct ConfigGrpcRedis {
     pub url: String,
     #[serde(
