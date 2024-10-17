@@ -70,8 +70,9 @@ lazy_static::lazy_static! {
 
     static ref GRPC_TASKS: IntGaugeVec = IntGaugeVec::new(
         Opts::new("grpc_tasks", "Number of tasks spawned for writing grpc messages to redis "),
-        &[]
+        &["label","stream"]
     ).unwrap();
+
 }
 
 pub fn run_server(address: SocketAddr) -> anyhow::Result<()> {
@@ -120,7 +121,7 @@ pub fn run_server(address: SocketAddr) -> anyhow::Result<()> {
         }))
     });
     let server = Server::try_bind(&address)?.serve(make_service);
-    info!("prometheus server started: {address:?}");
+    info!("prometheus server started: http://{address:?}/metrics");
     tokio::spawn(async move {
         if let Err(error) = server.await {
             error!("prometheus server failed: {error:?}");
@@ -202,12 +203,12 @@ pub fn ack_tasks_total_dec(stream: &str) {
     ACK_TASKS.with_label_values(&[stream]).dec()
 }
 
-pub fn grpc_tasks_total_inc() {
-    GRPC_TASKS.with_label_values(&[]).inc()
+pub fn grpc_tasks_total_inc(label: &str, stream: &str) {
+    GRPC_TASKS.with_label_values(&[label, stream]).inc()
 }
 
-pub fn grpc_tasks_total_dec() {
-    GRPC_TASKS.with_label_values(&[]).dec()
+pub fn grpc_tasks_total_dec(label: &str, stream: &str) {
+    GRPC_TASKS.with_label_values(&[label, stream]).dec()
 }
 
 #[derive(Debug, Clone, Copy)]
