@@ -126,16 +126,10 @@ pub struct ConfigGeyser {
     pub x_token: Option<String>,
     #[serde(default = "ConfigGeyser::default_commitment")]
     pub commitment: ConfigGrpcRequestCommitment,
-    #[serde(
-        default = "ConfigGeyser::default_connection_timeout",
-        deserialize_with = "deserialize_usize_str"
-    )]
-    pub connect_timeout: usize,
-    #[serde(
-        default = "ConfigGeyser::default_timeout",
-        deserialize_with = "deserialize_usize_str"
-    )]
-    pub timeout: usize,
+    #[serde(default = "ConfigGeyser::default_connection_timeout")]
+    pub connect_timeout: u64,
+    #[serde(default = "ConfigGeyser::default_timeout")]
+    pub timeout: u64,
 }
 
 impl ConfigGeyser {
@@ -143,28 +137,18 @@ impl ConfigGeyser {
         ConfigGrpcRequestCommitment::Finalized
     }
 
-    pub const fn default_connection_timeout() -> usize {
+    pub const fn default_connection_timeout() -> u64 {
         10
     }
 
-    pub const fn default_timeout() -> usize {
+    pub const fn default_timeout() -> u64 {
         10
     }
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "UPPERCASE")]
-pub enum StreamName {
-    #[default]
-    Accounts,
-    Transactions,
-    #[serde(rename = "ACCOUNTS_WITH_TRANSACTIONS")]
-    AccountsWithTransactions,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ConfigStream {
-    pub name: StreamName,
+    pub name: String,
     #[serde(
         default = "ConfigStream::default_stream_maxlen",
         deserialize_with = "deserialize_usize_str"
@@ -184,16 +168,6 @@ impl ConfigStream {
 
     pub const fn default_max_concurrency() -> usize {
         10
-    }
-}
-
-impl ToString for StreamName {
-    fn to_string(&self) -> String {
-        match self {
-            StreamName::Accounts => "ACCOUNTS".to_string(),
-            StreamName::Transactions => "TRANSACTIONS".to_string(),
-            StreamName::AccountsWithTransactions => "ACCOUNTS_WITH_TRANSACTIONS".to_string(),
-        }
     }
 }
 
