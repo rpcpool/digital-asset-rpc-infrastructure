@@ -90,7 +90,7 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                                     "*",
                                     account.encode_to_vec(),
                                 );
-                                debug!(target: "grpc2redis", action = "process_account_update", stream = ?stream, maxlen = ?stream_maxlen);
+                                debug!(target: "grpc2redis", action = "process_account_update",label = ?label, stream = ?stream, maxlen = ?stream_maxlen);
                             }
 
                             UpdateOneof::Transaction(transaction) => {
@@ -100,10 +100,10 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                                     "*",
                                     transaction.encode_to_vec(),
                                 );
-                                debug!(target: "grpc2redis", action = "process_transaction_update", stream = ?stream, maxlen = ?stream_maxlen);
+                                debug!(target: "grpc2redis", action = "process_transaction_update",label = ?label, stream = ?stream, maxlen = ?stream_maxlen);
                             }
                             _ => {
-                                warn!(target: "grpc2redis", action = "unknown_update_variant", message = "Unknown update variant")
+                                warn!(target: "grpc2redis", action = "unknown_update_variant",label = ?label, message = "Unknown update variant")
                             }
                         }
                     }
@@ -121,12 +121,26 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
 
     let mut shutdown = create_shutdown()?;
 
-    let subscription_tasks = SubscriptionTask::build()
-        .config(config)
-        .pipeline(TrackedPipeline::default())
-        .connection(connection)
-        .start()
-        .await?;
+    let config = Arc::new(config);
+
+    let subscriptions = config.subscriptions.clone();
+
+    let mut subscription_tasks = Vec::new();
+    for (label, subscription_config) in subscriptions {
+        let subscription = Subscription {
+            label,
+            config: subscription_config,
+        };
+        let task = SubscriptionTask::build()
+            .config(Arc::clone(&config))
+            .pipeline(TrackedPipeline::default())
+            .connection(connection.clone())
+            .subscription(subscription)
+            .start()
+            .await?;
+
+        subscription_tasks.push(task);
+    }
 
     if let Some(signal) = shutdown.next().await {
         warn!(
@@ -150,11 +164,17 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub struct Subscription {
+    pub label: String,
+    pub config: ConfigSubscription,
+}
+
 #[derive(Default)]
 pub struct SubscriptionTask {
     pub config: Arc<ConfigGrpc>,
     pub pipe: Option<Arc<Mutex<TrackedPipeline>>>,
     pub connection: Option<redis::aio::MultiplexedConnection>,
+    pub subscription: Option<Subscription>,
 }
 
 impl SubscriptionTask {
@@ -162,8 +182,8 @@ impl SubscriptionTask {
         Self::default()
     }
 
-    pub fn config(mut self, config: ConfigGrpc) -> Self {
-        self.config = Arc::new(config);
+    pub fn config(mut self, config: Arc<ConfigGrpc>) -> Self {
+        self.config = config;
         self
     }
 
@@ -172,14 +192,17 @@ impl SubscriptionTask {
         self
     }
 
+    pub fn subscription(mut self, subscription: Subscription) -> Self {
+        self.subscription = Some(subscription);
+        self
+    }
+
     pub fn connection(mut self, connection: redis::aio::MultiplexedConnection) -> Self {
         self.connection = Some(connection);
         self
     }
 
-    pub async fn start(mut self) -> anyhow::Result<Vec<SubscriptionTaskStop>> {
-        let mut subscription_tasks: Vec<SubscriptionTaskStop> = Vec::new();
-
+    pub async fn start(mut self) -> anyhow::Result<SubscriptionTaskStop> {
         let config = Arc::clone(&self.config);
         let connection = self
             .connection
@@ -187,46 +210,43 @@ impl SubscriptionTask {
             .expect("Redis Connection is required");
         let pipe = self.pipe.take().expect("Pipeline is required");
 
-        let subscriptions = config.subscriptions.clone();
+        let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
+        let subscription = self.subscription.take().expect("Subscription is required");
+        let label = subscription.label.clone();
+        let subscription_config = Arc::new(subscription.config);
+        let connection = connection.clone();
+        let pipe = Arc::clone(&pipe);
 
-        for subscription in subscriptions {
-            let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
-            let label = subscription.0.clone();
-            let subscription_config = Arc::new(subscription.1);
-            let config = Arc::clone(&config);
-            let connection = connection.clone();
-            let pipe = Arc::clone(&pipe);
+        let ConfigSubscription { stream, filter } = subscription_config.as_ref().clone();
 
-            let ConfigSubscription { stream, filter } = subscription_config.as_ref().clone();
+        let stream_config = Arc::new(stream.clone());
+        let mut req_accounts = HashMap::with_capacity(1);
+        let mut req_transactions = HashMap::with_capacity(1);
 
-            let stream_config = Arc::new(stream.clone());
-            let mut req_accounts = HashMap::with_capacity(1);
-            let mut req_transactions = HashMap::with_capacity(1);
+        let ConfigGrpcRequestFilter {
+            accounts,
+            transactions,
+        } = filter;
 
-            let ConfigGrpcRequestFilter {
-                accounts,
-                transactions,
-            } = filter;
+        if let Some(accounts) = accounts {
+            req_accounts.insert(label.clone(), accounts.to_proto());
+        }
 
-            if let Some(accounts) = accounts {
-                req_accounts.insert(label.clone(), accounts.to_proto());
-            }
+        if let Some(transactions) = transactions {
+            req_transactions.insert(label.clone(), transactions.to_proto());
+        }
 
-            if let Some(transactions) = transactions {
-                req_transactions.insert(label.clone(), transactions.to_proto());
-            }
+        let request = SubscribeRequest {
+            accounts: req_accounts,
+            transactions: req_transactions,
+            ..Default::default()
+        };
 
-            let request = SubscribeRequest {
-                accounts: req_accounts,
-                transactions: req_transactions,
-                ..Default::default()
-            };
-
-            let mut dragon_mouth_client =
+        let mut dragon_mouth_client =
                     GeyserGrpcClient::build_from_shared(config.geyser.endpoint.clone())?
                         .x_token(config.geyser.x_token.clone())?
-                        .connect_timeout(Duration::from_secs(config.geyser.connect_timeout as u64))
-                        .timeout(Duration::from_secs(config.geyser.timeout as u64))
+                        .connect_timeout(Duration::from_secs(config.geyser.connect_timeout))
+                        .timeout(Duration::from_secs(config.geyser.timeout ))
                         .connect()
                         .await
                         .context("failed to connect to gRPC").map_err(|err| {
@@ -234,14 +254,14 @@ impl SubscriptionTask {
                             err
                         })?;
 
-            let (mut subscribe_tx, stream) = dragon_mouth_client
+        let (mut subscribe_tx, stream) = dragon_mouth_client
                     .subscribe_with_request(Some(request))
                     .await.map_err(|err| {
                         error!(target: "grpc2redis", action = "subscribe_failed", message = "Failed to subscribe", ?err);
                         err
                     })?;
 
-            let exec = Executor::builder(Nonblock(Tokio))
+        let exec = Executor::builder(Nonblock(Tokio))
                     .max_concurrency(Some(stream_config.max_concurrency))
                     .build_async(GrpcJobHandler {
                         stream_config: Arc::clone(&stream_config),
@@ -253,67 +273,64 @@ impl SubscriptionTask {
                         err
                     })?;
 
-            let deadline_config = Arc::clone(&config);
+        let deadline_config = Arc::clone(&config);
 
-            let control = tokio::spawn(async move {
-                tokio::pin!(stream);
-                loop {
-                    tokio::select! {
-                        _ = sleep(deadline_config.redis.pipeline_max_idle) => {
-                            exec.push(GrpcJob::FlushRedisPipe);
-                        }
-                        Some(Ok(msg)) = stream.next() => {
-                            match msg.update_oneof {
-                                Some(UpdateOneof::Account(_)) | Some(UpdateOneof::Transaction(_)) => {
-                                    exec.push(GrpcJob::ProcessSubscribeUpdate(Box::new(msg)));
-                                }
-                                Some(UpdateOneof::Ping(_)) => {
-                                    let ping = subscribe_tx
-                                        .send(SubscribeRequest {
-                                            ping: Some(SubscribeRequestPing { id: PING_ID }),
-                                            ..Default::default()
-                                        })
-                                        .await;
+        let control = tokio::spawn(async move {
+            tokio::pin!(stream);
+            loop {
+                tokio::select! {
+                    _ = sleep(deadline_config.redis.pipeline_max_idle) => {
+                        exec.push(GrpcJob::FlushRedisPipe);
+                    }
+                    Some(Ok(msg)) = stream.next() => {
+                        match msg.update_oneof {
+                            Some(UpdateOneof::Account(_)) | Some(UpdateOneof::Transaction(_)) => {
+                                exec.push(GrpcJob::ProcessSubscribeUpdate(Box::new(msg)));
+                            }
+                            Some(UpdateOneof::Ping(_)) => {
+                                let ping = subscribe_tx
+                                    .send(SubscribeRequest {
+                                        ping: Some(SubscribeRequestPing { id: PING_ID }),
+                                        ..Default::default()
+                                    })
+                                    .await;
 
-                                    match ping {
-                                        Ok(_) => {
-                                            debug!(target: "grpc2redis", action = "send_ping", message = "Ping sent successfully", id = PING_ID)
-                                        }
-                                        Err(err) => {
-                                            warn!(target: "grpc2redis", action = "send_ping_failed", message = "Failed to send ping", ?err, id = PING_ID)
-                                        }
+                                match ping {
+                                    Ok(_) => {
+                                        debug!(target: "grpc2redis", action = "send_ping", message = "Ping sent successfully", id = PING_ID)
                                     }
-                                }
-                                Some(UpdateOneof::Pong(pong)) => {
-                                    if pong.id == PING_ID {
-                                        debug!(target: "grpc2redis", action = "receive_pong", message = "Pong received", id = PING_ID);
-                                    } else {
-                                        warn!(target: "grpc2redis", action = "receive_unknown_pong", message = "Unknown pong id received", id = pong.id);
+                                    Err(err) => {
+                                        warn!(target: "grpc2redis", action = "send_ping_failed", message = "Failed to send ping", ?err, id = PING_ID)
                                     }
-                                }
-                                _ => {
-                                    warn!(target: "grpc2redis", action = "unknown_update_variant", message = "Unknown update variant", ?msg.update_oneof)
                                 }
                             }
-                        }
-                        _ = &mut shutdown_rx => {
-                            debug!(target: "grpc2redis", action = "shutdown_signal_received", message = "Shutdown signal received, stopping subscription task", ?label);
-                            exec.push(GrpcJob::FlushRedisPipe);
-                            break;
+                            Some(UpdateOneof::Pong(pong)) => {
+                                if pong.id == PING_ID {
+                                    debug!(target: "grpc2redis", action = "receive_pong", message = "Pong received", id = PING_ID);
+                                } else {
+                                    warn!(target: "grpc2redis", action = "receive_unknown_pong", message = "Unknown pong id received", id = pong.id);
+                                }
+                            }
+                            _ => {
+                                warn!(target: "grpc2redis", action = "unknown_update_variant", message = "Unknown update variant", ?msg.update_oneof)
+                            }
                         }
                     }
+                    _ = &mut shutdown_rx => {
+                        debug!(target: "grpc2redis", action = "shutdown_signal_received", message = "Shutdown signal received, stopping subscription task", ?label);
+                        exec.push(GrpcJob::FlushRedisPipe);
+                        break;
+                    }
                 }
+            }
 
-                exec.join_async().await;
-            });
+            exec.join_async().await;
+        });
 
-            subscription_tasks.push(SubscriptionTaskStop {
-                shutdown_tx,
-                control,
-            });
-        }
-
-        Ok(subscription_tasks)
+        Ok(SubscriptionTaskStop {
+            shutdown_tx,
+            control,
+        })
     }
 }
 
