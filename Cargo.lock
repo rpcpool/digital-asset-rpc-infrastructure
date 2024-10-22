@@ -1945,8 +1945,10 @@ dependencies = [
  "indicatif",
  "log",
  "mpl-bubblegum",
+ "mpl-token-metadata",
  "program_transformers",
  "sea-orm",
+ "serde_json",
  "solana-account-decoder",
  "solana-client",
  "solana-program",
@@ -1956,6 +1958,7 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
+ "txn_forwarder",
 ]
 
 [[package]]

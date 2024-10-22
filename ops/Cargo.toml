@@ -36,3 +36,6 @@ spl-account-compression = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+mpl-token-metadata = { workspace = true }
+serde_json = { workspace = true }
+txn_forwarder = { workspace = true }
