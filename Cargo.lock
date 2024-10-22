@@ -1958,7 +1958,6 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
- "txn_forwarder",
 ]
 
 [[package]]

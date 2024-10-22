@@ -2,14 +2,18 @@ use anyhow::Result;
 use backon::ExponentialBuilder;
 use backon::Retryable;
 use clap::Parser;
+use log::error;
+use serde::de::DeserializeOwned;
 use solana_account_decoder::UiAccountEncoding;
-use solana_client::rpc_response::RpcConfirmedTransactionStatusWithSignature;
 use solana_client::{
     client_error::ClientError,
+    client_error::Result as RpcClientResult,
     nonblocking::rpc_client::RpcClient,
     rpc_client::GetConfirmedSignaturesForAddress2Config,
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcTransactionConfig},
     rpc_filter::RpcFilterType,
+    rpc_request::RpcRequest,
+    rpc_response::RpcConfirmedTransactionStatusWithSignature,
 };
 use solana_sdk::{
     account::Account,
@@ -19,7 +23,9 @@ use solana_sdk::{
 };
 use solana_transaction_status::EncodedConfirmedTransactionWithStatusMeta;
 use solana_transaction_status::UiTransactionEncoding;
+use std::fmt;
 use std::sync::Arc;
+use tokio::time::{sleep, Duration};
 
 #[derive(Clone, Parser, Debug)]
 pub struct SolanaRpcArgs {
@@ -156,5 +162,35 @@ impl Rpc {
         .retry(&ExponentialBuilder::default())
         .await?
         .value)
+    }
+
+    pub async fn send_with_retries<T, E>(
+        &self,
+        request: RpcRequest,
+        value: serde_json::Value,
+        max_retries: u8,
+        error_key: E,
+    ) -> RpcClientResult<T>
+    where
+        T: DeserializeOwned,
+        E: fmt::Debug,
+    {
+        let mut retries = 0;
+        let mut delay = Duration::from_millis(500);
+        loop {
+            match self.0.send(request, value.clone()).await {
+                Ok(value) => return Ok(value),
+                Err(error) => {
+                    if retries < max_retries {
+                        error!("retrying {request} {error_key:?}: {error}");
+                        sleep(delay).await;
+                        delay *= 2;
+                        retries += 1;
+                    } else {
+                        return Err(error);
+                    }
+                }
+            }
+        }
     }
 }

@@ -2,12 +2,10 @@ use std::{str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
 use solana_client::{
-    nonblocking::rpc_client::RpcClient,
-    rpc_request::RpcRequest,
-    rpc_response::{Response as RpcResponse, RpcTokenAccountBalance},
+    rpc_request::RpcRequest, rpc_response::Response as RpcResponse,
+    rpc_response::RpcTokenAccountBalance,
 };
 use tokio::task::JoinHandle;
-use txn_forwarder::rpc_send_with_retries;
 
 use super::account_info;
 use log::error;
@@ -44,17 +42,17 @@ fn parse_pubkey(s: &str) -> Result<Pubkey, &'static str> {
 }
 
 // returns largest (NFT related) token account belonging to mint
-async fn get_token_largest_account(client: &RpcClient, mint: Pubkey) -> anyhow::Result<Pubkey> {
-    let response: RpcResponse<Vec<RpcTokenAccountBalance>> = rpc_send_with_retries(
-        client,
-        RpcRequest::Custom {
-            method: "getTokenLargestAccounts",
-        },
-        serde_json::json!([mint.to_string(),]),
-        3,
-        mint,
-    )
-    .await?;
+async fn get_token_largest_account(rpc: &Rpc, mint: Pubkey) -> anyhow::Result<Pubkey> {
+    let response: RpcResponse<Vec<RpcTokenAccountBalance>> = rpc
+        .send_with_retries(
+            RpcRequest::Custom {
+                method: "getTokenLargestAccounts",
+            },
+            serde_json::json!([mint.to_string(),]),
+            3,
+            mint,
+        )
+        .await?;
 
     match response.value.first() {
         Some(account) => Pubkey::from_str(&account.address)
@@ -65,7 +63,6 @@ async fn get_token_largest_account(client: &RpcClient, mint: Pubkey) -> anyhow::
 
 pub async fn run(config: Args) -> Result<()> {
     let rpc = Rpc::from_config(&config.solana);
-    let rpc_client = RpcClient::new(config.solana.solana_rpc_url);
     let pool = connect_db(&config.database).await?;
     let metadata_json_download_db_pool = pool.clone();
 
@@ -82,7 +79,7 @@ pub async fn run(config: Args) -> Result<()> {
 
     let mut accounts_to_fetch = vec![mint, metadata];
 
-    let token_account = get_token_largest_account(&rpc_client, mint).await;
+    let token_account = get_token_largest_account(&rpc, mint).await;
 
     if let Ok(token_account) = token_account {
         accounts_to_fetch.push(token_account);
@@ -110,9 +107,7 @@ pub async fn run(config: Args) -> Result<()> {
         tasks.push(task);
     }
 
-    let res = futures::future::try_join_all(tasks).await?;
-
-    res.into_iter().collect::<Result<(), anyhow::Error>>()?;
+    futures::future::try_join_all(tasks).await?;
 
     drop(metadata_json_download_sender);
 
