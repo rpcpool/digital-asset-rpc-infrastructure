@@ -1,10 +1,6 @@
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
-use anyhow::{Context, Result};
-use solana_client::{
-    rpc_request::RpcRequest, rpc_response::Response as RpcResponse,
-    rpc_response::RpcTokenAccountBalance,
-};
+use anyhow::Result;
 use tokio::task::JoinHandle;
 
 use super::account_info;
@@ -41,26 +37,6 @@ fn parse_pubkey(s: &str) -> Result<Pubkey, &'static str> {
     Pubkey::try_from(s).map_err(|_| "Failed to parse public key")
 }
 
-// returns largest (NFT related) token account belonging to mint
-async fn get_token_largest_account(rpc: &Rpc, mint: Pubkey) -> anyhow::Result<Pubkey> {
-    let response: RpcResponse<Vec<RpcTokenAccountBalance>> = rpc
-        .send_with_retries(
-            RpcRequest::Custom {
-                method: "getTokenLargestAccounts",
-            },
-            serde_json::json!([mint.to_string(),]),
-            3,
-            mint,
-        )
-        .await?;
-
-    match response.value.first() {
-        Some(account) => Pubkey::from_str(&account.address)
-            .with_context(|| format!("failed to parse account for mint {mint}")),
-        None => anyhow::bail!("no accounts for mint {mint}: burned nft?"),
-    }
-}
-
 pub async fn run(config: Args) -> Result<()> {
     let rpc = Rpc::from_config(&config.solana);
     let pool = connect_db(&config.database).await?;
@@ -79,7 +55,7 @@ pub async fn run(config: Args) -> Result<()> {
 
     let mut accounts_to_fetch = vec![mint, metadata];
 
-    let token_account = get_token_largest_account(&rpc, mint).await;
+    let token_account = rpc.get_token_largest_account(mint).await;
 
     if let Ok(token_account) = token_account {
         accounts_to_fetch.push(token_account);
