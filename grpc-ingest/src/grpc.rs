@@ -52,8 +52,10 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
     ) -> impl futures::Future<Output = Self::Output> + Send + 'a {
         let stream_config = Arc::clone(&self.stream_config);
         let connection = self.connection.clone();
-        let pipe = Arc::clone(&self.pipe);
+
         let label = self.label.clone();
+        let stream = stream_config.name.clone();
+        let pipe = Arc::clone(&self.pipe);
 
         grpc_tasks_total_inc(&label, &stream_config.name.to_string());
 
@@ -66,12 +68,10 @@ impl<'a> AsyncHandler<GrpcJob, topograph::executor::Handle<'a, GrpcJob, Nonblock
                     let flush = pipe.flush(&mut connection).await;
 
                     let status = flush.as_ref().map(|_| ()).map_err(|_| ());
-                    let counts = flush.as_ref().unwrap_or_else(|counts| counts);
+                    let count = flush.as_ref().unwrap_or_else(|count| count);
 
-                    for (stream, count) in counts.iter() {
-                        debug!(target: "grpc2redis", action = "flush_redis_pipe", stream = ?stream, status = ?status, count = ?count);
-                        redis_xadd_status_inc(stream, status, *count);
-                    }
+                    debug!(target: "grpc2redis", action = "flush_redis_pipe", stream = ?stream, status = ?status, count = ?count);
+                    redis_xadd_status_inc(&stream, &label, status, *count);
                 }
                 GrpcJob::ProcessSubscribeUpdate(update) => {
                     let stream = stream_config.name.clone();
@@ -133,7 +133,6 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
         };
         let task = SubscriptionTask::build()
             .config(Arc::clone(&config))
-            .pipeline(TrackedPipeline::default())
             .connection(connection.clone())
             .subscription(subscription)
             .start()
@@ -151,15 +150,15 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
         );
     }
 
-    let res = futures::future::join_all(
+    futures::future::join_all(
         subscription_tasks
             .into_iter()
             .map(|task| task.stop())
             .collect::<Vec<_>>(),
     )
-    .await;
-
-    res.into_iter().collect::<Result<(), anyhow::Error>>()?;
+    .await
+    .into_iter()
+    .collect::<anyhow::Result<()>>()?;
 
     Ok(())
 }
@@ -172,7 +171,6 @@ pub struct Subscription {
 #[derive(Default)]
 pub struct SubscriptionTask {
     pub config: Arc<ConfigGrpc>,
-    pub pipe: Option<Arc<Mutex<TrackedPipeline>>>,
     pub connection: Option<redis::aio::MultiplexedConnection>,
     pub subscription: Option<Subscription>,
 }
@@ -184,11 +182,6 @@ impl SubscriptionTask {
 
     pub fn config(mut self, config: Arc<ConfigGrpc>) -> Self {
         self.config = config;
-        self
-    }
-
-    pub fn pipeline(mut self, pipe: TrackedPipeline) -> Self {
-        self.pipe = Some(Arc::new(Mutex::new(pipe)));
         self
     }
 
@@ -208,14 +201,12 @@ impl SubscriptionTask {
             .connection
             .take()
             .expect("Redis Connection is required");
-        let pipe = self.pipe.take().expect("Pipeline is required");
 
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
         let subscription = self.subscription.take().expect("Subscription is required");
         let label = subscription.label.clone();
         let subscription_config = Arc::new(subscription.config);
         let connection = connection.clone();
-        let pipe = Arc::clone(&pipe);
 
         let ConfigSubscription { stream, filter } = subscription_config.as_ref().clone();
 
@@ -242,6 +233,8 @@ impl SubscriptionTask {
             ..Default::default()
         };
 
+        let pipe = Arc::new(Mutex::new(TrackedPipeline::default()));
+
         let mut dragon_mouth_client =
                     GeyserGrpcClient::build_from_shared(config.geyser.endpoint.clone())?
                         .x_token(config.geyser.x_token.clone())?
@@ -266,8 +259,8 @@ impl SubscriptionTask {
                     .build_async(GrpcJobHandler {
                         stream_config: Arc::clone(&stream_config),
                         connection: connection.clone(),
-                        pipe: Arc::clone(&pipe),
                         label: label.clone(),
+                        pipe,
                     }).map_err(|err| {
                         warn!(target: "grpc2redis", action = "executor_failed", message = "Failed to create executor", ?err);
                         err
