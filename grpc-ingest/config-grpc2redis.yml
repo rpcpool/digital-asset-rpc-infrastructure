@@ -15,15 +15,6 @@ subscriptions:
       accounts:
         owner:
           - metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s
-  token-extension:
-    stream:
-      name: ACCOUNTS
-      max_len: 100_000_000
-      max_concurrency: 2
-    filter:
-      accounts:
-        owner:
-          - TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
   token:
     stream:
       name: ACCOUNTS
@@ -44,13 +35,10 @@ subscriptions:
           - CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d
   bubblegum:
     stream:
-      name: ACCOUNTS_WITH_TRANSACTIONS
+      name: TRANSACTIONS
       max_len: 100_000_000
       max_concurrency: 2
     filter:
-      accounts:
-        owner:
-          - BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY
       transactions:
         account_include:
           - BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY

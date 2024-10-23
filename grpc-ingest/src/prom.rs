@@ -28,7 +28,7 @@ lazy_static::lazy_static! {
 
     static ref REDIS_XADD_STATUS_COUNT: IntCounterVec = IntCounterVec::new(
         Opts::new("redis_xadd_status_count", "Status of messages sent to Redis stream"),
-        &["stream", "status"]
+        &["stream", "label", "status"]
     ).unwrap();
 
         static ref REDIS_XREAD_COUNT: IntCounterVec = IntCounterVec::new(
@@ -180,9 +180,13 @@ pub fn redis_xlen_set(stream: &str, len: usize) {
         .set(len as i64);
 }
 
-pub fn redis_xadd_status_inc(stream: &str, status: Result<(), ()>, delta: usize) {
+pub fn redis_xadd_status_inc(stream: &str, label: &str, status: Result<(), ()>, delta: usize) {
     REDIS_XADD_STATUS_COUNT
-        .with_label_values(&[stream, if status.is_ok() { "success" } else { "failed" }])
+        .with_label_values(&[
+            stream,
+            label,
+            if status.is_ok() { "success" } else { "failed" },
+        ])
         .inc_by(delta as u64);
 }
 
