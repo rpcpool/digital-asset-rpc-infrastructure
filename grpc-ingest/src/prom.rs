@@ -27,7 +27,7 @@ lazy_static::lazy_static! {
 
     static ref REDIS_XADD_STATUS_COUNT: IntCounterVec = IntCounterVec::new(
         Opts::new("redis_xadd_status_count", "Status of messages sent to Redis stream"),
-        &["stream", "status"]
+        &["stream", "label", "status"]
     ).unwrap();
 
         static ref REDIS_XREAD_COUNT: IntCounterVec = IntCounterVec::new(
@@ -70,8 +70,9 @@ lazy_static::lazy_static! {
 
     static ref GRPC_TASKS: IntGaugeVec = IntGaugeVec::new(
         Opts::new("grpc_tasks", "Number of tasks spawned for writing grpc messages to redis "),
-        &[]
+        &["label","stream"]
     ).unwrap();
+
 }
 
 pub fn run_server(address: SocketAddr) -> anyhow::Result<()> {
@@ -120,7 +121,7 @@ pub fn run_server(address: SocketAddr) -> anyhow::Result<()> {
         }))
     });
     let server = Server::try_bind(&address)?.serve(make_service);
-    info!("prometheus server started: {address:?}");
+    info!("prometheus server started: http://{address:?}/metrics");
     tokio::spawn(async move {
         if let Err(error) = server.await {
             error!("prometheus server failed: {error:?}");
@@ -153,9 +154,13 @@ pub fn redis_xlen_set(stream: &str, len: usize) {
         .set(len as i64);
 }
 
-pub fn redis_xadd_status_inc(stream: &str, status: Result<(), ()>, delta: usize) {
+pub fn redis_xadd_status_inc(stream: &str, label: &str, status: Result<(), ()>, delta: usize) {
     REDIS_XADD_STATUS_COUNT
-        .with_label_values(&[stream, if status.is_ok() { "success" } else { "failed" }])
+        .with_label_values(&[
+            stream,
+            label,
+            if status.is_ok() { "success" } else { "failed" },
+        ])
         .inc_by(delta as u64);
 }
 
@@ -202,12 +207,12 @@ pub fn ack_tasks_total_dec(stream: &str) {
     ACK_TASKS.with_label_values(&[stream]).dec()
 }
 
-pub fn grpc_tasks_total_inc() {
-    GRPC_TASKS.with_label_values(&[]).inc()
+pub fn grpc_tasks_total_inc(label: &str, stream: &str) {
+    GRPC_TASKS.with_label_values(&[label, stream]).inc()
 }
 
-pub fn grpc_tasks_total_dec() {
-    GRPC_TASKS.with_label_values(&[]).dec()
+pub fn grpc_tasks_total_dec(label: &str, stream: &str) {
+    GRPC_TASKS.with_label_values(&[label, stream]).dec()
 }
 
 #[derive(Debug, Clone, Copy)]
