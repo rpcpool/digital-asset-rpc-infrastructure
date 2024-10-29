@@ -5,6 +5,7 @@ mod tree;
 use das_core::{MetadataJsonDownloadWorkerArgs, Rpc};
 pub use error::ErrorKind;
 mod verify;
+pub use verify::ProofReport;
 
 use anyhow::Result;
 use backfill::worker::{ProgramTransformerWorkerArgs, SignatureWorkerArgs, TreeWorkerArgs};
@@ -18,7 +19,7 @@ use sea_orm::{EntityTrait, QueryFilter};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use std::str::FromStr;
-use tracing::{error, info};
+use tracing::error;
 use tree::TreeResponse;
 
 #[derive(Clone)]
@@ -48,16 +49,6 @@ pub struct BackfillArgs {
 
     #[clap(flatten)]
     pub tree_worker: TreeWorkerArgs,
-}
-
-#[derive(Debug, Parser, Clone)]
-pub struct VerifyArgs {
-    /// The list of trees to verify. If not specified, all trees will be crawled.
-    #[arg(long, env, use_value_delimiter = true)]
-    pub only_trees: Option<Vec<String>>,
-
-    #[arg(long, env, default_value = "20")]
-    pub max_concurrency: usize,
 }
 
 pub async fn start_backfill(context: BubblegumContext, args: BackfillArgs) -> Result<()> {
@@ -161,25 +152,33 @@ pub async fn start_bubblegum_replay(
     Ok(())
 }
 
-pub async fn verify_bubblegum(context: BubblegumContext, args: VerifyArgs) -> Result<()> {
+#[derive(Debug, Parser, Clone)]
+pub struct VerifyArgs {
+    /// The list of trees to verify. If not specified, all trees will be crawled.
+    #[arg(long, env, use_value_delimiter = true)]
+    pub only_trees: Option<Vec<String>>,
+
+    #[arg(long, env, default_value = "20")]
+    pub max_concurrency: usize,
+}
+
+pub async fn verify_bubblegum(
+    context: BubblegumContext,
+    args: VerifyArgs,
+) -> Result<Vec<verify::ProofReport>> {
     let trees = if let Some(ref only_trees) = args.only_trees {
         TreeResponse::find(&context.solana_rpc, only_trees.clone()).await?
     } else {
         TreeResponse::all(&context.solana_rpc).await?
     };
 
+    let mut reports = Vec::new();
+
     for tree in trees {
         let report = verify::check(context.clone(), tree, args.max_concurrency).await?;
 
-        info!(
-            "Tree: {}, Total Leaves: {}, Incorrect Proofs: {}, Not Found Proofs: {}, Correct Proofs: {}",
-            report.tree_pubkey,
-            report.total_leaves,
-            report.incorrect_proofs,
-            report.not_found_proofs,
-            report.correct_proofs
-        );
+        reports.push(report);
     }
 
-    Ok(())
+    Ok(reports)
 }

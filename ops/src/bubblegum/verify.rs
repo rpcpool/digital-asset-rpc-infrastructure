@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use das_bubblegum::{verify_bubblegum, BubblegumContext, VerifyArgs};
 use das_core::{connect_db, PoolArgs, Rpc, SolanaRpcArgs};
+use tracing::info;
 
 #[derive(Debug, Parser, Clone)]
 pub struct Args {
@@ -24,7 +25,18 @@ pub async fn run(config: Args) -> Result<()> {
     let solana_rpc = Rpc::from_config(&config.solana);
     let context = BubblegumContext::new(database_pool, solana_rpc);
 
-    verify_bubblegum(context, config.verify_bubblegum).await?;
+    let reports = verify_bubblegum(context, config.verify_bubblegum).await?;
+
+    for report in reports {
+        info!(
+            "Tree: {}, Total Leaves: {}, Incorrect Proofs: {}, Not Found Proofs: {}, Correct Proofs: {}",
+            report.tree_pubkey,
+            report.total_leaves,
+            report.incorrect_proofs,
+            report.not_found_proofs,
+            report.correct_proofs
+        );
+    }
 
     Ok(())
 }

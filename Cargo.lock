@@ -1892,6 +1892,7 @@ dependencies = [
  "cargo-lock",
  "chrono",
  "clap 4.4.8",
+ "das-bubblegum",
  "das-core",
  "digital_asset_types",
  "futures",
@@ -1960,6 +1961,7 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

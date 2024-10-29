@@ -2,21 +2,15 @@ use super::BubblegumContext;
 use crate::error::ErrorKind;
 use crate::tree::TreeResponse;
 use anyhow::{anyhow, Result};
-use borsh::BorshDeserialize;
 use digital_asset_types::dapi::get_proof_for_asset;
 use digital_asset_types::rpc::AssetProof;
 use futures::stream::{FuturesUnordered, StreamExt};
 use mpl_bubblegum::accounts::TreeConfig;
 use sea_orm::SqlxPostgresConnector;
 use sha3::{Digest, Keccak256};
-use solana_sdk::{pubkey::Pubkey, syscalls::MAX_CPI_INSTRUCTION_ACCOUNTS};
-use spl_account_compression::{
-    canopy::fill_in_proof_from_canopy,
-    concurrent_tree_wrapper::ProveLeafArgs,
-    state::{
-        merkle_tree_get_size, ConcurrentMerkleTreeHeader, CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1,
-    },
-};
+use solana_sdk::pubkey::Pubkey;
+use spl_account_compression::concurrent_tree_wrapper::ProveLeafArgs;
+use std::fmt;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::error;
@@ -65,7 +59,7 @@ fn hash(left: &[u8], right: &[u8]) -> [u8; 32] {
     hash
 }
 
-fn verify_merkle_proof(root: [u8; 32], proof: &ProveLeafArgs) -> bool {
+fn verify_merkle_proof(proof: &ProveLeafArgs) -> bool {
     let mut node = proof.leaf;
     for (i, sibling) in proof.proof_vec.iter().enumerate() {
         if (proof.index >> i) & 1 == 0 {
@@ -74,22 +68,43 @@ fn verify_merkle_proof(root: [u8; 32], proof: &ProveLeafArgs) -> bool {
             node = hash(sibling, &node);
         }
     }
-    node == root
+    node == proof.current_root
 }
 
-#[derive(Debug)]
+fn leaf_proof_result(proof: AssetProof) -> Result<ProofResult, anyhow::Error> {
+    match ProveLeafArgs::try_from_asset_proof(proof) {
+        Ok(proof) if verify_merkle_proof(&proof) => Ok(ProofResult::Correct),
+        Ok(_) => Ok(ProofResult::Incorrect),
+        Err(_) => Ok(ProofResult::Corrupt),
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct ProofReport {
     pub tree_pubkey: Pubkey,
     pub total_leaves: usize,
     pub incorrect_proofs: usize,
     pub not_found_proofs: usize,
     pub correct_proofs: usize,
+    pub corrupt_proofs: usize,
 }
 
 enum ProofResult {
     Correct,
     Incorrect,
     NotFound,
+    Corrupt,
+}
+
+impl fmt::Display for ProofResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProofResult::Correct => write!(f, "Correct proof found"),
+            ProofResult::Incorrect => write!(f, "Incorrect proof found"),
+            ProofResult::NotFound => write!(f, "Proof not found"),
+            ProofResult::Corrupt => write!(f, "Corrupt proof found"),
+        }
+    }
 }
 
 pub async fn check(
@@ -111,9 +126,7 @@ pub async fn check(
     let report = Arc::new(Mutex::new(ProofReport {
         tree_pubkey: tree.pubkey,
         total_leaves: tree_config.num_minted as usize,
-        incorrect_proofs: 0,
-        not_found_proofs: 0,
-        correct_proofs: 0,
+        ..ProofReport::default()
     }));
 
     let mut tasks = FuturesUnordered::new();
@@ -124,7 +137,7 @@ pub async fn check(
         }
 
         let db = SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone());
-        let tree_pubkey = tree.pubkey.clone();
+        let tree_pubkey = tree.pubkey;
         let report = Arc::clone(&report);
 
         tasks.push(tokio::spawn(async move {
@@ -132,33 +145,23 @@ pub async fn check(
                 &[b"asset", &tree_pubkey.to_bytes(), &i.to_le_bytes()],
                 &mpl_bubblegum::ID,
             );
-            let result: Result<ProofResult, anyhow::Error> =
-                match get_proof_for_asset(&db, asset.to_bytes().to_vec()).await {
-                    Ok(proof) => match ProveLeafArgs::try_from_asset_proof(proof) {
-                        Ok(prove_leaf_args) => {
-                            if verify_merkle_proof(prove_leaf_args.current_root, &prove_leaf_args) {
-                                Ok(ProofResult::Correct)
-                            } else {
-                                Ok(ProofResult::Incorrect)
-                            }
-                        }
-                        Err(_) => Ok(ProofResult::Incorrect),
-                    },
-                    Err(_) => Ok(ProofResult::NotFound),
-                };
+            let proof_lookup: Result<ProofResult, anyhow::Error> =
+                get_proof_for_asset(&db, asset.to_bytes().to_vec())
+                    .await
+                    .map_or_else(|_| Ok(ProofResult::NotFound), leaf_proof_result);
 
-            if let Ok(proof_result) = result {
+            if let Ok(proof_result) = proof_lookup {
                 let mut report = report.lock().await;
                 match proof_result {
                     ProofResult::Correct => report.correct_proofs += 1,
-                    ProofResult::Incorrect => {
-                        report.incorrect_proofs += 1;
-                        error!(tree = %tree_pubkey, leaf_index = i, asset = %asset, "Incorrect proof found");
-                    }
-                    ProofResult::NotFound => {
-                        report.not_found_proofs += 1;
-                        error!(tree = %tree_pubkey, leaf_index = i, asset = %asset, "Proof not found");
-                    }
+                    ProofResult::Incorrect => report.incorrect_proofs += 1,
+                    ProofResult::NotFound => report.not_found_proofs += 1,
+                    ProofResult::Corrupt => report.corrupt_proofs += 1,
+                }
+                if let ProofResult::Incorrect | ProofResult::NotFound | ProofResult::Corrupt =
+                    proof_result
+                {
+                    error!(tree = %tree_pubkey, leaf_index = i, asset = %asset, "{}", proof_result);
                 }
             }
         }));
