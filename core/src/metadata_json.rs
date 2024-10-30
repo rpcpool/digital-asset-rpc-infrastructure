@@ -79,11 +79,11 @@ async fn is_asset_data_fetch_req(
 
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
 
-    return asset_data::Entity::find_by_id(asset_data_id.clone())
+    asset_data::Entity::find_by_id(asset_data_id.clone())
         .one(&conn)
         .await
         .unwrap_or(None)
-        .is_some_and(|model| *incoming_slot > model.slot_updated);
+        .is_some_and(|model| *incoming_slot > model.slot_updated)
 }
 
 impl MetadataJsonDownloadWorkerArgs {
@@ -294,7 +294,7 @@ pub async fn perform_metadata_json_task(
 
             active_model.update(&conn).await?;
 
-            return Err(MetadataJsonTaskError::Fetch(e.error));
+            Err(MetadataJsonTaskError::Fetch(e.error))
         }
     }
 }
