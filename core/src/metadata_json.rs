@@ -8,6 +8,7 @@ use {
     reqwest::{Client, Url as ReqwestUrl},
     sea_orm::{entity::*, SqlxPostgresConnector},
     serde::{Deserialize, Serialize},
+    sqlx::{Pool, Postgres},
     tokio::{
         sync::mpsc::{error::SendError, unbounded_channel, UnboundedSender},
         task::JoinHandle,
@@ -65,6 +66,25 @@ pub struct MetadataJsonDownloadWorkerArgs {
     metadata_json_download_worker_request_timeout: u64,
 }
 
+async fn is_asset_data_fetch_req(
+    download_metadata_info: &DownloadMetadataInfo,
+    pool: Pool<Postgres>,
+) -> bool {
+    let DownloadMetadataInfo {
+        asset_data_id,
+        slot: incoming_slot,
+        ..
+    } = download_metadata_info;
+
+    let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
+
+    return asset_data::Entity::find_by_id(asset_data_id.clone())
+        .one(&conn)
+        .await
+        .unwrap_or(None)
+        .is_some_and(|model| *incoming_slot > model.slot_updated);
+}
+
 impl MetadataJsonDownloadWorkerArgs {
     pub fn start(
         &self,
@@ -90,9 +110,12 @@ impl MetadataJsonDownloadWorkerArgs {
                 }
 
                 let pool = pool.clone();
-                let client = client.clone();
 
-                handlers.push(spawn_task(client, pool, download_metadata_info));
+                if is_asset_data_fetch_req(&download_metadata_info, pool.clone()).await {
+                    println!("Fetching metadata for asset_data_id");
+                    let client = client.clone();
+                    handlers.push(spawn_task(client, pool, download_metadata_info));
+                }
             }
 
             while handlers.next().await.is_some() {}
