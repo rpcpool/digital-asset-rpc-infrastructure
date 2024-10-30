@@ -195,6 +195,7 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         raw_name: ActiveValue::Set(Some(name.to_vec())),
         raw_symbol: ActiveValue::Set(None),
         base_info_seq: ActiveValue::Set(Some(0)),
+        ..Default::default()
     };
 
     let mut query = asset_data::Entity::insert(asset_data_model)

@@ -390,6 +390,7 @@ where
         raw_name: ActiveValue::Set(Some(raw_name)),
         raw_symbol: ActiveValue::Set(Some(raw_symbol)),
         base_info_seq: ActiveValue::Set(Some(seq)),
+        ..Default::default()
     };
 
     let mut query = asset_data::Entity::insert(model)
