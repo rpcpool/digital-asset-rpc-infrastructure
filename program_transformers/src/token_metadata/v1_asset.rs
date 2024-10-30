@@ -242,6 +242,7 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         raw_name: ActiveValue::Set(Some(name.to_vec())),
         raw_symbol: ActiveValue::Set(Some(symbol.to_vec())),
         base_info_seq: ActiveValue::Set(Some(0)),
+        ..Default::default()
     };
     let txn = conn.begin().await?;
 
