@@ -37,9 +37,8 @@ pub async fn parse_onchain_json(json: serde_json::Value) -> Content {
         raw_name: Some(String::from("Handalf").into_bytes().to_vec()),
         raw_symbol: Some(String::from("").into_bytes().to_vec()),
         base_info_seq: Some(0),
-        fetch_duration_in_secs: None,
+        fetch_duration_in_ms: None,
         last_requested_status_code: None,
-        failed_fetch_attempts: None,
     };
 
     v1_content_from_json(&asset_data).unwrap()
