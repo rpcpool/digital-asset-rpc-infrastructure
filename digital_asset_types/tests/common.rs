@@ -86,9 +86,8 @@ pub fn create_asset_data(
             raw_name: Some(metadata.name.into_bytes().to_vec().clone()),
             raw_symbol: Some(metadata.symbol.into_bytes().to_vec().clone()),
             base_info_seq: Some(0),
-            fetch_duration_in_secs: None,
+            fetch_duration_in_ms: None,
             last_requested_status_code: None,
-            failed_fetch_attempts: None,
         },
     )
 }

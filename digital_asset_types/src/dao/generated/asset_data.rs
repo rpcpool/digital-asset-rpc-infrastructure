@@ -28,9 +28,8 @@ pub struct Model {
     pub raw_name: Option<Vec<u8>>,
     pub raw_symbol: Option<Vec<u8>>,
     pub base_info_seq: Option<i64>,
-    pub fetch_duration_in_secs: Option<u64>,
+    pub fetch_duration_in_ms: Option<u64>,
     pub last_requested_status_code: Option<MetadataJsonFetchResult>,
-    pub failed_fetch_attempts: Option<u8>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -46,9 +45,8 @@ pub enum Column {
     RawName,
     RawSymbol,
     BaseInfoSeq,
-    FetchDurationInSecs,
+    FetchDurationInMs,
     LastRequestedStatusCode,
-    FailedFetchAttempts,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -81,9 +79,8 @@ impl ColumnTrait for Column {
             Self::RawName => ColumnType::Binary.def().null(),
             Self::RawSymbol => ColumnType::Binary.def().null(),
             Self::BaseInfoSeq => ColumnType::BigInteger.def().null(),
-            Self::FetchDurationInSecs => ColumnType::Unsigned.def().null(),
+            Self::FetchDurationInMs => ColumnType::Unsigned.def().null(),
             Self::LastRequestedStatusCode => ColumnType::Unsigned.def().null(),
-            Self::FailedFetchAttempts => ColumnType::Unsigned.def().null(),
         }
     }
 }

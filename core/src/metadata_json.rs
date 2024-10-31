@@ -67,14 +67,11 @@ pub struct MetadataJsonDownloadWorkerArgs {
     metadata_json_download_worker_request_timeout: u64,
 }
 
-async fn is_asset_data_fetch_req(
-    download_metadata_info: &DownloadMetadataInfo,
-    pool: Pool<Postgres>,
-) -> bool {
+async fn skip_index(download_metadata_info: &DownloadMetadataInfo, pool: Pool<Postgres>) -> bool {
     let DownloadMetadataInfo {
         asset_data_id,
         slot: incoming_slot,
-        ..
+        uri,
     } = download_metadata_info;
 
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
@@ -83,7 +80,7 @@ async fn is_asset_data_fetch_req(
         .one(&conn)
         .await
         .unwrap_or(None)
-        .is_some_and(|model| *incoming_slot > model.slot_updated)
+        .is_some_and(|model| model.metadata_url.eq(uri) && model.slot_updated >= *incoming_slot)
 }
 
 impl MetadataJsonDownloadWorkerArgs {
@@ -112,9 +109,10 @@ impl MetadataJsonDownloadWorkerArgs {
 
                 let pool = pool.clone();
 
-                if is_asset_data_fetch_req(&download_metadata_info, pool.clone()).await {
-                    handlers.push(spawn_task(client.clone(), pool, download_metadata_info));
+                if skip_index(&download_metadata_info, pool.clone()).await {
+                    continue;
                 }
+                handlers.push(spawn_task(client.clone(), pool, download_metadata_info));
             }
 
             while handlers.next().await.is_some() {}
@@ -181,26 +179,11 @@ pub enum StatusCode {
     Code(reqwest::StatusCode),
 }
 
-pub struct MetadataJsonData {
-    value: serde_json::Value,
-    time_elapsed: u64,
-    retries: u8,
-}
-
-pub struct MetadataJsonFetchError {
-    error: FetchMetadataJsonError,
-    time_elapsed: u64,
-    retries: u8,
-}
-
 async fn fetch_metadata_json(
     client: Client,
     metadata_json_url: &str,
-) -> Result<MetadataJsonData, MetadataJsonFetchError> {
-    let retries = AtomicU8::new(0);
-    let start = Instant::now();
-
-    let res = (|| async {
+) -> Result<serde_json::Value, FetchMetadataJsonError> {
+    (|| async {
         let url = ReqwestUrl::parse(metadata_json_url)?;
 
         let response = client.get(url.clone()).send().await?;
@@ -229,25 +212,7 @@ async fn fetch_metadata_json(
         }
     })
     .retry(&ExponentialBuilder::default())
-    .notify(|_e, _d| {
-        retries.fetch_add(1, Ordering::Relaxed);
-    })
-    .await;
-
-    let time_elapsed = start.elapsed().as_secs();
-
-    let retries = retries.load(Ordering::Relaxed);
-
-    res.map(|value| MetadataJsonData {
-        value,
-        time_elapsed,
-        retries,
-    })
-    .map_err(|error| MetadataJsonFetchError {
-        error,
-        time_elapsed,
-        retries,
-    })
+    .await
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -266,15 +231,17 @@ pub async fn perform_metadata_json_task(
     download_metadata_info: &DownloadMetadataInfo,
 ) -> Result<asset_data::Model, MetadataJsonTaskError> {
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
-    match fetch_metadata_json(client, &download_metadata_info.uri).await {
+    let start = Instant::now();
+    let fetch_res = fetch_metadata_json(client, &download_metadata_info.uri).await;
+    let time_elapsed = start.elapsed().as_millis() as u64;
+    match fetch_res {
         Ok(metadata) => {
             let active_model = asset_data::ActiveModel {
                 id: Set(download_metadata_info.asset_data_id.clone()),
-                metadata: Set(metadata.value),
+                metadata: Set(metadata),
                 reindex: Set(Some(false)),
                 last_requested_status_code: Set(Some(MetadataJsonFetchResult::Success)),
-                fetch_duration_in_secs: Set(Some(metadata.time_elapsed)),
-                failed_fetch_attempts: Set(Some(metadata.retries)),
+                fetch_duration_in_ms: Set(Some(time_elapsed)),
                 ..Default::default()
             };
 
@@ -287,14 +254,13 @@ pub async fn perform_metadata_json_task(
                 id: Set(download_metadata_info.asset_data_id.clone()),
                 reindex: Set(Some(true)),
                 last_requested_status_code: Set(Some(MetadataJsonFetchResult::Failure)),
-                failed_fetch_attempts: Set(Some(e.retries)),
-                fetch_duration_in_secs: Set(Some(e.time_elapsed)),
+                fetch_duration_in_ms: Set(Some(time_elapsed)),
                 ..Default::default()
             };
 
             active_model.update(&conn).await?;
 
-            Err(MetadataJsonTaskError::Fetch(e.error))
+            Err(MetadataJsonTaskError::Fetch(e))
         }
     }
 }
