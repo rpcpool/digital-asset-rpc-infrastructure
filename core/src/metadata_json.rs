@@ -1,15 +1,13 @@
 use {
     backon::{ExponentialBuilder, Retryable},
     clap::Parser,
-    digital_asset_types::dao::{asset_data, sea_orm_active_enums::MetadataJsonFetchResult},
+    digital_asset_types::dao::{asset_data, sea_orm_active_enums::LastRequestedStatusCode},
     futures::{future::BoxFuture, stream::FuturesUnordered, StreamExt},
     indicatif::HumanDuration,
     log::{debug, error},
     reqwest::{Client, Url as ReqwestUrl},
     sea_orm::{entity::*, SqlxPostgresConnector},
     serde::{Deserialize, Serialize},
-    sqlx::{Pool, Postgres},
-    std::sync::atomic::{AtomicU8, Ordering},
     tokio::{
         sync::mpsc::{error::SendError, unbounded_channel, UnboundedSender},
         task::JoinHandle,
@@ -19,9 +17,9 @@ use {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadMetadataInfo {
-    asset_data_id: Vec<u8>,
-    uri: String,
-    slot: i64,
+    pub asset_data_id: Vec<u8>,
+    pub uri: String,
+    pub slot: i64,
 }
 
 impl DownloadMetadataInfo {
@@ -67,22 +65,6 @@ pub struct MetadataJsonDownloadWorkerArgs {
     metadata_json_download_worker_request_timeout: u64,
 }
 
-async fn skip_index(download_metadata_info: &DownloadMetadataInfo, pool: Pool<Postgres>) -> bool {
-    let DownloadMetadataInfo {
-        asset_data_id,
-        slot: incoming_slot,
-        uri,
-    } = download_metadata_info;
-
-    let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
-
-    asset_data::Entity::find_by_id(asset_data_id.clone())
-        .one(&conn)
-        .await
-        .unwrap_or(None)
-        .is_some_and(|model| model.metadata_url.eq(uri) && model.slot_updated >= *incoming_slot)
-}
-
 impl MetadataJsonDownloadWorkerArgs {
     pub fn start(
         &self,
@@ -109,9 +91,6 @@ impl MetadataJsonDownloadWorkerArgs {
 
                 let pool = pool.clone();
 
-                if skip_index(&download_metadata_info, pool.clone()).await {
-                    continue;
-                }
                 handlers.push(spawn_task(client.clone(), pool, download_metadata_info));
             }
 
@@ -240,7 +219,7 @@ pub async fn perform_metadata_json_task(
                 id: Set(download_metadata_info.asset_data_id.clone()),
                 metadata: Set(metadata),
                 reindex: Set(Some(false)),
-                last_requested_status_code: Set(Some(MetadataJsonFetchResult::Success)),
+                last_requested_status_code: Set(Some(LastRequestedStatusCode::Success)),
                 fetch_duration_in_ms: Set(Some(time_elapsed)),
                 ..Default::default()
             };
@@ -253,7 +232,7 @@ pub async fn perform_metadata_json_task(
             let active_model = asset_data::ActiveModel {
                 id: Set(download_metadata_info.asset_data_id.clone()),
                 reindex: Set(Some(true)),
-                last_requested_status_code: Set(Some(MetadataJsonFetchResult::Failure)),
+                last_requested_status_code: Set(Some(LastRequestedStatusCode::Failure)),
                 fetch_duration_in_ms: Set(Some(time_elapsed)),
                 ..Default::default()
             };

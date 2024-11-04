@@ -1,6 +1,7 @@
 use {
     crate::{
         error::{ProgramTransformerError, ProgramTransformerResult},
+        skip_metadata_json_download,
         token_metadata::{
             master_edition::{save_v1_master_edition, save_v2_master_edition},
             v1_asset::{burn_v1_asset, save_v1_asset},
@@ -37,6 +38,9 @@ pub async fn handle_token_metadata_account<'a, 'b>(
         }
         TokenMetadataAccountData::MetadataV1(m) => {
             if let Some(info) = save_v1_asset(db, m, account_info.slot).await? {
+                if skip_metadata_json_download(&info, db).await {
+                    return Ok(());
+                }
                 download_metadata_notifier(info)
                     .await
                     .map_err(ProgramTransformerError::DownloadMetadataNotify)?;

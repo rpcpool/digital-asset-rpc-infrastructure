@@ -107,6 +107,8 @@ pub enum AssetData {
     RawName,
     RawSymbol,
     BaseInfoSeq,
+    FetchDurationInMs,
+    LastRequestedStatusCode,
 }
 
 #[derive(Copy, Clone, Iden)]
