@@ -1,6 +1,6 @@
 use {
     crate::error::{ProgramTransformerError, ProgramTransformerResult},
-    das_core::DownloadMetadataInfo,
+    das_core::{skip_metadata_json_download, DownloadMetadataInfo},
     digital_asset_types::dao::{
         asset, asset_authority, asset_creators, asset_data, asset_grouping, cl_audits_v2, cl_items,
         sea_orm_active_enums::{
@@ -378,36 +378,45 @@ pub async fn upsert_asset_data<T>(
 where
     T: ConnectionTrait + TransactionTrait,
 {
-    let model = asset_data::ActiveModel {
+    let skip_metadata_json_download = skip_metadata_json_download(&id, &metadata_url, txn).await;
+
+    let mut model = asset_data::ActiveModel {
         id: ActiveValue::Set(id.clone()),
         chain_data_mutability: ActiveValue::Set(chain_data_mutability),
         chain_data: ActiveValue::Set(chain_data),
-        metadata_url: ActiveValue::Set(metadata_url.clone()),
         metadata_mutability: ActiveValue::Set(metadata_mutability),
-        metadata: ActiveValue::Set(JsonValue::String("processing".to_string())),
         slot_updated: ActiveValue::Set(slot_updated),
-        reindex: ActiveValue::Set(Some(true)),
         raw_name: ActiveValue::Set(Some(raw_name)),
         raw_symbol: ActiveValue::Set(Some(raw_symbol)),
         base_info_seq: ActiveValue::Set(Some(seq)),
         ..Default::default()
     };
 
+    let mut columns_to_update = vec![
+        asset_data::Column::ChainDataMutability,
+        asset_data::Column::ChainData,
+        asset_data::Column::MetadataMutability,
+        asset_data::Column::SlotUpdated,
+        asset_data::Column::RawName,
+        asset_data::Column::RawSymbol,
+        asset_data::Column::BaseInfoSeq,
+    ];
+    if !skip_metadata_json_download {
+        model.metadata_url = ActiveValue::Set(metadata_url.clone());
+        model.metadata = ActiveValue::Set(JsonValue::String("processing".to_string()));
+        model.reindex = ActiveValue::Set(Some(true));
+
+        columns_to_update.extend_from_slice(&[
+            asset_data::Column::MetadataUrl,
+            asset_data::Column::Metadata,
+            asset_data::Column::Reindex,
+        ]);
+    }
+
     let mut query = asset_data::Entity::insert(model)
         .on_conflict(
             OnConflict::columns([asset_data::Column::Id])
-                .update_columns([
-                    asset_data::Column::ChainDataMutability,
-                    asset_data::Column::ChainData,
-                    asset_data::Column::MetadataUrl,
-                    asset_data::Column::MetadataMutability,
-                    asset_data::Column::Metadata,
-                    asset_data::Column::SlotUpdated,
-                    asset_data::Column::Reindex,
-                    asset_data::Column::RawName,
-                    asset_data::Column::RawSymbol,
-                    asset_data::Column::BaseInfoSeq,
-                ])
+                .update_columns(columns_to_update)
                 .to_owned(),
         )
         .build(DbBackend::Postgres);
@@ -421,20 +430,20 @@ where
         query.sql
     );
 
-    let result = txn
-        .execute(query)
+    txn.execute(query)
         .await
         .map_err(|db_err| ProgramTransformerError::StorageWriteError(db_err.to_string()))?;
 
-    if result.rows_affected() > 0 {
-        Ok(Some(DownloadMetadataInfo::new(
-            id,
-            metadata_url,
-            slot_updated,
-        )))
-    } else {
-        Ok(None)
+    // If the metadata JSON already exists, skip the download.
+    if skip_metadata_json_download {
+        return Ok(None);
     }
+
+    Ok(Some(DownloadMetadataInfo::new(
+        id,
+        metadata_url,
+        slot_updated,
+    )))
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -1,7 +1,7 @@
 use {
     crate::{
         error::{ProgramTransformerError, ProgramTransformerResult},
-        skip_metadata_json_download, DownloadMetadataNotifier,
+        DownloadMetadataNotifier,
     },
     blockbuster::{
         instruction::InstructionBundle,
@@ -72,9 +72,6 @@ where
         }
         InstructionName::MintV1 | InstructionName::MintToCollectionV1 => {
             if let Some(info) = mint_v1::mint_v1(parsing_result, bundle, txn, ix_str).await? {
-                if skip_metadata_json_download(&info, txn).await {
-                    return Ok(());
-                }
                 download_metadata_notifier(info)
                     .await
                     .map_err(ProgramTransformerError::DownloadMetadataNotify)?;
@@ -102,9 +99,6 @@ where
             if let Some(info) =
                 update_metadata::update_metadata(parsing_result, bundle, txn, ix_str).await?
             {
-                if skip_metadata_json_download(&info, txn).await {
-                    return Ok(());
-                }
                 download_metadata_notifier(info)
                     .await
                     .map_err(ProgramTransformerError::DownloadMetadataNotify)?;

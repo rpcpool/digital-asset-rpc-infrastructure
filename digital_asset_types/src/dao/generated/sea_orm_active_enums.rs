@@ -165,16 +165,3 @@ pub enum Instruction {
     #[sea_orm(string_value = "verify_creator")]
     VerifyCreator,
 }
-
-#[derive(Debug, Clone, PartialEq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(
-    rs_type = "String",
-    db_type = "Enum",
-    enum_name = "last_requested_status_code"
-)]
-pub enum LastRequestedStatusCode {
-    #[sea_orm(string_value = "success")]
-    Success,
-    #[sea_orm(string_value = "failure")]
-    Failure,
-}

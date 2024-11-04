@@ -18,7 +18,6 @@ use {
         },
     },
     das_core::{DownloadMetadataInfo, DownloadMetadataNotifier},
-    digital_asset_types::dao::asset_data,
     sea_orm::{
         entity::EntityTrait, query::Select, ConnectionTrait, DatabaseConnection, DbErr,
         SqlxPostgresConnector, TransactionTrait,
@@ -279,30 +278,6 @@ fn record_metric(metric_name: &str, success: bool, retries: u32) {
     if cadence_macros::is_global_default_set() {
         cadence_macros::statsd_count!(metric_name, 1, "success" => success, "retry_count" => retry_count);
     }
-}
-
-pub async fn skip_metadata_json_download<T>(
-    download_metadata_info: &DownloadMetadataInfo,
-    conn: &T,
-) -> bool
-where
-    T: ConnectionTrait + TransactionTrait,
-{
-    let DownloadMetadataInfo {
-        asset_data_id,
-        slot: incoming_slot,
-        uri,
-    } = download_metadata_info;
-
-    asset_data::Entity::find_by_id(asset_data_id.clone())
-        .one(conn)
-        .await
-        .unwrap_or(None)
-        .is_some_and(|model| {
-            !model.reindex.unwrap_or(false)
-                && model.metadata_url.eq(uri)
-                && model.slot_updated >= *incoming_slot
-        })
 }
 
 pub fn filter_non_null_fields(value: Value) -> Option<Value> {
