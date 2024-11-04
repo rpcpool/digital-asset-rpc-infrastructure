@@ -168,14 +168,10 @@ async fn fetch_metadata_json(
         let response = client.get(url.clone()).send().await?;
 
         match response.error_for_status() {
-            Ok(res) => {
-                let value = res
-                    .json::<serde_json::Value>()
-                    .await
-                    .map_err(|source| FetchMetadataJsonError::Parse { source, url })?;
-
-                Ok(value)
-            }
+            Ok(res) => Ok(res
+                .json::<serde_json::Value>()
+                .await
+                .map_err(|source| FetchMetadataJsonError::Parse { source, url })?),
             Err(source) => {
                 let status = source
                     .status()
