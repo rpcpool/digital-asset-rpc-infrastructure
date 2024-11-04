@@ -64,8 +64,12 @@ This service performs many concurrent tasks
 - Fetch account updates from redis and process them using using program_transformer
 - Fetch transaction updates from redis and processe them
 - Fetch snapshots from redis and process them
-- download token metedata json and store them in postgres db using sea-orm
+- download token metedata json and store them in postgres db
 
 ```bash
  RUST_LOG=debug,sqlx=warn cargo run --bin das-grpc-ingest  -- --config grpc-ingest/config-ingester.yml ingester
 ```
+
+### Metrics
+
+Both grpc2redis and ingester services expose prometheus metrics and can be accessed at `http://localhost:9090/metrics`
