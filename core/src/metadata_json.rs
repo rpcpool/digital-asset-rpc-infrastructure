@@ -1,12 +1,12 @@
 use {
     backon::{ExponentialBuilder, Retryable},
     clap::Parser,
-    digital_asset_types::dao::{asset_data, sea_orm_active_enums::LastRequestedStatusCode},
+    digital_asset_types::dao::asset_data::{self},
     futures::{future::BoxFuture, stream::FuturesUnordered, StreamExt},
     indicatif::HumanDuration,
     log::{debug, error},
     reqwest::{Client, Url as ReqwestUrl},
-    sea_orm::{entity::*, SqlxPostgresConnector},
+    sea_orm::{entity::*, ConnectionTrait, SqlxPostgresConnector, TransactionTrait},
     serde::{Deserialize, Serialize},
     tokio::{
         sync::mpsc::{error::SendError, unbounded_channel, UnboundedSender},
@@ -17,9 +17,9 @@ use {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadMetadataInfo {
-    pub asset_data_id: Vec<u8>,
-    pub uri: String,
-    pub slot: i64,
+    asset_data_id: Vec<u8>,
+    uri: String,
+    slot: i64,
 }
 
 impl DownloadMetadataInfo {
@@ -206,17 +206,12 @@ pub async fn perform_metadata_json_task(
     download_metadata_info: &DownloadMetadataInfo,
 ) -> Result<asset_data::Model, MetadataJsonTaskError> {
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
-    let start = Instant::now();
-    let fetch_res = fetch_metadata_json(client, &download_metadata_info.uri).await;
-    let time_elapsed = start.elapsed().as_millis() as u64;
-    match fetch_res {
+    match fetch_metadata_json(client, &download_metadata_info.uri).await {
         Ok(metadata) => {
             let active_model = asset_data::ActiveModel {
                 id: Set(download_metadata_info.asset_data_id.clone()),
                 metadata: Set(metadata),
                 reindex: Set(Some(false)),
-                last_requested_status_code: Set(Some(LastRequestedStatusCode::Success)),
-                fetch_duration_in_ms: Set(Some(time_elapsed)),
                 ..Default::default()
             };
 
@@ -228,8 +223,6 @@ pub async fn perform_metadata_json_task(
             let active_model = asset_data::ActiveModel {
                 id: Set(download_metadata_info.asset_data_id.clone()),
                 reindex: Set(Some(true)),
-                last_requested_status_code: Set(Some(LastRequestedStatusCode::Failure)),
-                fetch_duration_in_ms: Set(Some(time_elapsed)),
                 ..Default::default()
             };
 
@@ -262,4 +255,15 @@ impl DownloadMetadata {
         .await
         .map(|_| ())
     }
+}
+
+pub async fn skip_metadata_json_download<T>(asset_data_id: &[u8], uri: &str, conn: &T) -> bool
+where
+    T: ConnectionTrait + TransactionTrait,
+{
+    asset_data::Entity::find_by_id(asset_data_id.to_vec())
+        .one(conn)
+        .await
+        .unwrap_or(None)
+        .is_some_and(|model| model.metadata_url.eq(uri))
 }

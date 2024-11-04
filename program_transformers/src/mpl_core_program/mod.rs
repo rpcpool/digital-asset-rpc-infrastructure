@@ -2,7 +2,7 @@ use {
     crate::{
         error::{ProgramTransformerError, ProgramTransformerResult},
         mpl_core_program::v1_asset::{burn_v1_asset, save_v1_asset},
-        skip_metadata_json_download, AccountInfo, DownloadMetadataNotifier,
+        AccountInfo, DownloadMetadataNotifier,
     },
     blockbuster::programs::mpl_core_program::{MplCoreAccountData, MplCoreAccountState},
     sea_orm::DatabaseConnection,
@@ -30,9 +30,6 @@ pub async fn handle_mpl_core_account<'a, 'b, 'c>(
             )
             .await?
             {
-                if skip_metadata_json_download(&info, db).await {
-                    return Ok(());
-                }
                 download_metadata_notifier(info)
                     .await
                     .map_err(ProgramTransformerError::DownloadMetadataNotify)?;
