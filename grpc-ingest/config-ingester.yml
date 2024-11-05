@@ -1,4 +1,4 @@
-prometheus: 127.0.0.1:8875
+prometheus: 0.0.0.0:8875
 redis: redis://localhost:6379
 postgres:
   url: postgres://solana:solana@localhost/solana
