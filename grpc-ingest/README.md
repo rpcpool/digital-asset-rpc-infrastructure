@@ -16,35 +16,6 @@ INIT_FILE_PATH=./init.sql sea migrate up --database-url=postgres://solana:solana
 
 ### Config for grpc2redis [./config-grpc2redis.yml](./config-grpc2redis.yml)
 
-change endpoint and x-token in the `geyser` section
-
-multiple account and transaction subscriptions can be added in the `subscriptions` section
-filter shoud be compatible with the geyser gRPC filters depending on account or transaction
-
-> **Note:** Only Bubblegum transaction instructions are handled by the ingester for now
-
-```yaml
-subscriptions:
-  token-metadata:
-    stream:
-      name: ACCOUNTS
-      max_len: 100_000_000
-      max_concurrency: 2
-    filter:
-      accounts:
-        owner:
-          - metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s
-  bubblegum:
-    stream:
-      name: TRANSACTIONS
-      max_len: 100_000_000
-      max_concurrency: 2
-    filter:
-      transactions:
-        account_include:
-          - BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY
-```
-
 ### Run grpc2redis service
 
 This service will listen to geyser gRPC account and transaction updates. It makes multiple subscriptions to the gRPC stream and filter the data based on the config. The data (vec of bytes) is pushed to a pipeline and then flushed to redis at regular intervals.

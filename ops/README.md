@@ -7,7 +7,7 @@ DAS Ops is a collection of operational tools and scripts for managing and mainta
 ### Setup
 
 ```bash
-sudo docker compose up
+sudo docker compose up db
 ```
 
 ### Running the cli
