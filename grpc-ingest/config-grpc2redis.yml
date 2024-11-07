@@ -19,7 +19,7 @@ geyser:
 # gRPC subscription configuration (each representing a separate stream processed concurrently)
 # check account and transaction filters here (https://github.com/rpcpool/yellowstone-grpc/blob/master/README.md)
 subscriptions:
-  token-metadata:
+  metadata:
     stream:
       # stream name
       name: ACCOUNTS
@@ -41,7 +41,7 @@ subscriptions:
       accounts:
         owner:
           - TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
-  tcomp:
+  core:
     stream:
       name: ACCOUNTS
       max_len: 100_000_000
