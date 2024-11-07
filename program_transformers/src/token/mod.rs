@@ -13,7 +13,7 @@ use {
         entity::{ActiveValue, ColumnTrait},
         query::{QueryFilter, QueryTrait},
         sea_query::query::OnConflict,
-        ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, Set, TransactionTrait,
+        ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, TransactionTrait,
     },
     solana_sdk::program_option::COption,
     spl_token::state::AccountState,
@@ -27,6 +27,7 @@ pub async fn handle_token_program_account<'a, 'b>(
 ) -> ProgramTransformerResult<()> {
     let account_key = account_info.pubkey.to_bytes().to_vec();
     let account_owner = account_info.owner.to_bytes().to_vec();
+    let slot = account_info.slot as i64;
     match &parsing_result {
         TokenProgramAccount::TokenAccount(ta) => {
             let mint = ta.mint.to_bytes().to_vec();
@@ -44,9 +45,10 @@ pub async fn handle_token_program_account<'a, 'b>(
                 frozen: ActiveValue::Set(frozen),
                 delegated_amount: ActiveValue::Set(ta.delegated_amount as i64),
                 token_program: ActiveValue::Set(account_owner.clone()),
-                slot_updated: ActiveValue::Set(account_info.slot as i64),
+                slot_updated: ActiveValue::Set(slot),
                 amount: ActiveValue::Set(ta.amount as i64),
                 close_authority: ActiveValue::Set(None),
+                extensions: ActiveValue::Set(None),
             };
 
             let mut query = token_accounts::Entity::insert(model)
@@ -87,7 +89,8 @@ pub async fn handle_token_program_account<'a, 'b>(
                             owner: Some(owner.clone()),
                             frozen,
                             delegate,
-                            slot_updated_token_account: Some(account_info.slot as i64),
+                            slot_updated_token_account: Some(slot),
+                            extensions: None,
                         },
                         &txn,
                     )
@@ -141,6 +144,9 @@ pub async fn handle_token_program_account<'a, 'b>(
             );
             db.execute(query).await?;
 
+            //TODO :  handle checking nft , fungible asset and fungible token
+            // update : specification_version , specification_class
+
             let asset_update: Option<asset::Model> = asset::Entity::find_by_id(account_key.clone())
                 .filter(
                     asset::Column::OwnerType
@@ -158,6 +164,7 @@ pub async fn handle_token_program_account<'a, 'b>(
                         supply_mint: Some(account_key),
                         supply: m.supply.into(),
                         slot_updated_mint_account: account_info.slot,
+                        extensions: None,
                     },
                     db,
                 )

@@ -24,6 +24,7 @@ use {
     solana_transaction_status::InnerInstructions,
     sqlx::PgPool,
     std::collections::{HashMap, HashSet, VecDeque},
+    token_extensions::handle_token_extensions_program_account,
     tokio::time::{sleep, Duration},
     tracing::{debug, error, info},
 };
@@ -35,7 +36,6 @@ mod mpl_core_program;
 mod token;
 mod token_extensions;
 mod token_metadata;
-mod utils;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountInfo {
@@ -89,11 +89,7 @@ pub struct ProgramTransformer {
 }
 
 impl ProgramTransformer {
-    pub fn new(
-        pool: PgPool,
-        download_metadata_notifier: DownloadMetadataNotifier,
-        cl_audits: bool,
-    ) -> Self {
+    pub fn new(pool: PgPool, download_metadata_notifier: DownloadMetadataNotifier) -> Self {
         info!("Initializing Program Transformer");
         let mut parsers: HashMap<Pubkey, Box<dyn ProgramParser>> = HashMap::with_capacity(5);
         let bgum = BubblegumParser {};
@@ -248,7 +244,6 @@ impl ProgramTransformer {
                         account_info,
                         parsing_result,
                         &self.storage,
-                        &self.download_metadata_notifier,
                     )
                     .await
                 }

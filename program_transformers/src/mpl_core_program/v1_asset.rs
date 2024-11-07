@@ -319,6 +319,7 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
             supply_mint: None,
             supply,
             slot_updated_mint_account: slot,
+            extensions: None,
         },
         &txn,
     )
@@ -358,6 +359,7 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
             // Note use transfer delegate for the existing delegate field.
             delegate: transfer_delegate.clone(),
             slot_updated_token_account: Some(slot_i),
+            extensions: None,
         },
         &txn,
     )
