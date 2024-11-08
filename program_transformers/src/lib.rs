@@ -20,6 +20,7 @@ use {
         entity::EntityTrait, query::Select, ConnectionTrait, DatabaseConnection, DbErr,
         SqlxPostgresConnector, TransactionTrait,
     },
+    serde_json::{Map, Value},
     solana_sdk::{instruction::CompiledInstruction, pubkey::Pubkey, signature::Signature},
     solana_transaction_status::InnerInstructions,
     sqlx::PgPool,
@@ -293,5 +294,29 @@ fn record_metric(metric_name: &str, success: bool, retries: u32) {
     let success = if success { "true" } else { "false" };
     if cadence_macros::is_global_default_set() {
         cadence_macros::statsd_count!(metric_name, 1, "success" => success, "retry_count" => retry_count);
+    }
+}
+
+pub fn filter_non_null_fields(value: Value) -> Option<Value> {
+    match value {
+        Value::Null => None,
+        Value::Object(map) => {
+            if map.values().all(|v| matches!(v, Value::Null)) {
+                None
+            } else {
+                let filtered_map: Map<String, Value> = map
+                    .into_iter()
+                    .filter(|(_k, v)| !matches!(v, Value::Null))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+
+                if filtered_map.is_empty() {
+                    None
+                } else {
+                    Some(Value::Object(filtered_map))
+                }
+            }
+        }
+        _ => Some(value),
     }
 }

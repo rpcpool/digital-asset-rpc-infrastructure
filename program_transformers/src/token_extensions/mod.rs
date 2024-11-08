@@ -5,7 +5,7 @@ use {
             AssetMintAccountColumns, AssetTokenAccountColumns,
         },
         error::{ProgramTransformerError, ProgramTransformerResult},
-        AccountInfo,
+        filter_non_null_fields, AccountInfo,
     },
     blockbuster::programs::token_extensions::{
         extension::ShadowMetadata, MintAccount, TokenAccount, TokenExtensionsProgramAccount,
@@ -43,7 +43,7 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
             let ta = account;
 
             let extensions: Option<Value> = if extensions.is_some() {
-                Some(
+                filter_non_null_fields(
                     serde_json::to_value(extensions.clone())
                         .map_err(|e| ProgramTransformerError::SerializatonError(e.to_string()))?,
                 )
@@ -85,6 +85,7 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
                             token_accounts::Column::Owner,
                             token_accounts::Column::CloseAuthority,
                             token_accounts::Column::SlotUpdated,
+                            token_accounts::Column::Extensions,
                         ])
                         .to_owned(),
                 )
@@ -133,7 +134,7 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
                     upsert_asset_data(metadata, account_key.clone(), slot, db).await?;
                 }
 
-                Some(
+                filter_non_null_fields(
                     serde_json::to_value(extensions.clone())
                         .map_err(|e| ProgramTransformerError::SerializatonError(e.to_string()))?,
                 )
@@ -175,6 +176,7 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
                             tokens::Column::SlotUpdated,
                             tokens::Column::Decimals,
                             tokens::Column::FreezeAuthority,
+                            tokens::Column::Extensions,
                         ])
                         .to_owned(),
                 )
