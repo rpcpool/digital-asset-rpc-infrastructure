@@ -87,7 +87,7 @@ pub async fn index_and_fetch_mint_data<T: ConnectionTrait + TransactionTrait>(
                 supply_mint: Some(token.mint.clone()),
                 supply: token.supply,
                 slot_updated_mint_account: token.slot_updated as u64,
-                extensions: None,
+                extensions: token.extensions.clone(),
             },
             conn,
         )
@@ -128,7 +128,7 @@ async fn index_token_account_data<T: ConnectionTrait + TransactionTrait>(
                 delegate: token_account.delegate,
                 frozen: token_account.frozen,
                 slot_updated_token_account: Some(token_account.slot_updated),
-                extensions: None,
+                extensions: token_account.extensions,
             },
             conn,
         )
