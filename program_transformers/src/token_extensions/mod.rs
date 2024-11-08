@@ -123,7 +123,6 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
             Ok(())
         }
         TokenExtensionsProgramAccount::MintAccount(m) => {
-            println!("MintAccount extns:{:#?}", m.extensions);
             let MintAccount {
                 account,
                 extensions,
