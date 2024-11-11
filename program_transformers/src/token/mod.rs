@@ -1,19 +1,14 @@
 use {
     crate::{
-        asset_upserts::{
-            upsert_assets_mint_account_columns, upsert_assets_token_account_columns,
-            AssetMintAccountColumns, AssetTokenAccountColumns,
-        },
+        asset_upserts::{upsert_fungible_asset, FungibleAssetColumns},
         error::ProgramTransformerResult,
         AccountInfo, DownloadMetadataNotifier,
     },
     blockbuster::programs::token_account::TokenProgramAccount,
-    digital_asset_types::dao::{asset, sea_orm_active_enums::OwnerType, token_accounts, tokens},
+    digital_asset_types::dao::{token_accounts, tokens},
     sea_orm::{
-        entity::{ActiveValue, ColumnTrait},
-        query::{QueryFilter, QueryTrait},
-        sea_query::query::OnConflict,
-        ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, TransactionTrait,
+        entity::ActiveValue, query::QueryTrait, sea_query::query::OnConflict, ConnectionTrait,
+        DatabaseConnection, DbBackend, EntityTrait, TransactionTrait,
     },
     solana_sdk::program_option::COption,
     spl_token::state::AccountState,
@@ -73,31 +68,7 @@ pub async fn handle_token_program_account<'a, 'b>(
                 query.sql
             );
             db.execute(query).await?;
-            let txn = db.begin().await?;
-            let asset_update: Option<asset::Model> = asset::Entity::find_by_id(mint.clone())
-                .filter(asset::Column::OwnerType.eq("single"))
-                .one(&txn)
-                .await?;
-            if let Some(_asset) = asset_update {
-                // will only update owner if token account balance is non-zero
-                // since the asset is marked as single then the token account balance can only be 1. Greater implies a fungible token in which case no si
-                // TODO: this does not guarantee in case when wallet receives an amount of 1 for a token but its supply is more. is unlikely since mints often have a decimal
-                if ta.amount == 1 {
-                    upsert_assets_token_account_columns(
-                        AssetTokenAccountColumns {
-                            mint: mint.clone(),
-                            owner: Some(owner.clone()),
-                            frozen,
-                            delegate,
-                            slot_updated_token_account: Some(slot),
-                            extensions: None,
-                        },
-                        &txn,
-                    )
-                    .await?;
-                }
-            }
-            txn.commit().await?;
+
             Ok(())
         }
         TokenProgramAccount::Mint(m) => {
@@ -144,33 +115,21 @@ pub async fn handle_token_program_account<'a, 'b>(
             );
             db.execute(query).await?;
 
-            //TODO :  handle checking nft , fungible asset and fungible token
-            // update : specification_version , specification_class
+            let txn = db.begin().await?;
 
-            let asset_update: Option<asset::Model> = asset::Entity::find_by_id(account_key.clone())
-                .filter(
-                    asset::Column::OwnerType
-                        .eq(OwnerType::Single)
-                        .or(asset::Column::OwnerType
-                            .eq(OwnerType::Unknown)
-                            .and(asset::Column::Supply.eq(1))),
-                )
-                .one(db)
-                .await?;
-            if let Some(_asset) = asset_update {
-                upsert_assets_mint_account_columns(
-                    AssetMintAccountColumns {
-                        mint: account_key.clone(),
-                        supply_mint: Some(account_key),
-                        supply: m.supply.into(),
-                        slot_updated_mint_account: account_info.slot,
-                        extensions: None,
-                    },
-                    db,
-                )
-                .await?;
-            }
+            upsert_fungible_asset(
+                FungibleAssetColumns {
+                    mint: account_key.clone(),
+                    supply: m.supply.into(),
+                    slot_updated: slot,
+                    asset_data: Some(account_key.clone()),
+                    extensions: None,
+                },
+                &txn,
+            )
+            .await?;
 
+            txn.commit().await?;
             Ok(())
         }
     }

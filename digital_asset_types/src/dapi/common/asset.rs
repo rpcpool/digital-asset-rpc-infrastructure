@@ -1,3 +1,4 @@
+use crate::dao::sea_orm_active_enums::SpecificationAssetClass;
 use crate::dao::sea_orm_active_enums::SpecificationVersions;
 use crate::dao::FullAsset;
 use crate::dao::PageOptions;
@@ -378,6 +379,16 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
         _ => None,
     };
 
+    if interface == Interface::FungibleToken {
+        return Ok(RpcAsset {
+            interface: interface.clone(),
+            id: bs58::encode(asset.id).into_string(),
+            content: Some(content),
+            mint_extensions: asset.mint_extensions,
+            ..Default::default()
+        });
+    }
+
     Ok(RpcAsset {
         interface: interface.clone(),
         id: bs58::encode(asset.id).into_string(),
@@ -416,7 +427,7 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
             locked: false,
         }),
         creators: Some(rpc_creators),
-        ownership: Ownership {
+        ownership: Some(Ownership {
             frozen: asset.frozen,
             delegated: asset.delegate.is_some(),
             delegate: asset.delegate.map(|s| bs58::encode(s).into_string()),
@@ -425,7 +436,7 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
                 .owner
                 .map(|o| bs58::encode(o).into_string())
                 .unwrap_or("".to_string()),
-        },
+        }),
         supply: match interface {
             Interface::V1NFT => Some(Supply {
                 edition_nonce,
