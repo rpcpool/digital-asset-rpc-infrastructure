@@ -10,7 +10,7 @@ use {
         TransactionTrait,
     },
     serde_json::value::Value,
-    sqlx::types::{chrono, Decimal},
+    sqlx::types::Decimal,
 };
 
 pub struct AssetTokenAccountColumns {
@@ -57,21 +57,31 @@ pub async fn upsert_assets_token_account_columns<T: ConnectionTrait + Transactio
 pub struct AssetMintAccountColumns {
     pub mint: Vec<u8>,
     pub supply: Decimal,
-    pub supply_mint: Option<Vec<u8>>,
-    pub slot_updated_mint_account: u64,
+    pub slot_updated_mint_account: i64,
     pub extensions: Option<Value>,
 }
 
 pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + TransactionTrait>(
     columns: AssetMintAccountColumns,
+    is_non_fungible: bool,
     txn_or_conn: &T,
 ) -> Result<(), DbErr> {
+    let specification_asset_class = if is_non_fungible {
+        None
+    } else {
+        // If its not non-fungible then
+        // by default, we assume that the asset is fungibleToken and later update based on token metadata
+        Some(SpecificationAssetClass::FungibleToken)
+    };
+
     let active_model = asset::ActiveModel {
-        id: Set(columns.mint),
+        id: Set(columns.mint.clone()),
         supply: Set(columns.supply),
-        supply_mint: Set(columns.supply_mint),
-        slot_updated_mint_account: Set(Some(columns.slot_updated_mint_account as i64)),
+        supply_mint: Set(Some(columns.mint.clone())),
+        slot_updated_mint_account: Set(Some(columns.slot_updated_mint_account)),
         mint_extensions: Set(columns.extensions),
+        asset_data: Set(Some(columns.mint)),
+        specification_asset_class: Set(specification_asset_class),
         ..Default::default()
     };
     let mut query = asset::Entity::insert(active_model)
@@ -79,9 +89,9 @@ pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + Transaction
             OnConflict::columns([asset::Column::Id])
                 .update_columns([
                     asset::Column::Supply,
-                    asset::Column::SupplyMint,
                     asset::Column::SlotUpdatedMintAccount,
                     asset::Column::MintExtensions,
+                    asset::Column::SlotUpdated,
                 ])
                 .to_owned(),
         )
@@ -179,53 +189,5 @@ pub async fn upsert_assets_metadata_account_columns<T: ConnectionTrait + Transac
         "{} WHERE excluded.slot_updated_metadata_account >= asset.slot_updated_metadata_account OR asset.slot_updated_metadata_account IS NULL",
         query.sql);
     txn_or_conn.execute(query).await?;
-    Ok(())
-}
-
-pub struct FungibleAssetColumns {
-    pub mint: Vec<u8>,
-    pub supply: Decimal,
-    pub slot_updated: i64,
-    pub asset_data: Option<Vec<u8>>,
-    pub extensions: Option<Value>,
-}
-
-pub async fn upsert_fungible_asset<T: ConnectionTrait + TransactionTrait>(
-    fungible_asset_data: FungibleAssetColumns,
-    txn_or_conn: &T,
-) -> Result<(), DbErr> {
-    let active_model = asset::ActiveModel {
-        id: Set(fungible_asset_data.mint.clone()),
-        supply: Set(fungible_asset_data.supply),
-        supply_mint: Set(Some(fungible_asset_data.mint)),
-        slot_updated: Set(Some(fungible_asset_data.slot_updated)),
-        slot_updated_mint_account: Set(Some(fungible_asset_data.slot_updated)),
-        asset_data: Set(fungible_asset_data.asset_data),
-        mint_extensions: Set(fungible_asset_data.extensions),
-        specification_asset_class: Set(Some(SpecificationAssetClass::FungibleToken)),
-        created_at: Set(Some(chrono::Utc::now().into())),
-        ..Default::default()
-    };
-
-    let mut query = asset::Entity::insert(active_model)
-        .on_conflict(
-            OnConflict::columns([asset::Column::Id])
-                .update_columns([
-                    asset::Column::Supply,
-                    asset::Column::SlotUpdated,
-                    asset::Column::SlotUpdatedMintAccount,
-                    asset::Column::MintExtensions,
-                ])
-                .to_owned(),
-        )
-        .build(DbBackend::Postgres);
-
-    query.sql = format!(
-        "{} WHERE excluded.slot_updated >= asset.slot_updated OR asset.slot_updated IS NULL",
-        query.sql
-    );
-
-    txn_or_conn.execute(query).await?;
-
     Ok(())
 }

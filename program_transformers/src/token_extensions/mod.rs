@@ -1,6 +1,6 @@
 use {
     crate::{
-        asset_upserts::{upsert_fungible_asset, FungibleAssetColumns},
+        asset_upserts::{upsert_assets_mint_account_columns, AssetMintAccountColumns},
         error::{ProgramTransformerError, ProgramTransformerResult},
         filter_non_null_fields, AccountInfo,
     },
@@ -157,14 +157,16 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
             db.execute(query).await?;
             let txn = db.begin().await?;
 
-            upsert_fungible_asset(
-                FungibleAssetColumns {
+            let is_non_fungible = m.decimals == 0 && m.mint_authority.is_none();
+
+            upsert_assets_mint_account_columns(
+                AssetMintAccountColumns {
                     mint: account_key.clone(),
                     supply: m.supply.into(),
-                    slot_updated: slot,
-                    asset_data: Some(account_key.clone()),
+                    slot_updated_mint_account: slot,
                     extensions: extensions.clone(),
                 },
+                is_non_fungible,
                 &txn,
             )
             .await?;

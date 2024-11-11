@@ -80,15 +80,20 @@ pub async fn index_and_fetch_mint_data<T: ConnectionTrait + TransactionTrait>(
     )
     .await?;
 
+    let is_non_fungible = token
+        .as_ref()
+        .map(|t| t.decimals == 0 && t.mint_authority.is_none())
+        .unwrap_or(false);
+
     if let Some(token) = token {
         upsert_assets_mint_account_columns(
             AssetMintAccountColumns {
                 mint: mint_pubkey_vec.clone(),
-                supply_mint: Some(token.mint.clone()),
                 supply: token.supply,
-                slot_updated_mint_account: token.slot_updated as u64,
+                slot_updated_mint_account: token.slot_updated,
                 extensions: token.extensions.clone(),
             },
+            is_non_fungible,
             conn,
         )
         .await
