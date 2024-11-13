@@ -6,7 +6,7 @@ use crate::{
         sea_orm_active_enums::Instruction,
         Cursor, FullAsset, GroupingSize, Pagination,
     },
-    rpc::filter::AssetSortDirection,
+    rpc::{filter::AssetSortDirection, options::Options},
 };
 use indexmap::IndexMap;
 use sea_orm::{entity::*, query::*, ConnectionTrait, DbErr, Order};
@@ -336,15 +336,16 @@ pub async fn get_related_for_assets(
     };
 
     let grouping = asset_grouping::Entity::find()
+        .find_also_related(asset_data::Entity)
         .filter(asset_grouping::Column::AssetId.is_in(ids.clone()))
         .filter(asset_grouping::Column::GroupValue.is_not_null())
         .filter(cond)
         .order_by_asc(asset_grouping::Column::AssetId)
         .all(conn)
         .await?;
-    for g in grouping.into_iter() {
+    for (g, a) in grouping.into_iter() {
         if let Some(asset) = assets_map.get_mut(&g.asset_id) {
-            asset.groups.push(g);
+            asset.groups.push((g, a));
         }
     }
 
@@ -385,6 +386,7 @@ pub async fn get_by_id(
     conn: &impl ConnectionTrait,
     asset_id: Vec<u8>,
     include_no_supply: bool,
+    options: &Options,
 ) -> Result<FullAsset, DbErr> {
     let mut asset_data =
         asset::Entity::find_by_id(asset_id.clone()).find_also_related(asset_data::Entity);
@@ -411,7 +413,7 @@ pub async fn get_by_id(
 
     filter_out_stale_creators(&mut creators);
 
-    let grouping: Vec<asset_grouping::Model> = asset_grouping::Entity::find()
+    let grouping_query = asset_grouping::Entity::find()
         .filter(asset_grouping::Column::AssetId.eq(asset.id.clone()))
         .filter(asset_grouping::Column::GroupValue.is_not_null())
         .filter(
@@ -421,15 +423,28 @@ pub async fn get_by_id(
                 // Therefore if verified is null, we can assume that the group is verified.
                 .add(asset_grouping::Column::Verified.is_null()),
         )
-        .order_by_asc(asset_grouping::Column::AssetId)
-        .all(conn)
-        .await?;
+        .order_by_asc(asset_grouping::Column::AssetId);
+
+    let groups = if options.show_collection_metadata {
+        grouping_query
+            .find_also_related(asset_data::Entity)
+            .all(conn)
+            .await?
+    } else {
+        grouping_query
+            .all(conn)
+            .await?
+            .into_iter()
+            .map(|g| (g, None))
+            .collect::<Vec<_>>()
+    };
+
     Ok(FullAsset {
         asset,
         data,
         authorities,
         creators,
-        groups: grouping,
+        groups,
     })
 }
 
