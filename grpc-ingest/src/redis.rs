@@ -2,7 +2,7 @@ use {
     crate::{
         config::{ConfigIngestStream, REDIS_STREAM_DATA_KEY},
         prom::{
-            ack_tasks_total_dec, ack_tasks_total_inc, ingest_tasks_total_dec,
+            ack_tasks_total_dec, ack_tasks_total_inc, ingest_job_time_set, ingest_tasks_total_dec,
             ingest_tasks_total_inc, program_transformer_task_status_inc, redis_xack_inc,
             redis_xlen_set, redis_xread_inc, ProgramTransformerTaskStatusKind,
         },
@@ -427,7 +427,11 @@ impl<H: MessageHandler> IngestStream<H> {
                             ingest_tasks_total_inc(&config.name);
 
                             tasks.push(tokio::spawn(async move {
+                                let start_time = tokio::time::Instant::now();
                                 let result = handler.handle(map).await.map_err(IngestMessageError::into);
+                                let elapsed_time = start_time.elapsed().as_secs_f64();
+
+                                ingest_job_time_set(&config.name, elapsed_time);
 
                                 match result {
                                     Ok(()) => {

@@ -8,7 +8,10 @@ use {
         Body, Request, Response, Server, StatusCode,
     },
     program_transformers::error::ProgramTransformerError,
-    prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry, TextEncoder},
+    prometheus::{
+        HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts, Registry,
+        TextEncoder,
+    },
     std::{net::SocketAddr, sync::Once},
     tracing::{error, info},
 };
@@ -31,7 +34,7 @@ lazy_static::lazy_static! {
         &["stream", "label", "status"]
     ).unwrap();
 
-        static ref REDIS_XREAD_COUNT: IntCounterVec = IntCounterVec::new(
+    static ref REDIS_XREAD_COUNT: IntCounterVec = IntCounterVec::new(
         Opts::new("redis_xread_count", "Count of messages seen"),
         &["stream"]
     ).unwrap();
@@ -46,13 +49,14 @@ lazy_static::lazy_static! {
         &["kind"]
     ).unwrap();
 
-    static ref PROGRAM_TRANSFORMER_TASKS: IntGauge = IntGauge::new(
-        "program_transformer_tasks", "Number of tasks spawned for program transform"
-    ).unwrap();
-
     static ref PROGRAM_TRANSFORMER_TASK_STATUS_COUNT: IntCounterVec = IntCounterVec::new(
         Opts::new("program_transformer_task_status_count", "Status of processed messages"),
         &["status"],
+    ).unwrap();
+
+    static ref INGEST_JOB_TIME: HistogramVec = HistogramVec::new(
+        HistogramOpts::new("ingest_job_time", "Time taken for ingest jobs"),
+        &["stream"]
     ).unwrap();
 
     static ref DOWNLOAD_METADATA_INSERTED_COUNT: IntCounter = IntCounter::new(
@@ -73,7 +77,6 @@ lazy_static::lazy_static! {
         Opts::new("grpc_tasks", "Number of tasks spawned for writing grpc messages to redis "),
         &["label","stream"]
     ).unwrap();
-
 
     static ref BUBBLEGUM_TREE_TOTAL_LEAVES: IntGaugeVec = IntGaugeVec::new(
         Opts::new("bubblegum_tree_total_leaves", "Total number of leaves in the bubblegum tree"),
@@ -118,8 +121,8 @@ pub fn run_server(address: SocketAddr) -> anyhow::Result<()> {
         register!(REDIS_XREAD_COUNT);
         register!(REDIS_XACK_COUNT);
         register!(PGPOOL_CONNECTIONS);
-        register!(PROGRAM_TRANSFORMER_TASKS);
         register!(PROGRAM_TRANSFORMER_TASK_STATUS_COUNT);
+        register!(INGEST_JOB_TIME);
         register!(DOWNLOAD_METADATA_INSERTED_COUNT);
         register!(INGEST_TASKS);
         register!(ACK_TASKS);
@@ -186,6 +189,10 @@ pub fn redis_xlen_set(stream: &str, len: usize) {
     REDIS_STREAM_LENGTH
         .with_label_values(&[stream])
         .set(len as i64);
+}
+
+pub fn ingest_job_time_set(stream: &str, value: f64) {
+    INGEST_JOB_TIME.with_label_values(&[stream]).observe(value);
 }
 
 pub fn redis_xadd_status_inc(stream: &str, label: &str, status: Result<(), ()>, delta: usize) {
