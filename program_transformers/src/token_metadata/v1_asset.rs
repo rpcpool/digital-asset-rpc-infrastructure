@@ -1,9 +1,8 @@
 use {
     crate::{
-        asset_upserts::{
-            upsert_assets_metadata_account_columns, AssetMetadataAccountColumns,
-        },
-        error::{ProgramTransformerError, ProgramTransformerResult}, DownloadMetadataInfo,
+        asset_upserts::{upsert_assets_metadata_account_columns, AssetMetadataAccountColumns},
+        error::{ProgramTransformerError, ProgramTransformerResult},
+        DownloadMetadataInfo,
     },
     blockbuster::token_metadata::{
         accounts::{MasterEdition, Metadata},
@@ -14,8 +13,8 @@ use {
             asset, asset_authority, asset_creators, asset_data, asset_grouping,
             asset_v1_account_attachments,
             sea_orm_active_enums::{
-                ChainMutability, Mutability, OwnerType, SpecificationAssetClass,
-                SpecificationVersions, V1AccountAttachments,
+                ChainMutability, Mutability, SpecificationAssetClass, SpecificationVersions,
+                V1AccountAttachments,
             },
         },
         json::ChainDataV1,
@@ -86,19 +85,10 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         }
         _ => SpecificationAssetClass::Unknown,
     };
-    let mut ownership_type = match class {
-        SpecificationAssetClass::FungibleAsset => OwnerType::Token,
-        SpecificationAssetClass::FungibleToken => OwnerType::Token,
-        SpecificationAssetClass::Nft | SpecificationAssetClass::ProgrammableNft => {
-            OwnerType::Single
-        }
-        _ => OwnerType::Unknown,
-    };
 
     // Wrapped Solana is a special token that has supply 0 (infinite).
     // It's a fungible token with a metadata account, but without any token standard, meaning the code above will misabel it as an NFT.
     if mint_pubkey == WSOL_PUBKEY {
-        ownership_type = OwnerType::Token;
         class = SpecificationAssetClass::FungibleToken;
     }
 
@@ -172,7 +162,6 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
     upsert_assets_metadata_account_columns(
         AssetMetadataAccountColumns {
             mint: mint_pubkey_vec.clone(),
-            owner_type: ownership_type,
             specification_asset_class: Some(class),
             royalty_amount: metadata.seller_fee_basis_points as i32,
             asset_data: Some(mint_pubkey_vec.clone()),

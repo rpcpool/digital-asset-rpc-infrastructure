@@ -27,7 +27,6 @@ pub async fn handle_token_program_account<'a, 'b>(
     let account_owner = account_info.owner.to_bytes().to_vec();
     match &parsing_result {
         TokenProgramAccount::TokenAccount(ta) => {
-            let txn = db.begin().await?;
             let mint = ta.mint.to_bytes().to_vec();
             let delegate: Option<Vec<u8>> = match ta.delegate {
                 COption::Some(d) => Some(d.to_bytes().to_vec()),
@@ -47,6 +46,8 @@ pub async fn handle_token_program_account<'a, 'b>(
                 amount: ActiveValue::Set(ta.amount as i64),
                 close_authority: ActiveValue::Set(None),
             };
+
+            let txn = db.begin().await?;
 
             let mut query = token_accounts::Entity::insert(model)
                 .on_conflict(
@@ -89,7 +90,6 @@ pub async fn handle_token_program_account<'a, 'b>(
             Ok(())
         }
         TokenProgramAccount::Mint(m) => {
-            let txn = db.begin().await?;
             let freeze_auth: Option<Vec<u8>> = match m.freeze_authority {
                 COption::Some(d) => Some(d.to_bytes().to_vec()),
                 COption::None => None,
@@ -109,6 +109,8 @@ pub async fn handle_token_program_account<'a, 'b>(
                 mint_authority: ActiveValue::Set(mint_auth),
                 freeze_authority: ActiveValue::Set(freeze_auth),
             };
+
+            let txn = db.begin().await?;
 
             let mut query = tokens::Entity::insert(model)
                 .on_conflict(

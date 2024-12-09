@@ -100,7 +100,6 @@ pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + Transaction
 
 pub struct AssetMetadataAccountColumns {
     pub mint: Vec<u8>,
-    pub owner_type: OwnerType,
     pub specification_asset_class: Option<SpecificationAssetClass>,
     pub royalty_amount: i32,
     pub asset_data: Option<Vec<u8>>,
@@ -120,7 +119,6 @@ pub async fn upsert_assets_metadata_account_columns<T: ConnectionTrait + Transac
 ) -> Result<(), DbErr> {
     let active_model = asset::ActiveModel {
         id: Set(columns.mint),
-        owner_type: Set(columns.owner_type),
         specification_version: Set(Some(SpecificationVersions::V1)),
         specification_asset_class: Set(columns.specification_asset_class),
         tree_id: Set(None),
@@ -150,7 +148,6 @@ pub async fn upsert_assets_metadata_account_columns<T: ConnectionTrait + Transac
         .on_conflict(
             OnConflict::columns([asset::Column::Id])
                 .update_columns([
-                    asset::Column::OwnerType,
                     asset::Column::SpecificationVersion,
                     asset::Column::SpecificationAssetClass,
                     asset::Column::TreeId,
