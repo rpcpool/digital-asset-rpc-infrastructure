@@ -64,11 +64,18 @@ pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + Transaction
     columns: AssetMintAccountColumns,
     txn_or_conn: &T,
 ) -> Result<(), DbErr> {
+    let owner_type = if columns.supply == Decimal::from(1) {
+        OwnerType::Single
+    } else {
+        OwnerType::Token
+    };
+
     let active_model = asset::ActiveModel {
         id: Set(columns.mint),
         supply: Set(columns.supply),
         supply_mint: Set(columns.supply_mint),
         slot_updated_mint_account: Set(Some(columns.slot_updated_mint_account as i64)),
+        owner_type: Set(owner_type),
         ..Default::default()
     };
     let mut query = asset::Entity::insert(active_model)
@@ -78,6 +85,7 @@ pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + Transaction
                     asset::Column::Supply,
                     asset::Column::SupplyMint,
                     asset::Column::SlotUpdatedMintAccount,
+                    asset::Column::OwnerType,
                 ])
                 .to_owned(),
         )

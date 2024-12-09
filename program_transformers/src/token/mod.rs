@@ -98,6 +98,7 @@ pub async fn handle_token_program_account<'a, 'b>(
             Ok(())
         }
         TokenProgramAccount::Mint(m) => {
+            let txn = db.begin().await?;
             let freeze_auth: Option<Vec<u8>> = match m.freeze_authority {
                 COption::Some(d) => Some(d.to_bytes().to_vec()),
                 COption::None => None,
@@ -134,34 +135,26 @@ pub async fn handle_token_program_account<'a, 'b>(
                         .to_owned(),
                 )
                 .build(DbBackend::Postgres);
+
             query.sql = format!(
                 "{} WHERE excluded.slot_updated >= tokens.slot_updated",
                 query.sql
             );
-            db.execute(query).await?;
 
-            let asset_update: Option<asset::Model> = asset::Entity::find_by_id(account_key.clone())
-                .filter(
-                    asset::Column::OwnerType
-                        .eq(OwnerType::Single)
-                        .or(asset::Column::OwnerType
-                            .eq(OwnerType::Unknown)
-                            .and(asset::Column::Supply.eq(1))),
-                )
-                .one(db)
-                .await?;
-            if let Some(_asset) = asset_update {
-                upsert_assets_mint_account_columns(
-                    AssetMintAccountColumns {
-                        mint: account_key.clone(),
-                        supply_mint: Some(account_key),
-                        supply: m.supply.into(),
-                        slot_updated_mint_account: account_info.slot,
-                    },
-                    db,
-                )
-                .await?;
-            }
+            txn.execute(query).await?;
+
+            upsert_assets_mint_account_columns(
+                AssetMintAccountColumns {
+                    mint: account_key.clone(),
+                    supply_mint: Some(account_key),
+                    supply: m.supply.into(),
+                    slot_updated_mint_account: account_info.slot,
+                },
+                &txn,
+            )
+            .await?;
+
+            txn.commit().await?;
 
             Ok(())
         }
