@@ -47,7 +47,7 @@ pub async fn upsert_assets_token_account_columns<T: ConnectionTrait + Transactio
         .build(DbBackend::Postgres);
 
     query.sql = format!(
-    "{} WHERE excluded.slot_updated_token_account >= asset.slot_updated_token_account OR asset.slot_updated_token_account IS NULL",
+    "{} WHERE (excluded.slot_updated_token_account >= asset.slot_updated_token_account OR asset.slot_updated_token_account IS NULL) AND asset.owner_type = 'single'",
     query.sql);
     txn_or_conn.execute(query).await?;
     Ok(())

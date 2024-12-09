@@ -5,13 +5,11 @@ use {
         types::Key,
     },
     digital_asset_types::dao::{
-        asset, asset_v1_account_attachments, extensions,
-        sea_orm_active_enums::{SpecificationAssetClass, V1AccountAttachments},
+        asset_v1_account_attachments, sea_orm_active_enums::V1AccountAttachments,
     },
     sea_orm::{
-        entity::{ActiveModelTrait, ActiveValue, EntityTrait, RelationTrait},
-        prelude::*,
-        query::{JoinType, QuerySelect, QueryTrait},
+        entity::{ActiveValue, EntityTrait},
+        query::QueryTrait,
         sea_query::query::OnConflict,
         ConnectionTrait, DatabaseTransaction, DbBackend,
     },

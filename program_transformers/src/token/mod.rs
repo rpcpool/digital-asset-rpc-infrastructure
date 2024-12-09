@@ -8,12 +8,10 @@ use {
         AccountInfo, DownloadMetadataNotifier,
     },
     blockbuster::programs::token_account::TokenProgramAccount,
-    digital_asset_types::dao::{asset, sea_orm_active_enums::OwnerType, token_accounts, tokens},
+    digital_asset_types::dao::{token_accounts, tokens},
     sea_orm::{
-        entity::{ActiveValue, ColumnTrait},
-        query::{QueryFilter, QueryTrait},
-        sea_query::query::OnConflict,
-        ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, TransactionTrait,
+        entity::ActiveValue, query::QueryTrait, sea_query::query::OnConflict, ConnectionTrait,
+        DatabaseConnection, DbBackend, EntityTrait, TransactionTrait,
     },
     solana_sdk::program_option::COption,
     spl_token::state::AccountState,
@@ -29,6 +27,7 @@ pub async fn handle_token_program_account<'a, 'b>(
     let account_owner = account_info.owner.to_bytes().to_vec();
     match &parsing_result {
         TokenProgramAccount::TokenAccount(ta) => {
+            let txn = db.begin().await?;
             let mint = ta.mint.to_bytes().to_vec();
             let delegate: Option<Vec<u8>> = match ta.delegate {
                 COption::Some(d) => Some(d.to_bytes().to_vec()),
@@ -70,30 +69,22 @@ pub async fn handle_token_program_account<'a, 'b>(
                 "{} WHERE excluded.slot_updated > token_accounts.slot_updated",
                 query.sql
             );
-            db.execute(query).await?;
-            let txn = db.begin().await?;
-            let asset_update: Option<asset::Model> = asset::Entity::find_by_id(mint.clone())
-                .filter(asset::Column::OwnerType.eq("single"))
-                .one(&txn)
+            txn.execute(query).await?;
+
+            if ta.amount == 1 {
+                upsert_assets_token_account_columns(
+                    AssetTokenAccountColumns {
+                        mint: mint.clone(),
+                        owner: Some(owner.clone()),
+                        frozen,
+                        delegate,
+                        slot_updated_token_account: Some(account_info.slot as i64),
+                    },
+                    &txn,
+                )
                 .await?;
-            if let Some(_asset) = asset_update {
-                // will only update owner if token account balance is non-zero
-                // since the asset is marked as single then the token account balance can only be 1. Greater implies a fungible token in which case no si
-                // TODO: this does not guarantee in case when wallet receives an amount of 1 for a token but its supply is more. is unlikely since mints often have a decimal
-                if ta.amount == 1 {
-                    upsert_assets_token_account_columns(
-                        AssetTokenAccountColumns {
-                            mint: mint.clone(),
-                            owner: Some(owner.clone()),
-                            frozen,
-                            delegate,
-                            slot_updated_token_account: Some(account_info.slot as i64),
-                        },
-                        &txn,
-                    )
-                    .await?;
-                }
             }
+
             txn.commit().await?;
             Ok(())
         }
