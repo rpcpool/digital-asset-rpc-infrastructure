@@ -57,16 +57,6 @@ pub async fn upsert_assets_token_account_columns<T: ConnectionTrait + Transactio
                                 .add(
                                     Expr::tbl(Alias::new("excluded"), asset::Column::Delegate)
                                         .ne(Expr::tbl(asset::Entity, asset::Column::Delegate)),
-                                )
-                                .add(
-                                    Expr::tbl(
-                                        Alias::new("excluded"),
-                                        asset::Column::SlotUpdatedTokenAccount,
-                                    )
-                                    .ne(Expr::tbl(
-                                        asset::Entity,
-                                        asset::Column::SlotUpdatedTokenAccount,
-                                    )),
                                 ),
                         )
                         .add_option(columns.slot_updated_token_account.map(|slot| {
