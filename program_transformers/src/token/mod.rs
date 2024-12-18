@@ -11,10 +11,9 @@ use {
     digital_asset_types::dao::{token_accounts, tokens},
     sea_orm::{
         entity::ActiveValue,
-        query::QueryTrait,
         sea_query::query::OnConflict,
         sea_query::{Alias, Condition, Expr},
-        ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, TransactionTrait,
+        DatabaseConnection, EntityTrait, TransactionTrait,
     },
     solana_sdk::program_option::COption,
     spl_token::state::AccountState,
