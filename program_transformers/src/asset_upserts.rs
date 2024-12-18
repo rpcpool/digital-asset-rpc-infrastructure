@@ -6,8 +6,8 @@ use {
         },
     },
     sea_orm::{
-        sea_query::OnConflict, ConnectionTrait, DbBackend, DbErr, EntityTrait, QueryTrait, Set,
-        TransactionTrait,
+        sea_query::{Alias, Condition, Expr, OnConflict},
+        ConnectionTrait, DbBackend, DbErr, EntityTrait, QueryTrait, Set, TransactionTrait,
     },
     serde_json::value::Value,
     sqlx::types::Decimal,
@@ -33,7 +33,8 @@ pub async fn upsert_assets_token_account_columns<T: ConnectionTrait + Transactio
         slot_updated_token_account: Set(columns.slot_updated_token_account),
         ..Default::default()
     };
-    let mut query = asset::Entity::insert(active_model)
+
+    asset::Entity::insert(active_model)
         .on_conflict(
             OnConflict::columns([asset::Column::Id])
                 .update_columns([
@@ -43,35 +44,45 @@ pub async fn upsert_assets_token_account_columns<T: ConnectionTrait + Transactio
                     asset::Column::SlotUpdatedTokenAccount,
                 ])
                 .action_cond_where(
-                    Condition::all()
+                    Condition::any()
                         .add(
-                            Condition::any()
+                            Condition::all()
                                 .add(
-                                    Expr::tbl(Alias::new("excluded"), asset::Column::Owner)
-                                        .ne(Expr::tbl(asset::Entity, asset::Column::Owner)),
+                                    Condition::any()
+                                        .add(
+                                            Expr::tbl(Alias::new("excluded"), asset::Column::Owner)
+                                                .ne(Expr::tbl(asset::Entity, asset::Column::Owner)),
+                                        )
+                                        .add(
+                                            Expr::tbl(
+                                                Alias::new("excluded"),
+                                                asset::Column::Frozen,
+                                            )
+                                            .ne(Expr::tbl(asset::Entity, asset::Column::Frozen)),
+                                        )
+                                        .add(
+                                            Expr::tbl(
+                                                Alias::new("excluded"),
+                                                asset::Column::Delegate,
+                                            )
+                                            .ne(Expr::tbl(asset::Entity, asset::Column::Delegate)),
+                                        ),
                                 )
-                                .add(
-                                    Expr::tbl(Alias::new("excluded"), asset::Column::Frozen)
-                                        .ne(Expr::tbl(asset::Entity, asset::Column::Frozen)),
-                                )
-                                .add(
-                                    Expr::tbl(Alias::new("excluded"), asset::Column::Delegate)
-                                        .ne(Expr::tbl(asset::Entity, asset::Column::Delegate)),
-                                ),
+                                .add_option(columns.slot_updated_token_account.map(|slot| {
+                                    Expr::tbl(asset::Entity, asset::Column::SlotUpdatedTokenAccount)
+                                        .lte(slot)
+                                })),
                         )
-                        .add_option(columns.slot_updated_token_account.map(|slot| {
+                        .add(
                             Expr::tbl(asset::Entity, asset::Column::SlotUpdatedTokenAccount)
-                                .lte(slot)
-                        })),
+                                .is_null(),
+                        ),
                 )
                 .to_owned(),
         )
-        .build(DbBackend::Postgres);
+        .exec_without_returning(txn_or_conn)
+        .await?;
 
-    query.sql = format!(
-    "{} WHERE (excluded.slot_updated_token_account >= asset.slot_updated_token_account OR asset.slot_updated_token_account IS NULL) AND asset.owner_type = 'single'",
-    query.sql);
-    txn_or_conn.execute(query).await?;
     Ok(())
 }
 
