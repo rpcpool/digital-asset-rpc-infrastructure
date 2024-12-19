@@ -84,24 +84,27 @@ pub async fn save_master_edition(
                 .action_cond_where(
                     Condition::all()
                         .add(
-                            Expr::tbl(
-                                Alias::new("excluded"),
-                                asset_v1_account_attachments::Column::AttachmentType,
-                            )
-                            .ne(Expr::tbl(
-                                asset_v1_account_attachments::Entity,
-                                asset_v1_account_attachments::Column::AttachmentType,
-                            )),
-                        )
-                        .add(
-                            Expr::tbl(
-                                Alias::new("excluded"),
-                                asset_v1_account_attachments::Column::Data,
-                            )
-                            .ne(Expr::tbl(
-                                asset_v1_account_attachments::Entity,
-                                asset_v1_account_attachments::Column::Data,
-                            )),
+                            Condition::any()
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_v1_account_attachments::Column::AttachmentType,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_v1_account_attachments::Entity,
+                                        asset_v1_account_attachments::Column::AttachmentType,
+                                    )),
+                                )
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_v1_account_attachments::Column::Data,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_v1_account_attachments::Entity,
+                                        asset_v1_account_attachments::Column::Data,
+                                    )),
+                                ),
                         )
                         .add(
                             Expr::tbl(
@@ -114,7 +117,7 @@ pub async fn save_master_edition(
                 .to_owned(),
         )
         .exec_without_returning(txn)
-        .await
-        .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
+        .await?;
+
     Ok(())
 }
