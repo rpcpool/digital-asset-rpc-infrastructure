@@ -44,38 +44,65 @@ pub async fn upsert_assets_token_account_columns<T: ConnectionTrait + Transactio
                     asset::Column::SlotUpdatedTokenAccount,
                 ])
                 .action_cond_where(
-                    Condition::any()
+                    Condition::all()
                         .add(
-                            Condition::all()
+                            Condition::any()
                                 .add(
-                                    Condition::any()
+                                    Condition::all()
                                         .add(
-                                            Expr::tbl(Alias::new("excluded"), asset::Column::Owner)
-                                                .ne(Expr::tbl(asset::Entity, asset::Column::Owner)),
+                                            Condition::any()
+                                                .add(
+                                                    Expr::tbl(
+                                                        Alias::new("excluded"),
+                                                        asset::Column::Owner,
+                                                    )
+                                                    .ne(Expr::tbl(
+                                                        asset::Entity,
+                                                        asset::Column::Owner,
+                                                    )),
+                                                )
+                                                .add(
+                                                    Expr::tbl(
+                                                        Alias::new("excluded"),
+                                                        asset::Column::Frozen,
+                                                    )
+                                                    .ne(Expr::tbl(
+                                                        asset::Entity,
+                                                        asset::Column::Frozen,
+                                                    )),
+                                                )
+                                                .add(
+                                                    Expr::tbl(
+                                                        Alias::new("excluded"),
+                                                        asset::Column::Delegate,
+                                                    )
+                                                    .ne(Expr::tbl(
+                                                        asset::Entity,
+                                                        asset::Column::Delegate,
+                                                    )),
+                                                ),
                                         )
-                                        .add(
-                                            Expr::tbl(
-                                                Alias::new("excluded"),
-                                                asset::Column::Frozen,
-                                            )
-                                            .ne(Expr::tbl(asset::Entity, asset::Column::Frozen)),
-                                        )
-                                        .add(
-                                            Expr::tbl(
-                                                Alias::new("excluded"),
-                                                asset::Column::Delegate,
-                                            )
-                                            .ne(Expr::tbl(asset::Entity, asset::Column::Delegate)),
-                                        ),
+                                        .add_option(columns.slot_updated_token_account.map(
+                                            |slot| {
+                                                Expr::tbl(
+                                                    asset::Entity,
+                                                    asset::Column::SlotUpdatedTokenAccount,
+                                                )
+                                                .lte(slot)
+                                            },
+                                        )),
                                 )
-                                .add_option(columns.slot_updated_token_account.map(|slot| {
-                                    Expr::tbl(asset::Entity, asset::Column::SlotUpdatedTokenAccount)
-                                        .lte(slot)
-                                })),
+                                .add(
+                                    Expr::tbl(
+                                        asset::Entity,
+                                        asset::Column::SlotUpdatedTokenAccount,
+                                    )
+                                    .is_null(),
+                                ),
                         )
                         .add(
-                            Expr::tbl(asset::Entity, asset::Column::SlotUpdatedTokenAccount)
-                                .is_null(),
+                            Expr::tbl(asset::Entity, asset::Column::OwnerType)
+                                .eq(Expr::val(OwnerType::Single).as_enum(Alias::new("owner_type"))),
                         ),
                 )
                 .to_owned(),
