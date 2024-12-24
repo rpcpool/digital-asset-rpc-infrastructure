@@ -2,7 +2,7 @@ use sea_orm::{EntityTrait, EnumIter, Related, RelationDef, RelationTrait};
 
 use crate::dao::{
     asset, asset_authority, asset_creators, asset_data, asset_grouping,
-    asset_v1_account_attachments,
+    asset_v1_account_attachments, token_accounts,
     sea_orm_active_enums::{OwnerType, RoyaltyTargetType},
 };
 
@@ -13,6 +13,7 @@ pub enum Relation {
     AssetAuthority,
     AssetCreators,
     AssetGrouping,
+    TokenAccounts,
 }
 
 impl RelationTrait for Relation {
@@ -21,6 +22,10 @@ impl RelationTrait for Relation {
             Self::AssetData => asset::Entity::belongs_to(asset_data::Entity)
                 .from(asset::Column::AssetData)
                 .to(asset_data::Column::Id)
+                .into(),
+            Self::TokenAccounts => asset::Entity::belongs_to(token_accounts::Entity)
+                .from(asset::Column::Id)
+                .to(token_accounts::Column::Mint)
                 .into(),
             Self::AssetV1AccountAttachments => {
                 asset::Entity::has_many(asset_v1_account_attachments::Entity).into()
@@ -59,6 +64,12 @@ impl Related<asset_creators::Entity> for asset::Entity {
 impl Related<asset_grouping::Entity> for asset::Entity {
     fn to() -> RelationDef {
         Relation::AssetGrouping.def()
+    }
+}
+
+impl Related<token_accounts::Entity> for asset::Entity {
+    fn to() -> RelationDef {
+        Relation::TokenAccounts.def()
     }
 }
 
