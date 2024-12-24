@@ -1,6 +1,6 @@
 use sea_orm::{EntityTrait, EnumIter, Related, RelationDef, RelationTrait};
 
-use crate::dao::{asset , token_accounts};
+use crate::dao::{asset, token_accounts};
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
