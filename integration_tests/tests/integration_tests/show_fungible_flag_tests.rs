@@ -82,3 +82,40 @@ async fn test_get_asset_with_show_fungible_scenario_2() {
 
     insta::assert_json_snapshot!(name, response);
 }
+
+#[tokio::test]
+#[serial]
+#[named]
+async fn test_get_asset_by_owner_with_show_fungible_scenario() {
+    let name = trim_test_name(function_name!());
+    let setup = TestSetup::new_with_options(
+        name.clone(),
+        TestSetupOptions {
+            network: Some(Network::Mainnet),
+        },
+    )
+    .await;
+
+    let seeds: Vec<SeedEvent> = seed_accounts([
+        "7EYnhQoR9YM3N7UoaKRoA44Uy8JeaZV3qyouov87awMs",
+        "7BajpcYgnxmWK91RhrfsdB3Tm83PcDwPvMC8ZinvtTY6",
+        "6BRNfDfdq1nKyU1TQiCEQLWyPtD8EwUH9Kt2ahsbidUx",
+    ]);
+
+    apply_migrations_and_delete_data(setup.db.clone()).await;
+    index_seed_events(&setup, seeds.iter().collect_vec()).await;
+
+    let request = r#"        
+    {
+        "ownerAddress": "2oerfxddTpK5hWAmCMYB6fr9WvNrjEH54CHCWK8sAq7g",
+        "displayOptions": {
+            "showFungible": true
+        }
+    }
+    "#;
+
+    let request: api::GetAssetsByOwner = serde_json::from_str(request).unwrap();
+    let response = setup.das_api.get_assets_by_owner(request).await.unwrap();
+
+    insta::assert_json_snapshot!(name, response);
+}
