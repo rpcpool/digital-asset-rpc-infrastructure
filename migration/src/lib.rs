@@ -45,8 +45,7 @@ mod m20240320_120101_add_mpl_core_info_items;
 mod m20240520_120101_add_mpl_core_external_plugins_columns;
 mod m20240718_161232_change_supply_columns_to_numeric;
 mod m20241119_060310_add_token_inscription_enum_variant;
-mod m20241209_100813_add_unique_index_for_asset_owner_and_supply;
-mod m20241209_111604_add_index_for_asset_id_group_value_verified;
+mod m20250129_111841_add_owner_idx_for_token_accounts;
 
 pub mod model;
 
@@ -101,8 +100,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20240520_120101_add_mpl_core_external_plugins_columns::Migration),
             Box::new(m20240718_161232_change_supply_columns_to_numeric::Migration),
             Box::new(m20241119_060310_add_token_inscription_enum_variant::Migration),
-            Box::new(m20241209_100813_add_unique_index_for_asset_owner_and_supply::Migration),
-            Box::new(m20241209_111604_add_index_for_asset_id_group_value_verified::Migration),
+            Box::new(m20250129_111841_add_owner_idx_for_token_accounts::Migration),
         ]
     }
 }
