@@ -345,6 +345,14 @@ pub async fn get_related_for_assets(
         }
     }
 
+    for id in ids.clone() {
+        if let Ok(t) = get_token_by_id(conn, id.clone()).await {
+            if let Some(asset) = assets_map.get_mut(&id) {
+                asset.token_info = Some(t);
+            }
+        }
+    }
+
     let cond = if show_unverified_collections {
         Condition::all()
     } else {
