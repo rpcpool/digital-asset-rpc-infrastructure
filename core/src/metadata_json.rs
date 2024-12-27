@@ -1,12 +1,12 @@
 use {
     backon::{ExponentialBuilder, Retryable},
     clap::Parser,
-    digital_asset_types::dao::asset_data,
+    digital_asset_types::dao::asset_data::{self},
     futures::{future::BoxFuture, stream::FuturesUnordered, StreamExt},
     indicatif::HumanDuration,
     log::{debug, error},
     reqwest::{Client, Url as ReqwestUrl},
-    sea_orm::{entity::*, SqlxPostgresConnector},
+    sea_orm::{entity::*, ConnectionTrait, SqlxPostgresConnector, TransactionTrait},
     serde::{Deserialize, Serialize},
     tokio::{
         sync::mpsc::{error::SendError, unbounded_channel, UnboundedSender},
@@ -90,9 +90,8 @@ impl MetadataJsonDownloadWorkerArgs {
                 }
 
                 let pool = pool.clone();
-                let client = client.clone();
 
-                handlers.push(spawn_task(client, pool, download_metadata_info));
+                handlers.push(spawn_task(client.clone(), pool, download_metadata_info));
             }
 
             while handlers.next().await.is_some() {}
@@ -169,10 +168,10 @@ async fn fetch_metadata_json(
         let response = client.get(url.clone()).send().await?;
 
         match response.error_for_status() {
-            Ok(res) => res
+            Ok(res) => Ok(res
                 .json::<serde_json::Value>()
                 .await
-                .map_err(|source| FetchMetadataJsonError::Parse { source, url }),
+                .map_err(|source| FetchMetadataJsonError::Parse { source, url })?),
             Err(source) => {
                 let status = source
                     .status()
@@ -206,6 +205,7 @@ pub async fn perform_metadata_json_task(
     pool: sqlx::PgPool,
     download_metadata_info: &DownloadMetadataInfo,
 ) -> Result<asset_data::Model, MetadataJsonTaskError> {
+    let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
     match fetch_metadata_json(client, &download_metadata_info.uri).await {
         Ok(metadata) => {
             let active_model = asset_data::ActiveModel {
@@ -215,13 +215,21 @@ pub async fn perform_metadata_json_task(
                 ..Default::default()
             };
 
-            let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
-
             let model = active_model.update(&conn).await?;
 
             Ok(model)
         }
-        Err(e) => Err(MetadataJsonTaskError::Fetch(e)),
+        Err(e) => {
+            let active_model = asset_data::ActiveModel {
+                id: Set(download_metadata_info.asset_data_id.clone()),
+                reindex: Set(Some(true)),
+                ..Default::default()
+            };
+
+            active_model.update(&conn).await?;
+
+            Err(MetadataJsonTaskError::Fetch(e))
+        }
     }
 }
 
@@ -247,4 +255,15 @@ impl DownloadMetadata {
         .await
         .map(|_| ())
     }
+}
+
+pub async fn skip_metadata_json_download<T>(asset_data_id: &[u8], uri: &str, conn: &T) -> bool
+where
+    T: ConnectionTrait + TransactionTrait,
+{
+    asset_data::Entity::find_by_id(asset_data_id.to_vec())
+        .one(conn)
+        .await
+        .unwrap_or(None)
+        .is_some_and(|model| model.metadata_url.eq(uri))
 }
