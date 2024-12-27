@@ -6,7 +6,25 @@ snapshot_kind: text
 {
   "interface": "FungibleToken",
   "id": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
-  "authorities": [],
+  "content": {
+    "$schema": "https://schema.metaplex.com/nft1.0.json",
+    "json_uri": "https://storage.googleapis.com/token-metadata/JitoSOL.json",
+    "files": [],
+    "metadata": {
+      "name": "Jito Staked SOL",
+      "symbol": "JitoSOL",
+      "token_standard": "Fungible"
+    },
+    "links": {}
+  },
+  "authorities": [
+    {
+      "address": "EDGARWktv3nDxRYjufjdbZmryqGXceaFPoPpbUzdpqED",
+      "scopes": [
+        "full"
+      ]
+    }
+  ],
   "compression": {
     "eligible": false,
     "compressed": false,
@@ -34,7 +52,7 @@ snapshot_kind: text
     "ownership_model": "token",
     "owner": ""
   },
-  "mutable": false,
+  "mutable": true,
   "burnt": false,
   "token_info": {
     "supply": 12434210592536617,

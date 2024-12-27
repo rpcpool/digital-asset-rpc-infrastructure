@@ -130,7 +130,10 @@ async fn test_get_asset_with_show_fungible_scenario_4() {
     )
     .await;
 
-    let seeds: Vec<SeedEvent> = seed_accounts(["J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn"]);
+    let seeds: Vec<SeedEvent> = seed_accounts([
+        "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+        "8yn5oqFMwYA8SgGqWwKq1Hia8aM5gh1DWmHEL34hMqBX",
+    ]);
 
     apply_migrations_and_delete_data(setup.db.clone()).await;
     index_seed_events(&setup, seeds.iter().collect_vec()).await;
