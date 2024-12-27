@@ -5,7 +5,7 @@ use super::tokens;
 #[derive(Clone, Debug, PartialEq)]
 pub struct FullAsset {
     pub asset: asset::Model,
-    pub data: asset_data::Model,
+    pub data: Option<asset_data::Model>,
     pub token_info: Option<tokens::Model>,
     pub authorities: Vec<asset_authority::Model>,
     pub creators: Vec<asset_creators::Model>,

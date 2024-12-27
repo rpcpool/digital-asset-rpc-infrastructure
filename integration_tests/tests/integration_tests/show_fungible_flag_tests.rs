@@ -86,6 +86,73 @@ async fn test_get_asset_with_show_fungible_scenario_2() {
 #[tokio::test]
 #[serial]
 #[named]
+async fn test_get_asset_with_show_fungible_scenario_3() {
+    let name = trim_test_name(function_name!());
+    let setup = TestSetup::new_with_options(
+        name.clone(),
+        TestSetupOptions {
+            network: Some(Network::Mainnet),
+        },
+    )
+    .await;
+
+    let seeds: Vec<SeedEvent> = seed_accounts(["2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo"]);
+
+    apply_migrations_and_delete_data(setup.db.clone()).await;
+    index_seed_events(&setup, seeds.iter().collect_vec()).await;
+
+    let request = r#"        
+    {
+        "id": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
+        "displayOptions": {
+            "showFungible": true
+        }
+
+    }
+    "#;
+
+    let request: api::GetAsset = serde_json::from_str(request).unwrap();
+    let response = setup.das_api.get_asset(request).await.unwrap();
+
+    insta::assert_json_snapshot!(name, response);
+}
+
+#[tokio::test]
+#[serial]
+#[named]
+async fn test_get_asset_with_show_fungible_scenario_4() {
+    let name = trim_test_name(function_name!());
+    let setup = TestSetup::new_with_options(
+        name.clone(),
+        TestSetupOptions {
+            network: Some(Network::Mainnet),
+        },
+    )
+    .await;
+
+    let seeds: Vec<SeedEvent> = seed_accounts(["J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn"]);
+
+    apply_migrations_and_delete_data(setup.db.clone()).await;
+    index_seed_events(&setup, seeds.iter().collect_vec()).await;
+
+    let request = r#"        
+    {
+        "id": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+        "displayOptions": {
+            "showFungible": true
+        }
+    }
+    "#;
+
+    let request: api::GetAsset = serde_json::from_str(request).unwrap();
+    let response = setup.das_api.get_asset(request).await.unwrap();
+
+    insta::assert_json_snapshot!(name, response);
+}
+
+#[tokio::test]
+#[serial]
+#[named]
 async fn test_get_asset_by_owner_with_show_fungible() {
     let name = trim_test_name(function_name!());
     let setup = TestSetup::new_with_options(
