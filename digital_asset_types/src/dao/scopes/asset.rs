@@ -5,7 +5,7 @@ use crate::{
         cl_audits_v2,
         extensions::{self, instruction::PascalCase},
         sea_orm_active_enums::{Instruction, V1AccountAttachments},
-        token_accounts, token_accounts, tokens, Cursor, FullAsset, GroupingSize, Pagination,
+        token_accounts, tokens, Cursor, FullAsset, GroupingSize, Pagination,
     },
     rpc::{
         filter::AssetSortDirection,
@@ -16,7 +16,7 @@ use crate::{
 use indexmap::IndexMap;
 use mpl_token_metadata::accounts::{Edition, MasterEdition};
 use sea_orm::sea_query::{Expr, IntoCondition};
-use sea_orm::{entity::*, query::*, sea_query::Expr, ConnectionTrait, DbErr, Order};
+use sea_orm::{entity::*, query::*, ConnectionTrait, DbErr, Order};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use solana_sdk::pubkey::Pubkey;
