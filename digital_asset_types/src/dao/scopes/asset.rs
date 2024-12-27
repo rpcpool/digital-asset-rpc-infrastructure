@@ -5,7 +5,7 @@ use crate::{
         cl_audits_v2,
         extensions::{self, instruction::PascalCase},
         sea_orm_active_enums::{Instruction, V1AccountAttachments},
-        token_accounts, tokens, Cursor, FullAsset, GroupingSize, Pagination,
+        token_accounts, token_accounts, tokens, Cursor, FullAsset, GroupingSize, Pagination,
     },
     rpc::{
         filter::AssetSortDirection,
@@ -15,6 +15,7 @@ use crate::{
 };
 use indexmap::IndexMap;
 use mpl_token_metadata::accounts::{Edition, MasterEdition};
+use sea_orm::sea_query::{Expr, IntoCondition};
 use sea_orm::{entity::*, query::*, sea_query::Expr, ConnectionTrait, DbErr, Order};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -160,14 +161,30 @@ pub async fn get_assets_by_owner(
     limit: u64,
     options: &Options,
 ) -> Result<Vec<FullAsset>, DbErr> {
-    let cond = Condition::all()
-        .add(asset::Column::Owner.eq(owner))
+    let mut joins = Vec::new();
+    let mut cond = Condition::all()
+        .add(asset::Column::Owner.eq(owner.clone()))
         .add(asset::Column::Supply.gt(0));
+
+    if options.show_fungible {
+        cond = Condition::all().add(token_accounts::Column::Owner.eq(owner.clone()));
+
+        let rel = extensions::token_accounts::Relation::Asset
+            .def()
+            .rev()
+            .on_condition(|left, right| {
+                Expr::tbl(right, token_accounts::Column::Mint)
+                    .eq(Expr::tbl(left, asset::Column::Id))
+                    .into_condition()
+            });
+
+        joins.push(rel);
+    }
 
     get_assets_by_condition(
         conn,
         cond,
-        vec![],
+        joins,
         sort_by,
         sort_direction,
         pagination,
