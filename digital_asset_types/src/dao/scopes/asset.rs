@@ -3,8 +3,8 @@ use crate::{
         asset::{self},
         asset_authority, asset_creators, asset_data, asset_grouping, cl_audits_v2,
         extensions::{self, instruction::PascalCase},
-        sea_orm_active_enums::Instruction,
-        Cursor, FullAsset, GroupingSize, Pagination,
+        sea_orm_active_enums::{Instruction, OwnerType},
+        token_accounts, Cursor, FullAsset, GroupingSize, Pagination,
     },
     rpc::filter::AssetSortDirection,
 };
@@ -78,6 +78,7 @@ pub async fn get_by_creator(
         limit,
         show_unverified_collections,
         Some(creator),
+        false,
     )
     .await
 }
@@ -138,6 +139,7 @@ pub async fn get_by_grouping(
         limit,
         show_unverified_collections,
         None,
+        false,
     )
     .await
 }
@@ -163,6 +165,7 @@ pub async fn get_assets_by_owner(
         pagination,
         limit,
         show_unverified_collections,
+        true,
     )
     .await
 }
@@ -185,6 +188,7 @@ pub async fn get_assets(
         Order::Asc,
         pagination,
         limit,
+        false,
         false,
     )
     .await
@@ -212,6 +216,7 @@ pub async fn get_by_authority(
         limit,
         show_unverified_collections,
         None,
+        false,
     )
     .await
 }
@@ -227,6 +232,7 @@ async fn get_by_related_condition<E>(
     limit: u64,
     show_unverified_collections: bool,
     required_creator: Option<Vec<u8>>,
+    show_owner_for_fungible: bool,
 ) -> Result<Vec<FullAsset>, DbErr>
 where
     E: RelationTrait,
@@ -244,7 +250,14 @@ where
     let assets = paginate(pagination, limit, stmt, sort_direction, asset::Column::Id)
         .all(conn)
         .await?;
-    get_related_for_assets(conn, assets, show_unverified_collections, required_creator).await
+    get_related_for_assets(
+        conn,
+        assets,
+        show_unverified_collections,
+        required_creator,
+        show_owner_for_fungible,
+    )
+    .await
 }
 
 pub async fn get_related_for_assets(
@@ -252,11 +265,12 @@ pub async fn get_related_for_assets(
     assets: Vec<asset::Model>,
     show_unverified_collections: bool,
     required_creator: Option<Vec<u8>>,
+    show_owner_for_fungible: bool,
 ) -> Result<Vec<FullAsset>, DbErr> {
     let asset_ids = assets.iter().map(|a| a.id.clone()).collect::<Vec<_>>();
 
     let asset_data: Vec<asset_data::Model> = asset_data::Entity::find()
-        .filter(asset_data::Column::Id.is_in(asset_ids))
+        .filter(asset_data::Column::Id.is_in(asset_ids.clone()))
         .all(conn)
         .await?;
     let asset_data_map = asset_data.into_iter().fold(HashMap::new(), |mut acc, ad| {
@@ -297,6 +311,24 @@ pub async fn get_related_for_assets(
     for c in creators.into_iter() {
         if let Some(asset) = assets_map.get_mut(&c.asset_id) {
             asset.creators.push(c);
+        }
+    }
+
+    // While using getAssetByOwner or searchAssets with owner_address, for fungible_assets held by the particular owner
+    // the owner feild was coming as empty, instead in the place of owner we should show the owner of that token-account
+    if show_owner_for_fungible {
+        let token_account_data: Vec<token_accounts::Model> = token_accounts::Entity::find()
+            .filter(token_accounts::Column::Mint.is_in(asset_ids))
+            .all(conn)
+            .await?;
+
+        for t in token_account_data.into_iter() {
+            if let Some(asset) = assets_map.get_mut(&t.mint) {
+                if asset.asset.owner.clone().is_none() && asset.asset.owner_type == OwnerType::Token
+                {
+                    asset.asset.owner = Some(t.owner);
+                }
+            }
         }
     }
 
@@ -361,6 +393,7 @@ pub async fn get_assets_by_condition(
     pagination: &Pagination,
     limit: u64,
     show_unverified_collections: bool,
+    show_owner_for_fungible: bool,
 ) -> Result<Vec<FullAsset>, DbErr> {
     let mut stmt = asset::Entity::find();
     for def in joins {
@@ -376,8 +409,14 @@ pub async fn get_assets_by_condition(
     let assets = paginate(pagination, limit, stmt, sort_direction, asset::Column::Id)
         .all(conn)
         .await?;
-    let full_assets =
-        get_related_for_assets(conn, assets, show_unverified_collections, None).await?;
+    let full_assets = get_related_for_assets(
+        conn,
+        assets,
+        show_unverified_collections,
+        None,
+        show_owner_for_fungible,
+    )
+    .await?;
     Ok(full_assets)
 }
 
