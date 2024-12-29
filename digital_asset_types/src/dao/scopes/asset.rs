@@ -314,8 +314,9 @@ pub async fn get_related_for_assets(
         }
     }
 
-    // While using getAssetByOwner or searchAssets with owner_address, for fungible_assets held by the particular owner
-    // the owner feild was coming as empty, instead in the place of owner we should show the owner of that token-account
+    // When using getAssetByOwner or searchAssets with an owner_address to retrieve fungible assets, the 'owner' field was previously returned as empty.
+    // Instead of an empty value, we should now display the actual owner of the token account associated with the asset.
+
     if show_owner_for_fungible {
         let token_account_data: Vec<token_accounts::Model> = token_accounts::Entity::find()
             .filter(token_accounts::Column::Mint.is_in(asset_ids))
