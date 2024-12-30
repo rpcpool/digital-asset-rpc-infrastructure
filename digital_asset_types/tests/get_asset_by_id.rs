@@ -27,8 +27,6 @@ async fn get_asset_by_id() -> Result<(), DbErr> {
         is_mutable: true,
         edition_nonce: None,
         token_standard: Some(TokenStandard::NonFungible),
-        collection: None,
-        uses: None,
         creators: vec![Creator {
             address: creator_1,
             share: 100,
