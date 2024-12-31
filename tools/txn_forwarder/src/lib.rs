@@ -27,6 +27,7 @@ use {
 };
 
 #[derive(Debug, thiserror::Error)]
+#[allow(clippy::large_enum_variant)]
 pub enum FindSignaturesError {
     #[error("Failed to fetch signatures: {0}")]
     Fetch(#[from] ClientError),

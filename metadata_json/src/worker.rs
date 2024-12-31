@@ -34,6 +34,7 @@ impl From<WorkerArgs> for Worker {
 }
 
 #[derive(thiserror::Error, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum WorkerError {
     #[error("send error: {0}")]
     Send(#[from] mpsc::error::SendError<asset_data::Model>),

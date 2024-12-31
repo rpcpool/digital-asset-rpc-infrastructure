@@ -225,7 +225,7 @@ impl Serialize for ShadowAeCiphertext {
     }
 }
 
-impl<'de> Visitor<'de> for ShadowElGamalCiphertextVisitor {
+impl Visitor<'_> for ShadowElGamalCiphertextVisitor {
     type Value = ShadowElGamalCiphertext;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
