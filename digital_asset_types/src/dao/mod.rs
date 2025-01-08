@@ -269,7 +269,12 @@ impl SearchAssetsQuery {
             if self.token_type == Some(TokenTypeClass::Fungible)
                 || self.token_type == Some(TokenTypeClass::All)
             {
-                conditions = conditions.add(token_accounts::Column::Owner.eq(o));
+                conditions = conditions.add(
+                    asset::Column::Owner
+                        .eq(o.clone())
+                        .or(token_accounts::Column::Owner.eq(o)),
+                );
+
                 let rel = extensions::token_accounts::Relation::Asset
                     .def()
                     .rev()
