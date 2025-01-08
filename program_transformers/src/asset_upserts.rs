@@ -44,65 +44,38 @@ pub async fn upsert_assets_token_account_columns<T: ConnectionTrait + Transactio
                     asset::Column::SlotUpdatedTokenAccount,
                 ])
                 .action_cond_where(
-                    Condition::all()
+                    Condition::any()
                         .add(
-                            Condition::any()
+                            Condition::all()
                                 .add(
-                                    Condition::all()
+                                    Condition::any()
                                         .add(
-                                            Condition::any()
-                                                .add(
-                                                    Expr::tbl(
-                                                        Alias::new("excluded"),
-                                                        asset::Column::Owner,
-                                                    )
-                                                    .ne(Expr::tbl(
-                                                        asset::Entity,
-                                                        asset::Column::Owner,
-                                                    )),
-                                                )
-                                                .add(
-                                                    Expr::tbl(
-                                                        Alias::new("excluded"),
-                                                        asset::Column::Frozen,
-                                                    )
-                                                    .ne(Expr::tbl(
-                                                        asset::Entity,
-                                                        asset::Column::Frozen,
-                                                    )),
-                                                )
-                                                .add(
-                                                    Expr::tbl(
-                                                        Alias::new("excluded"),
-                                                        asset::Column::Delegate,
-                                                    )
-                                                    .ne(Expr::tbl(
-                                                        asset::Entity,
-                                                        asset::Column::Delegate,
-                                                    )),
-                                                ),
+                                            Expr::tbl(Alias::new("excluded"), asset::Column::Owner)
+                                                .ne(Expr::tbl(asset::Entity, asset::Column::Owner)),
                                         )
-                                        .add_option(columns.slot_updated_token_account.map(
-                                            |slot| {
-                                                Expr::tbl(
-                                                    asset::Entity,
-                                                    asset::Column::SlotUpdatedTokenAccount,
-                                                )
-                                                .lte(slot)
-                                            },
-                                        )),
+                                        .add(
+                                            Expr::tbl(
+                                                Alias::new("excluded"),
+                                                asset::Column::Frozen,
+                                            )
+                                            .ne(Expr::tbl(asset::Entity, asset::Column::Frozen)),
+                                        )
+                                        .add(
+                                            Expr::tbl(
+                                                Alias::new("excluded"),
+                                                asset::Column::Delegate,
+                                            )
+                                            .ne(Expr::tbl(asset::Entity, asset::Column::Delegate)),
+                                        ),
                                 )
-                                .add(
-                                    Expr::tbl(
-                                        asset::Entity,
-                                        asset::Column::SlotUpdatedTokenAccount,
-                                    )
-                                    .is_null(),
-                                ),
+                                .add_option(columns.slot_updated_token_account.map(|slot| {
+                                    Expr::tbl(asset::Entity, asset::Column::SlotUpdatedTokenAccount)
+                                        .lte(slot)
+                                })),
                         )
                         .add(
-                            Expr::tbl(asset::Entity, asset::Column::OwnerType)
-                                .eq(Expr::val(OwnerType::Single).as_enum(Alias::new("owner_type"))),
+                            Expr::tbl(asset::Entity, asset::Column::SlotUpdatedTokenAccount)
+                                .is_null(),
                         ),
                 )
                 .to_owned(),
@@ -116,26 +89,26 @@ pub async fn upsert_assets_token_account_columns<T: ConnectionTrait + Transactio
 pub struct AssetMintAccountColumns {
     pub mint: Vec<u8>,
     pub supply: Decimal,
-    pub supply_mint: Option<Vec<u8>>,
-    pub slot_updated_mint_account: u64,
+    pub slot_updated_mint_account: i64,
+    pub extensions: Option<Value>,
 }
 
 pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + TransactionTrait>(
     columns: AssetMintAccountColumns,
     txn_or_conn: &T,
 ) -> Result<(), DbErr> {
-    let owner_type = if columns.supply == Decimal::from(1) {
-        OwnerType::Single
-    } else {
-        OwnerType::Token
-    };
-
     let active_model = asset::ActiveModel {
-        id: Set(columns.mint),
+        id: Set(columns.mint.clone()),
         supply: Set(columns.supply),
-        supply_mint: Set(columns.supply_mint),
-        slot_updated_mint_account: Set(Some(columns.slot_updated_mint_account as i64)),
-        owner_type: Set(owner_type),
+        supply_mint: Set(Some(columns.mint.clone())),
+        slot_updated_mint_account: Set(Some(columns.slot_updated_mint_account)),
+        slot_updated: Set(Some(columns.slot_updated_mint_account)),
+        mint_extensions: Set(columns.extensions),
+        asset_data: Set(Some(columns.mint.clone())),
+        // assume every token is a fungible token when mint account is created
+        specification_asset_class: Set(Some(SpecificationAssetClass::FungibleToken)),
+        // // assume multiple ownership as we set asset class to fungible token
+        owner_type: Set(OwnerType::Token),
         ..Default::default()
     };
     asset::Entity::insert(active_model)
@@ -145,7 +118,9 @@ pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + Transaction
                     asset::Column::Supply,
                     asset::Column::SupplyMint,
                     asset::Column::SlotUpdatedMintAccount,
-                    asset::Column::OwnerType,
+                    asset::Column::MintExtensions,
+                    asset::Column::SlotUpdated,
+                    asset::Column::AssetData,
                 ])
                 .action_cond_where(
                     Condition::any()
@@ -179,7 +154,7 @@ pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + Transaction
                                 )
                                 .add(
                                     Expr::tbl(asset::Entity, asset::Column::SlotUpdatedMintAccount)
-                                        .lte(columns.slot_updated_mint_account as i64),
+                                        .lte(columns.slot_updated_mint_account),
                                 ),
                         )
                         .add(
@@ -198,6 +173,7 @@ pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + Transaction
 pub struct AssetMetadataAccountColumns {
     pub mint: Vec<u8>,
     pub specification_asset_class: Option<SpecificationAssetClass>,
+    pub owner_type: OwnerType,
     pub royalty_amount: i32,
     pub asset_data: Option<Vec<u8>>,
     pub slot_updated_metadata_account: u64,
@@ -218,6 +194,7 @@ pub async fn upsert_assets_metadata_account_columns<T: ConnectionTrait + Transac
         id: Set(columns.mint),
         specification_version: Set(Some(SpecificationVersions::V1)),
         specification_asset_class: Set(columns.specification_asset_class),
+        owner_type: Set(columns.owner_type),
         tree_id: Set(None),
         nonce: Set(Some(0)),
         seq: Set(Some(0)),
@@ -247,6 +224,7 @@ pub async fn upsert_assets_metadata_account_columns<T: ConnectionTrait + Transac
                 .update_columns([
                     asset::Column::SpecificationVersion,
                     asset::Column::SpecificationAssetClass,
+                    asset::Column::OwnerType,
                     asset::Column::TreeId,
                     asset::Column::Nonce,
                     asset::Column::Seq,

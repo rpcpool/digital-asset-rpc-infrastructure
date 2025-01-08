@@ -66,6 +66,7 @@ pub struct MetadataJsonDownloadWorkerArgs {
 }
 
 impl MetadataJsonDownloadWorkerArgs {
+    #[allow(clippy::result_large_err)]
     pub fn start(
         &self,
         pool: sqlx::PgPool,
@@ -103,6 +104,7 @@ impl MetadataJsonDownloadWorkerArgs {
 }
 
 #[derive(thiserror::Error, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum MetadataJsonDownloadWorkerError {
     #[error("send error: {0}")]
     Send(#[from] SendError<asset_data::Model>),

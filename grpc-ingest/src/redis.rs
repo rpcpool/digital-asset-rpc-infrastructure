@@ -69,8 +69,7 @@ impl RedisStreamMessage<Self> for AccountInfo {
 
         let SubscribeUpdateAccount { account, slot, .. } = Message::decode(account_data.as_ref())?;
 
-        let account =
-            account.ok_or_else(|| RedisStreamMessageError::InvalidSubscribeUpdateAccount)?;
+        let account = account.ok_or(RedisStreamMessageError::InvalidSubscribeUpdateAccount)?;
 
         Ok(Self {
             slot,
@@ -208,7 +207,7 @@ impl MessageHandler for DownloadMetadataJsonHandle {
 }
 
 impl DownloadMetadataJsonHandle {
-    pub fn new(download_metadata: Arc<DownloadMetadata>) -> Self {
+    pub const fn new(download_metadata: Arc<DownloadMetadata>) -> Self {
         Self(download_metadata)
     }
 }
@@ -222,7 +221,7 @@ impl Clone for DownloadMetadataJsonHandle {
 pub struct AccountHandle(Arc<ProgramTransformer>);
 
 impl AccountHandle {
-    pub fn new(program_transformer: Arc<ProgramTransformer>) -> Self {
+    pub const fn new(program_transformer: Arc<ProgramTransformer>) -> Self {
         Self(program_transformer)
     }
 }
@@ -252,7 +251,7 @@ impl Clone for AccountHandle {
 pub struct TransactionHandle(Arc<ProgramTransformer>);
 
 impl TransactionHandle {
-    pub fn new(program_transformer: Arc<ProgramTransformer>) -> Self {
+    pub const fn new(program_transformer: Arc<ProgramTransformer>) -> Self {
         Self(program_transformer)
     }
 }
@@ -287,7 +286,7 @@ pub struct Acknowledge {
 }
 
 impl Acknowledge {
-    pub fn new(config: Arc<ConfigIngestStream>, connection: MultiplexedConnection) -> Self {
+    pub const fn new(config: Arc<ConfigIngestStream>, connection: MultiplexedConnection) -> Self {
         Self { config, connection }
     }
 }

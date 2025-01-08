@@ -111,19 +111,6 @@ impl ConfigIngestStream {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
-pub struct ConfigTopograph {
-    #[serde(default = "ConfigTopograph::default_num_threads")]
-    pub num_threads: usize,
-}
-
-impl ConfigTopograph {
-    pub const fn default_num_threads() -> usize {
-        5
-    }
-}
-
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct ConfigPrometheus {
@@ -294,16 +281,6 @@ impl ConfigPostgres {
 pub struct ConfigIngesterDownloadMetadata {
     pub stream: ConfigIngestStream,
     #[serde(
-        default = "ConfigIngesterDownloadMetadata::default_num_threads",
-        deserialize_with = "deserialize_usize_str"
-    )]
-    pub num_threads: usize,
-    #[serde(
-        default = "ConfigIngesterDownloadMetadata::default_max_attempts",
-        deserialize_with = "deserialize_usize_str"
-    )]
-    pub max_attempts: usize,
-    #[serde(
         default = "ConfigIngesterDownloadMetadata::default_request_timeout",
         deserialize_with = "deserialize_duration_str",
         rename = "request_timeout_ms"
@@ -314,38 +291,11 @@ pub struct ConfigIngesterDownloadMetadata {
         deserialize_with = "deserialize_usize_str"
     )]
     pub stream_maxlen: usize,
-    #[serde(
-        default = "ConfigIngesterDownloadMetadata::default_stream_max_size",
-        deserialize_with = "deserialize_usize_str"
-    )]
-    pub pipeline_max_size: usize,
-    #[serde(
-        default = "ConfigIngesterDownloadMetadata::default_pipeline_max_idle",
-        deserialize_with = "deserialize_duration_str",
-        rename = "pipeline_max_idle_ms"
-    )]
-    pub pipeline_max_idle: Duration,
 }
 
 impl ConfigIngesterDownloadMetadata {
-    pub const fn default_num_threads() -> usize {
-        2
-    }
-
-    pub const fn default_pipeline_max_idle() -> Duration {
-        Duration::from_millis(10)
-    }
-
-    pub const fn default_stream_max_size() -> usize {
-        10
-    }
-
     pub const fn default_stream_maxlen() -> usize {
         10_000_000
-    }
-
-    pub const fn default_max_attempts() -> usize {
-        3
     }
 
     pub const fn default_request_timeout() -> Duration {
@@ -362,11 +312,6 @@ pub struct ConfigMonitor {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ConfigBubblegumVerify {
-    #[serde(
-        default = "ConfigBubblegumVerify::default_report_interval",
-        deserialize_with = "deserialize_duration_str"
-    )]
-    pub report_interval: Duration,
     #[serde(default)]
     pub only_trees: Option<Vec<String>>,
     #[serde(
@@ -377,9 +322,6 @@ pub struct ConfigBubblegumVerify {
 }
 
 impl ConfigBubblegumVerify {
-    pub const fn default_report_interval() -> Duration {
-        Duration::from_millis(5 * 60 * 1000)
-    }
     pub const fn default_max_concurrency() -> usize {
         20
     }

@@ -1,4 +1,4 @@
-use blockbuster::token_metadata::types::{Collection, Creator, TokenStandard, Uses};
+use blockbuster::token_metadata::types::{Creator, TokenStandard};
 use digital_asset_types::dao::sea_orm_active_enums::{
     SpecificationAssetClass, SpecificationVersions,
 };
@@ -30,10 +30,6 @@ pub struct MockMetadataArgs {
     pub edition_nonce: Option<u8>,
     /// Since we cannot easily change Metadata, we add the new DataV2 fields here at the end.
     pub token_standard: Option<TokenStandard>,
-    /// Collection
-    pub collection: Option<Collection>,
-    /// Uses
-    pub uses: Option<Uses>,
     pub creators: Vec<Creator>,
 }
 
@@ -169,6 +165,7 @@ pub fn create_asset(
             mpl_core_plugins_json_version: None,
             mpl_core_external_plugins: None,
             mpl_core_unknown_external_plugins: None,
+            mint_extensions: None,
         },
     )
 }

@@ -41,8 +41,6 @@ async fn get_assets_by_creator() -> Result<(), DbErr> {
         is_mutable: true,
         edition_nonce: None,
         token_standard: Some(TokenStandard::NonFungible),
-        collection: None,
-        uses: None,
         creators: vec![Creator {
             address: creator_1,
             share: 100,
@@ -93,8 +91,6 @@ async fn get_assets_by_creator() -> Result<(), DbErr> {
         is_mutable: true,
         edition_nonce: None,
         token_standard: Some(TokenStandard::NonFungible),
-        collection: None,
-        uses: None,
         creators: vec![Creator {
             address: creator_2,
             share: 100,
@@ -145,8 +141,6 @@ async fn get_assets_by_creator() -> Result<(), DbErr> {
         is_mutable: true,
         edition_nonce: None,
         token_standard: Some(TokenStandard::NonFungible),
-        collection: None,
-        uses: None,
         creators: vec![
             Creator {
                 address: creator_2,
