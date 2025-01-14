@@ -1,13 +1,13 @@
 use {
     crate::{
-        config::{ConfigIngestStream, REDIS_STREAM_DATA_KEY},
+        config::{ConfigIngestStream, ConfigIngesterDownloadMetadata, REDIS_STREAM_DATA_KEY},
         prom::{
             ack_tasks_total_dec, ack_tasks_total_inc, ingest_job_time_set, ingest_tasks_total_dec,
             ingest_tasks_total_inc, program_transformer_task_status_inc, redis_xack_inc,
             redis_xlen_set, redis_xread_inc, ProgramTransformerTaskStatusKind,
         },
     },
-    das_core::{DownloadMetadata, DownloadMetadataInfo},
+    das_core::{DownloadMetadata, DownloadMetadataInfo, DownloadMetadataJsonRetryConfig},
     futures::{future::BoxFuture, stream::FuturesUnordered, StreamExt},
     program_transformers::{AccountInfo, ProgramTransformer, TransactionInfo},
     redis::{
@@ -188,7 +188,7 @@ pub trait MessageHandler: Send + Sync + Clone + 'static {
     ) -> BoxFuture<'static, Result<(), IngestMessageError>>;
 }
 
-pub struct DownloadMetadataJsonHandle(Arc<DownloadMetadata>);
+pub struct DownloadMetadataJsonHandle(Arc<DownloadMetadata>, Arc<DownloadMetadataJsonRetryConfig>);
 
 impl MessageHandler for DownloadMetadataJsonHandle {
     fn handle(
@@ -196,11 +196,12 @@ impl MessageHandler for DownloadMetadataJsonHandle {
         input: HashMap<String, RedisValue>,
     ) -> BoxFuture<'static, Result<(), IngestMessageError>> {
         let download_metadata = Arc::clone(&self.0);
+        let download_config = Arc::clone(&self.1);
 
         Box::pin(async move {
             let info = DownloadMetadataInfo::try_parse_msg(input)?;
             download_metadata
-                .handle_download(&info)
+                .handle_download(&info, download_config)
                 .await
                 .map_err(Into::into)
         })
@@ -208,14 +209,17 @@ impl MessageHandler for DownloadMetadataJsonHandle {
 }
 
 impl DownloadMetadataJsonHandle {
-    pub fn new(download_metadata: Arc<DownloadMetadata>) -> Self {
-        Self(download_metadata)
+    pub fn new(
+        download_metadata: Arc<DownloadMetadata>,
+        config: Arc<DownloadMetadataJsonRetryConfig>,
+    ) -> Self {
+        Self(download_metadata, config)
     }
 }
 
 impl Clone for DownloadMetadataJsonHandle {
     fn clone(&self) -> Self {
-        Self(Arc::clone(&self.0))
+        Self(Arc::clone(&self.0), Arc::clone(&self.1))
     }
 }
 
@@ -375,6 +379,7 @@ impl<H: MessageHandler> IngestStream<H> {
 
     pub async fn start(mut self) -> anyhow::Result<IngestStreamStop> {
         let config = Arc::clone(&self.config);
+        println!("config: {:?}", config);
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
 
         let mut connection = self.connection.take().expect("Connection is required");

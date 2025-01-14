@@ -175,7 +175,10 @@ fn metrics_handler() -> Response<Body> {
             error!("could not encode custom metrics: {}", error);
             String::new()
         });
-    Response::builder().body(Body::from(metrics)).unwrap()
+    Response::builder()
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .body(Body::from(metrics))
+        .unwrap()
 }
 
 fn not_found_handler() -> Response<Body> {

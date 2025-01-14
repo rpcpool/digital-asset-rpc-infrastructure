@@ -6,7 +6,10 @@ use {
         redis::{AccountHandle, DownloadMetadataJsonHandle, IngestStream, TransactionHandle},
         util::create_shutdown,
     },
-    das_core::{DownloadMetadata, DownloadMetadataInfo, DownloadMetadataNotifier},
+    das_core::{
+        DownloadMetadata, DownloadMetadataInfo, DownloadMetadataJsonRetryConfig,
+        DownloadMetadataNotifier,
+    },
     futures::{future::BoxFuture, stream::StreamExt},
     program_transformers::ProgramTransformer,
     redis::aio::MultiplexedConnection,
@@ -77,12 +80,18 @@ pub async fn run(config: ConfigIngester) -> anyhow::Result<()> {
         .build()?;
 
     let download_metadata = Arc::new(DownloadMetadata::new(http_client, pool.clone()));
+    println!("download_metadata");
     let download_metadatas = IngestStream::build()
         .config(config.download_metadata.stream.clone())
         .connection(connection.clone())
-        .handler(DownloadMetadataJsonHandle::new(Arc::clone(
-            &download_metadata,
-        )))
+        .handler(DownloadMetadataJsonHandle::new(
+            Arc::clone(&download_metadata),
+            Arc::new(DownloadMetadataJsonRetryConfig::new(
+                config.download_metadata.max_attempts,
+                config.download_metadata.retry_max_delay_ms,
+                config.download_metadata.retry_min_delay_ms,
+            )),
+        ))
         .start()
         .await?;
 
@@ -93,19 +102,19 @@ pub async fn run(config: ConfigIngester) -> anyhow::Result<()> {
         .start()
         .await?;
 
-    let transactions = IngestStream::build()
-        .config(config.transactions)
-        .connection(connection.clone())
-        .handler(TransactionHandle::new(Arc::clone(&program_transformer)))
-        .start()
-        .await?;
+    // let transactions = IngestStream::build()
+    //     .config(config.transactions)
+    //     .connection(connection.clone())
+    //     .handler(TransactionHandle::new(Arc::clone(&program_transformer)))
+    //     .start()
+    //     .await?;
 
-    let snapshots = IngestStream::build()
-        .config(config.snapshots)
-        .connection(connection.clone())
-        .handler(AccountHandle::new(Arc::clone(&program_transformer)))
-        .start()
-        .await?;
+    // let snapshots = IngestStream::build()
+    //     .config(config.snapshots)
+    //     .connection(connection.clone())
+    //     .handler(AccountHandle::new(Arc::clone(&program_transformer)))
+    //     .start()
+    //     .await?;
 
     let mut shutdown = create_shutdown()?;
 
@@ -129,8 +138,8 @@ pub async fn run(config: ConfigIngester) -> anyhow::Result<()> {
 
     futures::future::join_all(vec![
         accounts.stop(),
-        transactions.stop(),
-        snapshots.stop(),
+        // transactions.stop(),
+        // snapshots.stop(),
         download_metadatas.stop(),
     ])
     .await
