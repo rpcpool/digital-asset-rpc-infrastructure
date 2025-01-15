@@ -41,7 +41,7 @@ impl Default for DownloadMetadataJsonRetryConfig {
 }
 
 impl DownloadMetadataJsonRetryConfig {
-    pub fn new(retries: usize, retry_max_delay_ms: usize, retry_min_delay_ms: usize) -> Self {
+    pub const fn new(retries: usize, retry_max_delay_ms: usize, retry_min_delay_ms: usize) -> Self {
         Self {
             retries,
             retry_max_delay_ms,
@@ -201,7 +201,6 @@ async fn fetch_metadata_json(
     metadata_json_url: &str,
     config: Arc<DownloadMetadataJsonRetryConfig>,
 ) -> Result<serde_json::Value, FetchMetadataJsonError> {
-    println!("config: {:?}", config);
     (|| async {
         let url = ReqwestUrl::parse(metadata_json_url)?;
 
@@ -213,13 +212,6 @@ async fn fetch_metadata_json(
                 .await
                 .map_err(|source| FetchMetadataJsonError::Parse { source, url }),
             Err(source) => {
-                println!();
-                println!(
-                    "Fetch Error: {:?} url: {:?}",
-                    source.url().map(|u| u.to_string()),
-                    source
-                );
-                println!();
                 let status = source
                     .status()
                     .map(StatusCode::Code)

@@ -1,6 +1,6 @@
 use {
     crate::{
-        config::{ConfigIngestStream, ConfigIngesterDownloadMetadata, REDIS_STREAM_DATA_KEY},
+        config::{ConfigIngestStream, REDIS_STREAM_DATA_KEY},
         prom::{
             ack_tasks_total_dec, ack_tasks_total_inc, ingest_job_time_set, ingest_tasks_total_dec,
             ingest_tasks_total_inc, program_transformer_task_status_inc, redis_xack_inc,
@@ -379,7 +379,6 @@ impl<H: MessageHandler> IngestStream<H> {
 
     pub async fn start(mut self) -> anyhow::Result<IngestStreamStop> {
         let config = Arc::clone(&self.config);
-        println!("config: {:?}", config);
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
 
         let mut connection = self.connection.take().expect("Connection is required");

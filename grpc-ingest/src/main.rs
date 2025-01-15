@@ -77,12 +77,11 @@ async fn main() -> anyhow::Result<()> {
             ingester::run(config).await
         }
         ArgsAction::Monitor => {
-            // let config = config_load::<ConfigMonitor>(&args.config)
-            //     .await
-            //     .with_context(|| format!("failed to parse config from: {}", args.config))?;
+            let config = config_load::<ConfigMonitor>(&args.config)
+                .await
+                .with_context(|| format!("failed to parse config from: {}", args.config))?;
 
-            // monitor::run(config).await
-            Ok(())
+            monitor::run(config).await
         }
     }
 }

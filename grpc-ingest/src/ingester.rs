@@ -80,7 +80,6 @@ pub async fn run(config: ConfigIngester) -> anyhow::Result<()> {
         .build()?;
 
     let download_metadata = Arc::new(DownloadMetadata::new(http_client, pool.clone()));
-    println!("download_metadata");
     let download_metadatas = IngestStream::build()
         .config(config.download_metadata.stream.clone())
         .connection(connection.clone())
@@ -102,19 +101,19 @@ pub async fn run(config: ConfigIngester) -> anyhow::Result<()> {
         .start()
         .await?;
 
-    // let transactions = IngestStream::build()
-    //     .config(config.transactions)
-    //     .connection(connection.clone())
-    //     .handler(TransactionHandle::new(Arc::clone(&program_transformer)))
-    //     .start()
-    //     .await?;
+    let transactions = IngestStream::build()
+        .config(config.transactions)
+        .connection(connection.clone())
+        .handler(TransactionHandle::new(Arc::clone(&program_transformer)))
+        .start()
+        .await?;
 
-    // let snapshots = IngestStream::build()
-    //     .config(config.snapshots)
-    //     .connection(connection.clone())
-    //     .handler(AccountHandle::new(Arc::clone(&program_transformer)))
-    //     .start()
-    //     .await?;
+    let snapshots = IngestStream::build()
+        .config(config.snapshots)
+        .connection(connection.clone())
+        .handler(AccountHandle::new(Arc::clone(&program_transformer)))
+        .start()
+        .await?;
 
     let mut shutdown = create_shutdown()?;
 
@@ -138,8 +137,8 @@ pub async fn run(config: ConfigIngester) -> anyhow::Result<()> {
 
     futures::future::join_all(vec![
         accounts.stop(),
-        // transactions.stop(),
-        // snapshots.stop(),
+        transactions.stop(),
+        snapshots.stop(),
         download_metadatas.stop(),
     ])
     .await
