@@ -261,7 +261,7 @@ pub fn grpc_tasks_total_dec(label: &str, stream: &str) {
     GRPC_TASKS.with_label_values(&[label, stream]).dec()
 }
 
-pub fn download_metadata_json_task_inc(status: u16) {
+pub fn download_metadata_json_task_status_count_inc(status: u16) {
     DOWNLOAD_METADATA_FETCHED_COUNT
         .with_label_values(&[&status.to_string()])
         .inc();
