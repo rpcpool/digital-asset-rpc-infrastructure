@@ -56,29 +56,30 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
         .map(|d| DownloadMetadataInfo::new(d.id.clone(), d.metadata_url.clone(), d.slot_updated))
         .collect::<Vec<DownloadMetadataInfo>>();
 
+    let metadata_vec_len = download_metadata_info_vec.len();
     debug!(
         "Found {} assets to download",
         download_metadata_info_vec.len()
     );
 
-    if download_metadata_info_vec.is_empty() {
+    if metadata_vec_len == 0 {
         return Ok(());
     }
 
-    if worker_count > download_metadata_info_vec.len() {
-        if download_metadata_info_vec.len() == 1 {
+    if worker_count > metadata_vec_len {
+        if metadata_vec_len == 1 {
             worker_count = 1;
         } else {
             // If the number of assets is less than the number of workers, we assume each worker will handle 2 assets
-            worker_count = download_metadata_info_vec.len() / 2;
+            worker_count = metadata_vec_len / 2;
         }
     }
 
-    let excess_tasks = download_metadata_info_vec.len() % worker_count;
+    let excess_tasks = metadata_vec_len % worker_count;
     let mut current_tasks_per_worker = if excess_tasks > 0 {
-        download_metadata_info_vec.len() / worker_count + 1
+        metadata_vec_len / worker_count + 1
     } else {
-        download_metadata_info_vec.len() / worker_count
+        metadata_vec_len / worker_count
     };
 
     let mut handlers: Vec<JoinHandle<()>> = Vec::with_capacity(metadata_json_download_worker_count);
@@ -104,9 +105,7 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
 
         handlers.push(handler);
 
-        if current_tasks_per_worker > 0 {
-            current_tasks_per_worker -= 1;
-        }
+        current_tasks_per_worker = current_tasks_per_worker.saturating_sub(1);
 
         curr_start = end;
     }
