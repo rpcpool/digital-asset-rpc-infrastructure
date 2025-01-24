@@ -281,11 +281,14 @@ impl TransactionHandle {
 }
 
 impl MessageHandler for TransactionHandle {
+    #[tracing::instrument(skip(self))]
     fn handle(
         &self,
         input: HashMap<String, RedisValue>,
     ) -> BoxFuture<'static, Result<(), IngestMessageError>> {
         let program_transformer = Arc::clone(&self.0);
+
+        tracing::trace!("TransactionHandle::handle()");
 
         Box::pin(async move {
             let transaction = TransactionInfo::try_parse_msg(input)?;

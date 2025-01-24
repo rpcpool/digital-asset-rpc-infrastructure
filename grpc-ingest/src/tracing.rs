@@ -1,10 +1,15 @@
 use {
     opentelemetry_sdk::trace::{self, Sampler},
     std::env,
-    tracing_subscriber::{filter::EnvFilter, layer::SubscriberExt, util::SubscriberInitExt},
+    tracing::Dispatch,
+    tracing_subscriber::{filter::EnvFilter, layer::SubscriberExt},
+    tracing_timing::{
+        group::{ByMessage, ByName},
+        LayerDowncaster,
+    },
 };
 
-pub fn init() -> anyhow::Result<()> {
+pub fn init() -> anyhow::Result<TracingTimingLayer> {
     let open_tracer = opentelemetry_jaeger::new_agent_pipeline()
         .with_service_name(env::var("CARGO_PKG_NAME")?)
         .with_auto_split_batch(true)
@@ -18,16 +23,58 @@ pub fn init() -> anyhow::Result<()> {
     let is_atty = atty::is(atty::Stream::Stdout) && atty::is(atty::Stream::Stderr);
     let io_layer = tracing_subscriber::fmt::layer().with_ansi(is_atty);
 
+    let tracing_timing_layer = tracing_timing::Builder::default()
+        .layer(|| tracing_timing::Histogram::new_with_max(1_000_000, 5).unwrap());
+
+    let downcaster = tracing_timing_layer.downcaster();
+
     let registry = tracing_subscriber::registry()
         .with(jeager_layer)
         .with(env_filter)
+        .with(tracing_timing_layer)
         .with(io_layer);
 
-    if env::var_os("RUST_LOG_JSON").is_some() {
+    let d = if env::var_os("RUST_LOG_JSON").is_some() {
         let json_layer = tracing_subscriber::fmt::layer().json().flatten_event(true);
-        registry.with(json_layer).try_init()
+        Dispatch::new(registry.with(json_layer))
     } else {
-        registry.try_init()
+        Dispatch::new(registry)
+    };
+
+    let tracing_timing_layer = TracingTimingLayer {
+        downcaster,
+        dispatch: d.clone(),
+    };
+
+    tracing::dispatcher::set_global_default(d).unwrap();
+
+    Ok(tracing_timing_layer)
+}
+
+#[derive(Clone)]
+pub struct TracingTimingLayer {
+    pub downcaster: LayerDowncaster<ByName, ByMessage>,
+    pub dispatch: Dispatch,
+}
+
+impl TracingTimingLayer {
+    pub fn get_tracing_timing(self) {
+        let tracing_timing_layer = self.downcaster.downcast(&self.dispatch).unwrap();
+
+        tracing_timing_layer.force_synchronize();
+
+        tracing_timing_layer.with_histograms(|hs| {
+            let mut total = 0.0;
+            for (span_group, hs) in hs {
+                tracing::debug!("{:?}", span_group);
+                for (event_group, h) in hs {
+                    tracing::debug!("    - {:?}", event_group);
+                    let ms = h.mean() / 1000.0;
+                    tracing::debug!("         ms: {:?}", ms);
+                    total += ms;
+                }
+            }
+            tracing::debug!("total: {} secs", total / 1000.0);
+        });
     }
-    .map_err(Into::into)
 }

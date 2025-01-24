@@ -4,6 +4,7 @@ use {
         postgres::{create_pool as pg_create_pool, report_pgpool},
         prom::redis_xadd_status_inc,
         redis::{AccountHandle, DownloadMetadataJsonHandle, IngestStream, TransactionHandle},
+        tracing::TracingTimingLayer,
         util::create_shutdown,
     },
     das_core::{
@@ -57,7 +58,7 @@ fn download_metadata_notifier_v2(
     )
 }
 
-pub async fn run(config: ConfigIngester) -> anyhow::Result<()> {
+pub async fn run(config: ConfigIngester, timing_tracing: TracingTimingLayer) -> anyhow::Result<()> {
     let redis_client = redis::Client::open(config.redis)?;
     let connection = redis_client.get_multiplexed_tokio_connection().await?;
     let pool = pg_create_pool(config.postgres).await?;
@@ -125,6 +126,12 @@ pub async fn run(config: ConfigIngester) -> anyhow::Result<()> {
             report_pgpool(pool.clone());
         }
     });
+    let timing_handle = tokio::spawn(async move {
+        loop {
+            sleep(Duration::from_secs(1)).await;
+            timing_tracing.clone().get_tracing_timing();
+        }
+    });
 
     if let Some(signal) = shutdown.next().await {
         warn!(
@@ -146,6 +153,7 @@ pub async fn run(config: ConfigIngester) -> anyhow::Result<()> {
     .collect::<anyhow::Result<()>>()?;
 
     report.abort();
+    timing_handle.abort();
 
     pool.close().await;
 

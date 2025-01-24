@@ -50,7 +50,7 @@ enum ArgsAction {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_init()?;
+    let tracing_timing_layer = tracing_init()?;
 
     let args = Args::parse();
 
@@ -74,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
             let config = config_load::<ConfigIngester>(&args.config)
                 .await
                 .with_context(|| format!("failed to parse config from: {}", args.config))?;
-            ingester::run(config).await
+            ingester::run(config, tracing_timing_layer).await
         }
         ArgsAction::Monitor => {
             let config = config_load::<ConfigMonitor>(&args.config)
