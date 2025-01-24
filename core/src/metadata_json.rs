@@ -8,8 +8,9 @@ use {
     reqwest::{Client, Url as ReqwestUrl},
     sea_orm::{entity::*, ConnectionTrait, SqlxPostgresConnector, TransactionTrait},
     serde::{Deserialize, Serialize},
+    std::{sync::Arc, time::Duration},
     tokio::{
-        sync::mpsc::{error::SendError, unbounded_channel, UnboundedSender},
+        sync::mpsc::{unbounded_channel, UnboundedSender},
         task::JoinHandle,
         time::Instant,
     },
@@ -17,9 +18,36 @@ use {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadMetadataInfo {
-    asset_data_id: Vec<u8>,
-    uri: String,
-    slot: i64,
+    pub asset_data_id: Vec<u8>,
+    pub uri: String,
+    pub slot: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadMetadataJsonRetryConfig {
+    pub retries: u8,
+    pub retry_max_delay_ms: u64,
+    pub retry_min_delay_ms: u64,
+}
+
+impl Default for DownloadMetadataJsonRetryConfig {
+    fn default() -> Self {
+        Self {
+            retries: 1,
+            retry_max_delay_ms: 10,
+            retry_min_delay_ms: 1,
+        }
+    }
+}
+
+impl DownloadMetadataJsonRetryConfig {
+    pub const fn new(retries: usize, retry_max_delay_ms: usize, retry_min_delay_ms: usize) -> Self {
+        Self {
+            retries: retries as u8,
+            retry_max_delay_ms: retry_max_delay_ms as u64,
+            retry_min_delay_ms: retry_min_delay_ms as u64,
+        }
+    }
 }
 
 impl DownloadMetadataInfo {
@@ -59,16 +87,17 @@ pub async fn create_download_metadata_notifier(
 pub struct MetadataJsonDownloadWorkerArgs {
     /// The number of worker threads
     #[arg(long, env, default_value = "25")]
-    metadata_json_download_worker_count: usize,
+    pub metadata_json_download_worker_count: usize,
     /// The request timeout in milliseconds
     #[arg(long, env, default_value = "1000")]
-    metadata_json_download_worker_request_timeout: u64,
+    pub metadata_json_download_worker_request_timeout: u64,
 }
 
 impl MetadataJsonDownloadWorkerArgs {
     pub fn start(
         &self,
         pool: sqlx::PgPool,
+        config: Arc<DownloadMetadataJsonRetryConfig>,
     ) -> Result<
         (JoinHandle<()>, UnboundedSender<DownloadMetadataInfo>),
         MetadataJsonDownloadWorkerError,
@@ -80,9 +109,9 @@ impl MetadataJsonDownloadWorkerArgs {
                 self.metadata_json_download_worker_request_timeout,
             ))
             .build()?;
-
         let handle = tokio::spawn(async move {
             let mut handlers = FuturesUnordered::new();
+            let download_config = Arc::clone(&config);
 
             while let Some(download_metadata_info) = rx.recv().await {
                 if handlers.len() >= worker_count {
@@ -91,7 +120,12 @@ impl MetadataJsonDownloadWorkerArgs {
 
                 let pool = pool.clone();
 
-                handlers.push(spawn_task(client.clone(), pool, download_metadata_info));
+                handlers.push(spawn_task(
+                    client.clone(),
+                    pool,
+                    download_metadata_info,
+                    download_config.clone(),
+                ));
             }
 
             while handlers.next().await.is_some() {}
@@ -103,8 +137,8 @@ impl MetadataJsonDownloadWorkerArgs {
 
 #[derive(thiserror::Error, Debug)]
 pub enum MetadataJsonDownloadWorkerError {
-    #[error("send error: {0}")]
-    Send(#[from] SendError<asset_data::Model>),
+    #[error("send error")]
+    Send,
     #[error("join error: {0}")]
     Join(#[from] tokio::task::JoinError),
     #[error("reqwest: {0}")]
@@ -115,13 +149,16 @@ fn spawn_task(
     client: Client,
     pool: sqlx::PgPool,
     download_metadata_info: DownloadMetadataInfo,
+    config: Arc<DownloadMetadataJsonRetryConfig>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let timing = Instant::now();
         let asset_data_id =
             bs58::encode(download_metadata_info.asset_data_id.clone()).into_string();
 
-        if let Err(e) = perform_metadata_json_task(client, pool, &download_metadata_info).await {
+        if let Err(e) =
+            perform_metadata_json_task(client, pool, &download_metadata_info, config).await
+        {
             error!("Asset {} failed: {}", asset_data_id, e);
         }
 
@@ -161,6 +198,7 @@ pub enum StatusCode {
 async fn fetch_metadata_json(
     client: Client,
     metadata_json_url: &str,
+    config: Arc<DownloadMetadataJsonRetryConfig>,
 ) -> Result<serde_json::Value, FetchMetadataJsonError> {
     (|| async {
         let url = ReqwestUrl::parse(metadata_json_url)?;
@@ -186,7 +224,12 @@ async fn fetch_metadata_json(
             }
         }
     })
-    .retry(&ExponentialBuilder::default())
+    .retry(
+        &ExponentialBuilder::default()
+            .with_max_times(config.retries.into())
+            .with_min_delay(Duration::from_millis(config.retry_min_delay_ms))
+            .with_max_delay(Duration::from_millis(config.retry_max_delay_ms)),
+    )
     .await
 }
 
@@ -204,9 +247,10 @@ pub async fn perform_metadata_json_task(
     client: Client,
     pool: sqlx::PgPool,
     download_metadata_info: &DownloadMetadataInfo,
-) -> Result<asset_data::Model, MetadataJsonTaskError> {
+    config: Arc<DownloadMetadataJsonRetryConfig>,
+) -> Result<(), MetadataJsonTaskError> {
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
-    match fetch_metadata_json(client, &download_metadata_info.uri).await {
+    match fetch_metadata_json(client, &download_metadata_info.uri, config).await {
         Ok(metadata) => {
             let active_model = asset_data::ActiveModel {
                 id: Set(download_metadata_info.asset_data_id.clone()),
@@ -215,9 +259,9 @@ pub async fn perform_metadata_json_task(
                 ..Default::default()
             };
 
-            let model = active_model.update(&conn).await?;
+            active_model.update(&conn).await?;
 
-            Ok(model)
+            Ok(())
         }
         Err(e) => {
             let active_model = asset_data::ActiveModel {
@@ -246,14 +290,15 @@ impl DownloadMetadata {
     pub async fn handle_download(
         &self,
         download_metadata_info: &DownloadMetadataInfo,
+        config: Arc<DownloadMetadataJsonRetryConfig>,
     ) -> Result<(), MetadataJsonTaskError> {
         perform_metadata_json_task(
             self.client.clone(),
             self.pool.clone(),
             download_metadata_info,
+            config,
         )
         .await
-        .map(|_| ())
     }
 }
 

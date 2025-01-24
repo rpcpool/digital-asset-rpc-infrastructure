@@ -2,13 +2,17 @@ use {
     crate::{
         config::{ConfigIngestStream, REDIS_STREAM_DATA_KEY},
         prom::{
-            ack_tasks_total_dec, ack_tasks_total_inc, ingest_job_time_set, ingest_tasks_total_dec,
-            ingest_tasks_total_inc, program_transformer_task_status_inc, redis_xack_inc,
-            redis_xlen_set, redis_xread_inc, ProgramTransformerTaskStatusKind,
+            ack_tasks_total_dec, ack_tasks_total_inc, download_metadata_json_task_status_count_inc,
+            ingest_job_time_set, ingest_tasks_total_dec, ingest_tasks_total_inc,
+            program_transformer_task_status_inc, redis_xack_inc, redis_xlen_set, redis_xread_inc,
+            ProgramTransformerTaskStatusKind,
         },
     },
-    das_core::{DownloadMetadata, DownloadMetadataInfo},
-    futures::{future::BoxFuture, stream::FuturesUnordered, StreamExt},
+    das_core::{
+        DownloadMetadata, DownloadMetadataInfo, DownloadMetadataJsonRetryConfig,
+        FetchMetadataJsonError, MetadataJsonTaskError, StatusCode,
+    },
+    futures::future::BoxFuture,
     program_transformers::{AccountInfo, ProgramTransformer, TransactionInfo},
     redis::{
         aio::MultiplexedConnection,
@@ -17,7 +21,10 @@ use {
     },
     solana_sdk::{pubkey::Pubkey, signature::Signature},
     std::{collections::HashMap, marker::PhantomData, sync::Arc},
-    tokio::time::{sleep, Duration},
+    tokio::{
+        task::JoinSet,
+        time::{sleep, Duration},
+    },
     tracing::{debug, error, warn},
     yellowstone_grpc_proto::{
         convert_from::{
@@ -69,8 +76,7 @@ impl RedisStreamMessage<Self> for AccountInfo {
 
         let SubscribeUpdateAccount { account, slot, .. } = Message::decode(account_data.as_ref())?;
 
-        let account =
-            account.ok_or_else(|| RedisStreamMessageError::InvalidSubscribeUpdateAccount)?;
+        let account = account.ok_or(RedisStreamMessageError::InvalidSubscribeUpdateAccount)?;
 
         Ok(Self {
             slot,
@@ -188,7 +194,7 @@ pub trait MessageHandler: Send + Sync + Clone + 'static {
     ) -> BoxFuture<'static, Result<(), IngestMessageError>>;
 }
 
-pub struct DownloadMetadataJsonHandle(Arc<DownloadMetadata>);
+pub struct DownloadMetadataJsonHandle(Arc<DownloadMetadata>, Arc<DownloadMetadataJsonRetryConfig>);
 
 impl MessageHandler for DownloadMetadataJsonHandle {
     fn handle(
@@ -196,33 +202,50 @@ impl MessageHandler for DownloadMetadataJsonHandle {
         input: HashMap<String, RedisValue>,
     ) -> BoxFuture<'static, Result<(), IngestMessageError>> {
         let download_metadata = Arc::clone(&self.0);
+        let download_config = Arc::clone(&self.1);
 
         Box::pin(async move {
             let info = DownloadMetadataInfo::try_parse_msg(input)?;
-            download_metadata
-                .handle_download(&info)
-                .await
-                .map_err(Into::into)
+            let response = download_metadata
+                .handle_download(&info, download_config)
+                .await;
+            let status =
+                if let Err(MetadataJsonTaskError::Fetch(FetchMetadataJsonError::Response {
+                    status: StatusCode::Code(code),
+                    ..
+                })) = response
+                {
+                    code.as_u16()
+                } else {
+                    200
+                };
+
+            download_metadata_json_task_status_count_inc(status);
+
+            response.map_err(IngestMessageError::DownloadMetadataJson)
         })
     }
 }
 
 impl DownloadMetadataJsonHandle {
-    pub fn new(download_metadata: Arc<DownloadMetadata>) -> Self {
-        Self(download_metadata)
+    pub const fn new(
+        download_metadata: Arc<DownloadMetadata>,
+        config: Arc<DownloadMetadataJsonRetryConfig>,
+    ) -> Self {
+        Self(download_metadata, config)
     }
 }
 
 impl Clone for DownloadMetadataJsonHandle {
     fn clone(&self) -> Self {
-        Self(Arc::clone(&self.0))
+        Self(Arc::clone(&self.0), Arc::clone(&self.1))
     }
 }
 
 pub struct AccountHandle(Arc<ProgramTransformer>);
 
 impl AccountHandle {
-    pub fn new(program_transformer: Arc<ProgramTransformer>) -> Self {
+    pub const fn new(program_transformer: Arc<ProgramTransformer>) -> Self {
         Self(program_transformer)
     }
 }
@@ -252,7 +275,7 @@ impl Clone for AccountHandle {
 pub struct TransactionHandle(Arc<ProgramTransformer>);
 
 impl TransactionHandle {
-    pub fn new(program_transformer: Arc<ProgramTransformer>) -> Self {
+    pub const fn new(program_transformer: Arc<ProgramTransformer>) -> Self {
         Self(program_transformer)
     }
 }
@@ -287,7 +310,7 @@ pub struct Acknowledge {
 }
 
 impl Acknowledge {
-    pub fn new(config: Arc<ConfigIngestStream>, connection: MultiplexedConnection) -> Self {
+    pub const fn new(config: Arc<ConfigIngestStream>, connection: MultiplexedConnection) -> Self {
         Self { config, connection }
     }
 }
@@ -408,7 +431,7 @@ impl<H: MessageHandler> IngestStream<H> {
         let config_messages = Arc::clone(&config);
 
         let messages = tokio::spawn(async move {
-            let mut tasks = FuturesUnordered::new();
+            let mut tasks = JoinSet::new();
             let config = Arc::clone(&config_messages);
             let handler = handler.clone();
 
@@ -417,7 +440,7 @@ impl<H: MessageHandler> IngestStream<H> {
                     Some(ids) = msg_rx.recv() => {
                         for StreamId { id, map } in ids {
                             if tasks.len() >= config.max_concurrency {
-                                tasks.next().await;
+                                tasks.join_next().await;
                             }
 
                             let handler = handler.clone();
@@ -426,7 +449,7 @@ impl<H: MessageHandler> IngestStream<H> {
 
                             ingest_tasks_total_inc(&config.name, &config.consumer);
 
-                            tasks.push(tokio::spawn(async move {
+                            tasks.spawn(async move {
                                 let start_time = tokio::time::Instant::now();
                                 let result = handler.handle(map).await.map_err(IngestMessageError::into);
                                 let elapsed_time = start_time.elapsed().as_secs_f64();
@@ -455,7 +478,7 @@ impl<H: MessageHandler> IngestStream<H> {
                                 }
 
                                 ingest_tasks_total_dec(&config.name, &config.consumer);
-                            }));
+                            });
                         }
                     }
                     _ = &mut msg_shutdown_rx => {
@@ -464,13 +487,13 @@ impl<H: MessageHandler> IngestStream<H> {
                 }
             }
 
-            while (tasks.next().await).is_some() {}
+            while (tasks.join_next().await).is_some() {}
         });
 
         let ack = tokio::spawn({
             let config = Arc::clone(&config);
             let mut pending = Vec::new();
-            let mut tasks = FuturesUnordered::new();
+            let mut tasks = JoinSet::new();
             let handler = Arc::new(Acknowledge::new(Arc::clone(&config), connection.clone()));
 
             async move {
@@ -484,7 +507,7 @@ impl<H: MessageHandler> IngestStream<H> {
 
                             if pending.len() >= config.xack_batch_max_size {
                                 if tasks.len() >= config.ack_concurrency {
-                                    tasks.next().await;
+                                    tasks.join_next().await;
                                 }
 
                                 let ids = std::mem::take(&mut pending);
@@ -493,25 +516,25 @@ impl<H: MessageHandler> IngestStream<H> {
 
                                 ack_tasks_total_inc(&config.name, &config.consumer);
 
-                                tasks.push(tokio::spawn(async move {
+                                tasks.spawn(async move {
                                     handler.handle(ids).await;
-                                }));
+                                });
 
                                 deadline.as_mut().reset(tokio::time::Instant::now() + config.xack_batch_max_idle);
                             }
                         }
                         _ = &mut deadline, if !pending.is_empty() => {
                             if tasks.len() >= config.ack_concurrency {
-                                tasks.next().await;
+                                tasks.join_next().await;
                             }
                             let ids = std::mem::take(&mut pending);
                             let handler = Arc::clone(&handler);
 
                             ack_tasks_total_inc(&config.name, &config.consumer);
 
-                            tasks.push(tokio::spawn(async move {
+                            tasks.spawn(async move {
                                 handler.handle(ids).await;
-                            }));
+                            });
 
                             deadline.as_mut().reset(tokio::time::Instant::now() + config.xack_batch_max_idle);
                         }
@@ -526,7 +549,7 @@ impl<H: MessageHandler> IngestStream<H> {
                     handler.handle(std::mem::take(&mut pending)).await;
                 }
 
-                while (tasks.next().await).is_some() {}
+                while (tasks.join_next().await).is_some() {}
             }
         });
 

@@ -12,8 +12,11 @@ use {
     },
     redis::streams::StreamMaxlen,
     std::{collections::HashMap, sync::Arc, time::Duration},
-    tokio::{sync::Mutex, time::sleep},
-    tracing::{debug, error, warn},
+    tokio::{
+        sync::{oneshot, Mutex},
+        time::sleep,
+    },
+    tracing::{debug, warn},
     yellowstone_grpc_client::GeyserGrpcClient,
     yellowstone_grpc_proto::{
         geyser::{SubscribeRequest, SubscribeRequestPing, SubscribeUpdate},
@@ -35,6 +38,9 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
 
     let subscriptions = config.subscriptions.clone();
 
+    let (global_shutdown_tx, mut global_shutdown_rx) = oneshot::channel();
+    let global_shutdown_tx = Arc::new(Mutex::new(Some(global_shutdown_tx)));
+
     let mut subscription_tasks = Vec::new();
     for (label, subscription_config) in subscriptions {
         let subscription = Subscription {
@@ -45,19 +51,27 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
             .config(Arc::clone(&config))
             .connection(connection.clone())
             .subscription(subscription)
-            .start()
+            .start(Arc::clone(&global_shutdown_tx))
             .await?;
 
         subscription_tasks.push(task);
     }
 
-    if let Some(signal) = shutdown.next().await {
-        warn!(
-            target: "grpc2redis",
-            action = "shutdown_signal_received",
-            message = "Shutdown signal received, waiting for spawned tasks to complete",
-            signal = ?signal
-        );
+    tokio::select! {
+        _ = &mut global_shutdown_rx => {
+            warn!(
+                target: "grpc2redis",
+                action = "global_shutdown_signal_received",
+                message = "Global shutdown signal received, stopping all tasks"
+            );
+        }
+        _ = shutdown.next() => {
+            warn!(
+                target: "grpc2redis",
+                action = "shutdown_signal_received",
+                message = "Shutdown signal received, waiting for spawned tasks to complete"
+            );
+        }
     }
 
     futures::future::join_all(
@@ -105,7 +119,10 @@ impl SubscriptionTask {
         self
     }
 
-    pub async fn start(mut self) -> anyhow::Result<SubscriptionTaskStop> {
+    pub async fn start(
+        mut self,
+        global_shutdown_tx: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+    ) -> anyhow::Result<SubscriptionTaskStop> {
         let config = Arc::clone(&self.config);
         let connection = self
             .connection
@@ -144,7 +161,9 @@ impl SubscriptionTask {
             ..Default::default()
         };
 
-        let pipe = Arc::new(Mutex::new(TrackedPipeline::default()));
+        let pipes: Vec<_> = (0..stream_config.pipeline_count)
+            .map(|_| Arc::new(Mutex::new(TrackedPipeline::default())))
+            .collect();
         let mut tasks = FuturesUnordered::new();
 
         let mut dragon_mouth_client =
@@ -159,120 +178,151 @@ impl SubscriptionTask {
         let (mut subscribe_tx, stream) = dragon_mouth_client
             .subscribe_with_request(Some(request))
             .await?;
-
-        let deadline_config = Arc::clone(&config);
+        let global_shutdown_tx = Arc::clone(&global_shutdown_tx);
 
         let control = tokio::spawn({
             async move {
                 tokio::pin!(stream);
 
-                let (flush_tx, mut flush_rx) = tokio::sync::mpsc::channel::<()>(1);
+                let mut flush_handles = Vec::new();
+                let mut shutdown_senders = Vec::new();
 
-                let flush_handle = tokio::spawn({
-                    let pipe = Arc::clone(&pipe);
+                for pipe in &pipes {
+                    let pipe = Arc::clone(pipe);
                     let stream_config = Arc::clone(&stream_config);
                     let label = label.clone();
                     let mut connection = connection.clone();
+                    let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
 
-                    async move {
-                        while (flush_rx.recv().await).is_some() {
-                            let mut pipe = pipe.lock().await;
-                            let flush = pipe.flush(&mut connection).await;
+                    let flush_handle = tokio::spawn(async move {
+                        loop {
+                            tokio::select! {
+                                _ = sleep(stream_config.pipeline_max_idle) => {
+                                    let mut pipe = pipe.lock().await;
+                                    let flush = pipe.flush(&mut connection).await;
 
-                            let status = flush.as_ref().map(|_| ()).map_err(|_| ());
-                            let count = flush.as_ref().unwrap_or_else(|count| count);
+                                    let status = flush.as_ref().map(|_| ()).map_err(|_| ());
+                                    let count = flush.as_ref().unwrap_or_else(|count| count);
 
-                            debug!(target: "grpc2redis", action = "flush_redis_pipe", stream = ?stream_config.name, status = ?status, count = ?count);
-                            redis_xadd_status_inc(&stream_config.name, &label, status, *count);
+                                    debug!(target: "grpc2redis", action = "flush_redis_pip_deadline", stream = ?stream_config.name, status = ?status, count = ?count);
+                                    redis_xadd_status_inc(&stream_config.name, &label, status, *count);
+                                }
+                                _ = &mut shutdown_rx => {
+                                    let mut pipe = pipe.lock().await;
+                                    let flush = pipe.flush(&mut connection).await;
+
+                                    let status = flush.as_ref().map(|_| ()).map_err(|_| ());
+                                    let count = flush.as_ref().unwrap_or_else(|count| count);
+
+                                    debug!(target: "grpc2redis", action = "final_flush_redis_pipe", stream = ?stream_config.name, status = ?status, count = ?count);
+                                    redis_xadd_status_inc(&stream_config.name, &label, status, *count);
+                                    break;
+                                }
+                            }
                         }
-                    }
-                });
+                    });
+
+                    flush_handles.push(flush_handle);
+                    shutdown_senders.push(shutdown_tx);
+                }
+
+                let mut current_pipe_index = 0;
 
                 loop {
                     tokio::select! {
-                        _ = sleep(deadline_config.redis.pipeline_max_idle) => {
-                            let _ = flush_tx.send(()).await;
-                        }
-                        Some(Ok(msg)) = stream.next() => {
-                            match msg.update_oneof {
-                                Some(UpdateOneof::Account(_)) | Some(UpdateOneof::Transaction(_)) => {
-                                    if tasks.len() >= stream_config.max_concurrency {
-                                        tasks.next().await;
-                                    }
-                                    grpc_tasks_total_inc(&label, &stream_config.name);
+                        event = stream.next() => {
+                            match event {
+                                Some(Ok(msg)) => {
+                                    match msg.update_oneof {
+                                        Some(UpdateOneof::Account(_)) | Some(UpdateOneof::Transaction(_)) => {
+                                            if tasks.len() >= stream_config.max_concurrency {
+                                                tasks.next().await;
+                                            }
+                                            grpc_tasks_total_inc(&label, &stream_config.name);
 
-                                    tasks.push(tokio::spawn({
-                                        let pipe = Arc::clone(&pipe);
-                                        let label = label.clone();
-                                        let stream_config = Arc::clone(&stream_config);
+                                            tasks.push(tokio::spawn({
+                                                let pipe = Arc::clone(&pipes[current_pipe_index]);
+                                                let label = label.clone();
+                                                let stream_config = Arc::clone(&stream_config);
 
-                                        async move {
-                                            let stream = stream_config.name.clone();
-                                            let stream_maxlen = stream_config.max_len;
+                                                async move {
+                                                    let stream = stream_config.name.clone();
+                                                    let stream_maxlen = stream_config.max_len;
 
-                                            let SubscribeUpdate { update_oneof, .. } = msg;
+                                                    let SubscribeUpdate { update_oneof, .. } = msg;
 
-                                            let mut pipe = pipe.lock().await;
+                                                    let mut pipe = pipe.lock().await;
 
-                                            if let Some(update) = update_oneof {
-                                                match update {
-                                                    UpdateOneof::Account(account) => {
-                                                        pipe.xadd_maxlen(
-                                                            &stream.to_string(),
-                                                            StreamMaxlen::Approx(stream_maxlen),
-                                                            "*",
-                                                            account.encode_to_vec(),
-                                                        );
-                                                        debug!(target: "grpc2redis", action = "process_account_update",label = ?label, stream = ?stream, maxlen = ?stream_maxlen);
+                                                    if let Some(update) = update_oneof {
+                                                        match update {
+                                                            UpdateOneof::Account(account) => {
+                                                                pipe.xadd_maxlen(
+                                                                    &stream.to_string(),
+                                                                    StreamMaxlen::Approx(stream_maxlen),
+                                                                    "*",
+                                                                    account.encode_to_vec(),
+                                                                );
+                                                                debug!(target: "grpc2redis", action = "process_account_update", label = ?label, stream = ?stream, maxlen = ?stream_maxlen);
+                                                            }
+
+                                                            UpdateOneof::Transaction(transaction) => {
+                                                                pipe.xadd_maxlen(
+                                                                    &stream.to_string(),
+                                                                    StreamMaxlen::Approx(stream_maxlen),
+                                                                    "*",
+                                                                    transaction.encode_to_vec(),
+                                                                );
+                                                                debug!(target: "grpc2redis", action = "process_transaction_update", label = ?label, stream = ?stream, maxlen = ?stream_maxlen);
+                                                            }
+                                                            _ => {
+                                                                warn!(target: "grpc2redis", action = "unknown_update_variant", label = ?label, message = "Unknown update variant");
+                                                            }
+                                                        }
                                                     }
 
-                                                    UpdateOneof::Transaction(transaction) => {
-                                                        pipe.xadd_maxlen(
-                                                            &stream.to_string(),
-                                                            StreamMaxlen::Approx(stream_maxlen),
-                                                            "*",
-                                                            transaction.encode_to_vec(),
-                                                        );
-                                                        debug!(target: "grpc2redis", action = "process_transaction_update",label = ?label, stream = ?stream, maxlen = ?stream_maxlen);
-                                                    }
-                                                    _ => {
-                                                        warn!(target: "grpc2redis", action = "unknown_update_variant",label = ?label, message = "Unknown update variant")
-                                                    }
+                                                    grpc_tasks_total_dec(&label, &stream_config.name);
+                                                }
+                                            }));
+
+                                            current_pipe_index = (current_pipe_index + 1) % pipes.len();
+                                        }
+                                        Some(UpdateOneof::Ping(_)) => {
+                                            let ping = subscribe_tx
+                                                .send(SubscribeRequest {
+                                                    ping: Some(SubscribeRequestPing { id: PING_ID }),
+                                                    ..Default::default()
+                                                })
+                                                .await;
+
+                                            match ping {
+                                                Ok(_) => {
+                                                    debug!(target: "grpc2redis", action = "send_ping", message = "Ping sent successfully", id = PING_ID);
+                                                }
+                                                Err(err) => {
+                                                    warn!(target: "grpc2redis", action = "send_ping_failed", message = "Failed to send ping", ?err, id = PING_ID);
                                                 }
                                             }
-
-                                            grpc_tasks_total_dec(&label, &stream_config.name);
                                         }
+                                        Some(UpdateOneof::Pong(pong)) => {
+                                            if pong.id == PING_ID {
+                                                debug!(target: "grpc2redis", action = "receive_pong", message = "Pong received", id = PING_ID);
+                                            } else {
+                                                warn!(target: "grpc2redis", action = "receive_unknown_pong", message = "Unknown pong id received", id = pong.id);
+                                            }
                                         }
-                                    ))
-                                }
-                                Some(UpdateOneof::Ping(_)) => {
-                                    let ping = subscribe_tx
-                                        .send(SubscribeRequest {
-                                            ping: Some(SubscribeRequestPing { id: PING_ID }),
-                                            ..Default::default()
-                                        })
-                                        .await;
-
-                                    match ping {
-                                        Ok(_) => {
-                                            debug!(target: "grpc2redis", action = "send_ping", message = "Ping sent successfully", id = PING_ID)
+                                        _ => {
+                                            warn!(target: "grpc2redis", action = "unknown_update_variant", message = "Unknown update variant");
                                         }
-                                        Err(err) => {
-                                            warn!(target: "grpc2redis", action = "send_ping_failed", message = "Failed to send ping", ?err, id = PING_ID)
-                                        }
-                                    }
-                                }
-                                Some(UpdateOneof::Pong(pong)) => {
-                                    if pong.id == PING_ID {
-                                        debug!(target: "grpc2redis", action = "receive_pong", message = "Pong received", id = PING_ID);
-                                    } else {
-                                        warn!(target: "grpc2redis", action = "receive_unknown_pong", message = "Unknown pong id received", id = pong.id);
                                     }
                                 }
                                 _ => {
-                                    warn!(target: "grpc2redis", action = "unknown_update_variant", message = "Unknown update variant", ?msg.update_oneof)
+                                    break;
                                 }
+                            }
+
+                            let mut global_shutdown_tx = global_shutdown_tx.lock().await;
+                            if let Some(global_shutdown_tx) = global_shutdown_tx.take() {
+                                let _ = global_shutdown_tx.send(());
                             }
                         }
                         _ = &mut shutdown_rx => {
@@ -282,17 +332,16 @@ impl SubscriptionTask {
                     }
                 }
 
+                debug!(target: "grpc2redis", action = "shutdown_subscription_task", message = "Subscription task stopped", ?label);
                 while (tasks.next().await).is_some() {}
 
-                if let Err(err) = flush_tx.send(()).await {
-                    error!(target: "grpc2redis", action = "flush_send_failed", message = "Failed to send flush signal", ?err);
+                for shutdown_tx in shutdown_senders {
+                    debug!(target: "grpc2redis", action = "send_shutdown_signal", message = "Sending shutdown signal to flush handles");
+                    let _ = shutdown_tx.send(());
                 }
 
-                drop(flush_tx);
-
-                if let Err(err) = flush_handle.await {
-                    error!(target: "grpc2redis", action = "flush_failed", message = "Failed to flush", ?err);
-                }
+                debug!(target: "grpc2redis", action = "wait_flush_handles", message = "Waiting for flush handles to complete");
+                futures::future::join_all(flush_handles).await;
             }
         });
 
