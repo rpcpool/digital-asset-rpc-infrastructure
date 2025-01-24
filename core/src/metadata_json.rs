@@ -124,7 +124,7 @@ impl MetadataJsonDownloadWorkerArgs {
                     client.clone(),
                     pool,
                     download_metadata_info,
-                    download_config.clone(),
+                    Arc::clone(&download_config),
                 ));
             }
 
