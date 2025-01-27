@@ -85,23 +85,35 @@ where
         })
         .collect();
 
-    cl_items::Entity::insert_many(items)
-        .on_conflict(
-            OnConflict::columns([cl_items::Column::Tree, cl_items::Column::NodeIdx])
-                .update_columns([
-                    cl_items::Column::Hash,
-                    cl_items::Column::Seq,
-                    cl_items::Column::LeafIdx,
-                    cl_items::Column::Level,
-                ])
-                .action_and_where(
-                    Expr::tbl(cl_items::Entity, cl_items::Column::Seq).lte(change_log_event.seq),
-                )
-                .to_owned(),
-        )
-        .exec_without_returning(txn)
+    let query = cl_items::Entity::insert_many(items).on_conflict(
+        OnConflict::columns([cl_items::Column::Tree, cl_items::Column::NodeIdx])
+            .update_columns([
+                cl_items::Column::Hash,
+                cl_items::Column::Seq,
+                cl_items::Column::LeafIdx,
+                cl_items::Column::Level,
+            ])
+            .action_and_where(
+                Expr::tbl(cl_items::Entity, cl_items::Column::Seq).lte(change_log_event.seq),
+            )
+            .to_owned(),
+    );
+
+    let raw_sql = query.build(sea_orm::DatabaseBackend::Postgres);
+    // println!("########### query: ");
+    // println!("{}", raw_sql.to_string());
+    // println!("#################");
+
+    // raw_sql.sql = format!("EXPLAIN {}", raw_sql.sql);
+
+    txn.execute(raw_sql)
         .await
         .map_err(|db_err| ProgramTransformerError::StorageWriteError(db_err.to_string()))?;
+
+    // query
+    //     .exec_without_returning(txn)
+    //     .await
+    //     .map_err(|db_err| ProgramTransformerError::StorageWriteError(db_err.to_string()))?;
 
     let tx_id_bytes = bs58::decode(txn_id)
         .into_vec()

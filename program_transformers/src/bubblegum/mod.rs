@@ -36,6 +36,8 @@ where
 {
     let ix_type = &parsing_result.instruction;
 
+    let start_time = tokio::time::Instant::now();
+
     // @TODO this would be much better served by implemneting Debug trait on the InstructionName
     // or wrapping it into something that can display it more neatly.
     let ix_str = match ix_type {
@@ -72,6 +74,9 @@ where
         }
         InstructionName::MintV1 | InstructionName::MintToCollectionV1 => {
             if let Some(info) = mint_v1::mint_v1(parsing_result, bundle, txn, ix_str).await? {
+                let elapsed_time = start_time.elapsed().as_secs_f64();
+                println!("### sql mint: {}", elapsed_time);
+
                 download_metadata_notifier(info)
                     .await
                     .map_err(ProgramTransformerError::DownloadMetadataNotify)?;
@@ -106,6 +111,10 @@ where
         }
         _ => debug!("Bubblegum: Not Implemented Instruction"),
     }
+
+    let elapsed_time = start_time.elapsed().as_secs_f64();
+    println!("######### {}: {}", ix_str, elapsed_time);
+
     Ok(())
 }
 

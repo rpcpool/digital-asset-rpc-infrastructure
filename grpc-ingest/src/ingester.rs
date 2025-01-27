@@ -63,6 +63,13 @@ pub async fn run(config: ConfigIngester, timing_tracing: TracingTimingLayer) -> 
     let connection = redis_client.get_multiplexed_tokio_connection().await?;
     let pool = pg_create_pool(config.postgres).await?;
 
+    let timing_handle = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            timing_tracing.clone().get_tracing_timing();
+        }
+    });
+
     let download_metadata_stream = config.download_metadata.stream.clone();
     let download_metadata_stream_maxlen = config.download_metadata.stream_maxlen;
 
@@ -124,12 +131,6 @@ pub async fn run(config: ConfigIngester, timing_tracing: TracingTimingLayer) -> 
         loop {
             sleep(Duration::from_millis(100)).await;
             report_pgpool(pool.clone());
-        }
-    });
-    let timing_handle = tokio::spawn(async move {
-        loop {
-            sleep(Duration::from_secs(1)).await;
-            timing_tracing.clone().get_tracing_timing();
         }
     });
 

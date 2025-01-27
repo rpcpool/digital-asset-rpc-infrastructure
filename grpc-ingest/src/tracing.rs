@@ -24,7 +24,7 @@ pub fn init() -> anyhow::Result<TracingTimingLayer> {
     let io_layer = tracing_subscriber::fmt::layer().with_ansi(is_atty);
 
     let tracing_timing_layer = tracing_timing::Builder::default()
-        .layer(|| tracing_timing::Histogram::new_with_max(1_000_000, 5).unwrap());
+        .layer(|| tracing_timing::Histogram::new_with_max(1_000_000 * 60_000, 2).unwrap());
 
     let downcaster = tracing_timing_layer.downcaster();
 
@@ -64,17 +64,20 @@ impl TracingTimingLayer {
         tracing_timing_layer.force_synchronize();
 
         tracing_timing_layer.with_histograms(|hs| {
-            let mut total = 0.0;
+
             for (span_group, hs) in hs {
-                tracing::debug!("{:?}", span_group);
                 for (event_group, h) in hs {
-                    tracing::debug!("    - {:?}", event_group);
-                    let ms = h.mean() / 1000.0;
-                    tracing::debug!("         ms: {:?}", ms);
-                    total += ms;
+                    // h.refresh();
+
+                    let mean = h.mean() / 1_000_000.0;
+                    let p90 = h.value_at_quantile(0.9) / 1_000_000;
+                    let samples = h.len();
+
+                    tracing::warn!(
+                        "###### '{span_group}'::'{event_group}' | mean: {mean:.0}ms | P90: {p90}ms | samples_qty: {samples}",
+                    );
                 }
             }
-            tracing::debug!("total: {} secs", total / 1000.0);
         });
     }
 }
