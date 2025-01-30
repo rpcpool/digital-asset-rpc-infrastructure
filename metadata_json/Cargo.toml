@@ -1,37 +1,45 @@
 [package]
-name = "nft_ingester"
+name = "das-metadata-json"
 version = { workspace = true }
 edition = { workspace = true }
 repository = { workspace = true }
 publish = { workspace = true }
 
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+
+[[bin]]
+name = "das-metadata-json"
+
 [dependencies]
-async-trait = { workspace = true }
-blockbuster = { workspace = true }
-borsh = { workspace = true }
+
+anyhow = { workspace = true }
+backon = "0.4.1"
 bs58 = { workspace = true }
 cadence = { workspace = true }
 cadence-macros = { workspace = true }
 chrono = { workspace = true }
-clap = { workspace = true, features = ["derive", "cargo"] }
+clap = { workspace = true, features = ["derive", "cargo", "env"] }
 das-core = { workspace = true }
-das-metadata-json = { workspace = true }
 digital_asset_types = { workspace = true, features = [
   "json_types",
   "sql_types",
 ] }
+derive_more = { version = "0.99.17" }
+env_logger = { workspace = true }
 figment = { workspace = true, features = ["env", "toml", "yaml"] }
-flatbuffers = { workspace = true }
 futures = { workspace = true }
+indicatif = "0.17.5"
 log = { workspace = true }
-mpl-bubblegum = { workspace = true }
-plerkle_messenger = { workspace = true, features = ["redis"] }
-plerkle_serialization = { workspace = true }
-program_transformers = { workspace = true }
+plerkle_messenger = { workspace = true, features = ['redis'] }
 rand = { workspace = true }
-regex = { workspace = true }
+redis = { version = "0.25.2", features = [
+  "aio",
+  "tokio-comp",
+  "streams",
+  "tokio-native-tls-comp",
+] }
 reqwest = { workspace = true }
-rust-crypto = { workspace = true }
 sea-orm = { workspace = true, features = [
   "macros",
   "runtime-tokio-rustls",
@@ -39,13 +47,9 @@ sea-orm = { workspace = true, features = [
   "with-chrono",
   "mock",
 ] }
+sea-query = { workspace = true, features = ["postgres-array"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-solana-account-decoder = { workspace = true }
-solana-client = { workspace = true }
-solana-sdk = { workspace = true }
-solana-transaction-status = { workspace = true }
-spl-account-compression = { workspace = true, features = ["no-entrypoint"] }
 sqlx = { workspace = true, features = [
   "macros",
   "runtime-tokio-rustls",
@@ -55,12 +59,8 @@ sqlx = { workspace = true, features = [
   "json",
 ] }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["tracing"] }
-tracing-subscriber = { workspace = true, features = [
-  "json",
-  "env-filter",
-  "ansi",
-] }
+tokio = { workspace = true, features = ["full", "tracing"] }
+tokio-stream = { workspace = true }
 url = { workspace = true }
 
 [lints]

@@ -73,6 +73,7 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
                 close_authority: ActiveValue::Set(None),
                 extensions: ActiveValue::Set(extensions.clone()),
             };
+            let txn = db.begin().await?;
 
             let mut query = token_accounts::Entity::insert(model)
                 .on_conflict(
@@ -103,8 +104,6 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
             let is_non_fungible = token.map(|t| t.is_non_fungible()).unwrap_or(false);
 
             if is_non_fungible {
-                let txn = db.begin().await?;
-
                 upsert_assets_token_account_columns(
                     AssetTokenAccountColumns {
                         mint: mint.clone(),
@@ -116,9 +115,9 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
                     &txn,
                 )
                 .await?;
-
-                txn.commit().await?;
             }
+
+            txn.commit().await?;
 
             Ok(())
         }
@@ -158,6 +157,7 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
                 freeze_authority: ActiveValue::Set(freeze_auth),
                 extensions: ActiveValue::Set(mint_extensions.clone()),
             };
+            let txn: DatabaseTransaction = db.begin().await?;
 
             let mut query = tokens::Entity::insert(model)
                 .on_conflict(
@@ -180,13 +180,13 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
                 "{} WHERE excluded.slot_updated >= tokens.slot_updated",
                 query.sql
             );
-            db.execute(query).await?;
-            let txn = db.begin().await?;
+            txn.execute(query).await?;
 
             upsert_assets_mint_account_columns(
                 AssetMintAccountColumns {
                     mint: account_key.clone(),
                     supply: m.supply.into(),
+                    decimals: m.decimals,
                     slot_updated_mint_account: slot,
                     extensions: mint_extensions.clone(),
                 },
@@ -194,11 +194,9 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
             )
             .await?;
 
-            txn.commit().await?;
-
             if let Some(metadata) = &extensions.metadata {
                 if let Some(info) =
-                    upsert_asset_data(metadata, account_key.clone(), slot, db).await?
+                    upsert_asset_data(metadata, account_key.clone(), slot, &txn).await?
                 {
                     download_metadata_notifier(info)
                         .await
@@ -206,18 +204,23 @@ pub async fn handle_token_extensions_program_account<'a, 'b, 'c>(
                 }
             }
 
+            txn.commit().await?;
+
             Ok(())
         }
         _ => Err(ProgramTransformerError::NotImplemented),
     }
 }
 
-async fn upsert_asset_data(
+async fn upsert_asset_data<T>(
     metadata: &ShadowMetadata,
     key_bytes: Vec<u8>,
     slot: i64,
-    db: &DatabaseConnection,
-) -> ProgramTransformerResult<Option<DownloadMetadataInfo>> {
+    db: &T,
+) -> ProgramTransformerResult<Option<DownloadMetadataInfo>>
+where
+    T: ConnectionTrait + TransactionTrait,
+{
     let metadata_json = serde_json::to_value(metadata.clone())
         .map_err(|e| ProgramTransformerError::SerializatonError(e.to_string()))?;
     let asset_data_model = asset_data::ActiveModel {
@@ -232,6 +235,7 @@ async fn upsert_asset_data(
         raw_symbol: ActiveValue::Set(Some(metadata.symbol.clone().into_bytes().to_vec())),
         ..Default::default()
     };
+
     let mut asset_data_query = asset_data::Entity::insert(asset_data_model)
         .on_conflict(
             OnConflict::columns([asset_data::Column::Id])
@@ -253,17 +257,14 @@ async fn upsert_asset_data(
     );
     db.execute(asset_data_query).await?;
 
-    let txn = db.begin().await?;
     upsert_assets_metadata_cols(
         AssetMetadataAccountCols {
             mint: key_bytes.clone(),
             slot_updated_metadata_account: slot,
         },
-        &txn,
+        db,
     )
     .await?;
-
-    txn.commit().await?;
 
     if metadata.uri.is_empty() {
         warn!(
@@ -285,10 +286,13 @@ struct AssetMetadataAccountCols {
     slot_updated_metadata_account: i64,
 }
 
-async fn upsert_assets_metadata_cols(
+async fn upsert_assets_metadata_cols<T>(
     metadata: AssetMetadataAccountCols,
-    db: &DatabaseTransaction,
-) -> Result<(), DbErr> {
+    db: &T,
+) -> Result<(), DbErr>
+where
+    T: ConnectionTrait + TransactionTrait,
+{
     let asset = asset::ActiveModel {
         id: ActiveValue::Set(metadata.mint.clone()),
         slot_updated_metadata_account: Set(Some(metadata.slot_updated_metadata_account)),

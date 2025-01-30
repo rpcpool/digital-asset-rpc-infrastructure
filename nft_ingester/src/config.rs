@@ -1,3 +1,4 @@
+use das_metadata_json::sender::SenderArgs;
 use figment::{
     providers::{Env, Format, Yaml},
     value::Value,
@@ -31,6 +32,7 @@ pub struct IngesterConfig {
     pub code_version: Option<&'static str>,
     pub background_task_runner_config: Option<BackgroundTaskRunnerConfig>,
     pub cl_audits: Option<bool>, // save transaction logs for compressed nfts
+    pub metadata_json_sender: Option<SenderArgs>,
 }
 
 #[derive(Deserialize, PartialEq, Debug, Clone)]
@@ -69,7 +71,7 @@ impl IngesterConfig {
             .unwrap()
     }
 
-    pub fn get_messneger_client_config(&self) -> MessengerConfig {
+    pub fn get_messenger_client_config(&self) -> MessengerConfig {
         let mut mc = self.messenger_config.clone();
         mc.connection_config
             .insert("consumer_id".to_string(), Value::from(rand_string()));
@@ -120,7 +122,6 @@ pub const CODE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub enum IngesterRole {
     #[default]
     All,
-    Backfiller,
     BackgroundTaskRunner,
     Ingester,
 }
@@ -129,7 +130,6 @@ impl Display for IngesterRole {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             IngesterRole::All => write!(f, "All"),
-            IngesterRole::Backfiller => write!(f, "Backfiller"),
             IngesterRole::BackgroundTaskRunner => write!(f, "BackgroundTaskRunner"),
             IngesterRole::Ingester => write!(f, "Ingester"),
         }

@@ -1,13 +1,9 @@
 use {
     super::IsNonFungibe,
     crate::{
-        asset_upserts::{
-            upsert_assets_metadata_account_columns, upsert_assets_mint_account_columns,
-            upsert_assets_token_account_columns, AssetMetadataAccountColumns,
-            AssetMintAccountColumns, AssetTokenAccountColumns,
-        },
+        asset_upserts::{upsert_assets_metadata_account_columns, AssetMetadataAccountColumns},
         error::{ProgramTransformerError, ProgramTransformerResult},
-        find_model_with_retry, DownloadMetadataInfo,
+        DownloadMetadataInfo,
     },
     blockbuster::token_metadata::{
         accounts::{MasterEdition, Metadata},
@@ -19,23 +15,20 @@ use {
             asset, asset_authority, asset_creators, asset_data, asset_grouping,
             asset_v1_account_attachments,
             sea_orm_active_enums::{
-                ChainMutability, Mutability, OwnerType, SpecificationAssetClass,
-                SpecificationVersions, V1AccountAttachments,
+                ChainMutability, Mutability, SpecificationAssetClass, SpecificationVersions,
+                V1AccountAttachments,
             },
-            token_accounts,
-            tokens::{self},
         },
         json::ChainDataV1,
     },
     sea_orm::{
-        entity::{ActiveValue, ColumnTrait, EntityTrait},
-        query::{JsonValue, Order, QueryFilter, QueryOrder, QueryTrait},
-        sea_query::query::OnConflict,
-        ConnectionTrait, DbBackend, DbErr, Statement, TransactionTrait,
+        entity::{ActiveValue, EntityTrait},
+        query::JsonValue,
+        sea_query::{query::OnConflict, Alias, Expr},
+        Condition, ConnectionTrait, Statement, TransactionTrait,
     },
     solana_sdk::pubkey,
     solana_sdk::pubkey::Pubkey,
-    sqlx::types::Decimal,
     tracing::warn,
 };
 
@@ -51,102 +44,28 @@ pub async fn burn_v1_asset<T: ConnectionTrait + TransactionTrait>(
         burnt: ActiveValue::Set(true),
         ..Default::default()
     };
-    let mut query = asset::Entity::insert(model)
+
+    asset::Entity::insert(model)
         .on_conflict(
             OnConflict::columns([asset::Column::Id])
                 .update_columns([asset::Column::SlotUpdated, asset::Column::Burnt])
+                .action_cond_where(
+                    Condition::all()
+                        .add(
+                            Expr::tbl(Alias::new("excluded"), asset::Column::Burnt)
+                                .ne(Expr::tbl(asset::Entity, asset::Column::Burnt)),
+                        )
+                        .add(Expr::tbl(asset::Entity, asset::Column::SlotUpdated).lte(slot_i)),
+                )
                 .to_owned(),
         )
-        .build(DbBackend::Postgres);
-    query.sql = format!(
-        "{} WHERE excluded.slot_updated > asset.slot_updated",
-        query.sql
-    );
-    conn.execute(query).await?;
+        .exec_without_returning(conn)
+        .await?;
+
     Ok(())
 }
 
-const RETRY_INTERVALS: &[u64] = &[0, 5, 10];
 static WSOL_PUBKEY: pubkey::Pubkey = pubkey!("So11111111111111111111111111111111111111112");
-
-pub async fn index_and_fetch_mint_data<T: ConnectionTrait + TransactionTrait>(
-    conn: &T,
-    mint_pubkey_vec: Vec<u8>,
-) -> ProgramTransformerResult<Option<tokens::Model>> {
-    // Gets the token and token account for the mint to populate the asset.
-    // This is required when the token and token account are indexed, but not the metadata account.
-    // If the metadata account is indexed, then the token and ta ingester will update the asset with the correct data.
-    let token: Option<tokens::Model> = find_model_with_retry(
-        conn,
-        "token",
-        &tokens::Entity::find_by_id(mint_pubkey_vec.clone()),
-        RETRY_INTERVALS,
-    )
-    .await?;
-
-    if let Some(token) = token {
-        upsert_assets_mint_account_columns(
-            AssetMintAccountColumns {
-                mint: mint_pubkey_vec.clone(),
-                supply: token.supply,
-                slot_updated_mint_account: token.slot_updated,
-                extensions: token.extensions.clone(),
-            },
-            conn,
-        )
-        .await
-        .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
-        Ok(Some(token))
-    } else {
-        // warn!(
-        //     target: "Mint not found",
-        //     "Mint not found in 'tokens' table for mint {}",
-        //     bs58::encode(&mint_pubkey_vec).into_string()
-        // );
-        Ok(None)
-    }
-}
-
-async fn index_token_account_data<T: ConnectionTrait + TransactionTrait>(
-    conn: &T,
-    mint_pubkey_vec: Vec<u8>,
-) -> ProgramTransformerResult<()> {
-    let token_account: Option<token_accounts::Model> = find_model_with_retry(
-        conn,
-        "token_accounts",
-        &token_accounts::Entity::find()
-            .filter(token_accounts::Column::Mint.eq(mint_pubkey_vec.clone()))
-            .filter(token_accounts::Column::Amount.gt(0))
-            .order_by(token_accounts::Column::SlotUpdated, Order::Desc),
-        RETRY_INTERVALS,
-    )
-    .await
-    .map_err(|e: DbErr| ProgramTransformerError::DatabaseError(e.to_string()))?;
-
-    if let Some(token_account) = token_account {
-        upsert_assets_token_account_columns(
-            AssetTokenAccountColumns {
-                mint: mint_pubkey_vec.clone(),
-                owner: Some(token_account.owner),
-                delegate: token_account.delegate,
-                frozen: token_account.frozen,
-                slot_updated_token_account: Some(token_account.slot_updated),
-            },
-            conn,
-        )
-        .await
-        .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
-    } else {
-        warn!(
-            target: "Account not found",
-            "Token acc not found in 'token-accounts' table for mint {}",
-            bs58::encode(&mint_pubkey_vec).into_string()
-        );
-    }
-
-    Ok(())
-}
-
 pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
     conn: &T,
     metadata: &Metadata,
@@ -174,44 +93,11 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         }
         _ => SpecificationAssetClass::Unknown,
     };
-    let mut ownership_type = match class {
-        SpecificationAssetClass::FungibleAsset => OwnerType::Token,
-        SpecificationAssetClass::FungibleToken => OwnerType::Token,
-        SpecificationAssetClass::Unknown => OwnerType::Unknown,
-        _ => OwnerType::Single,
-    };
 
     // Wrapped Solana is a special token that has supply 0 (infinite).
     // It's a fungible token with a metadata account, but without any token standard, meaning the code above will misabel it as an NFT.
     if mint_pubkey == WSOL_PUBKEY {
-        ownership_type = OwnerType::Token;
         class = SpecificationAssetClass::FungibleToken;
-    }
-
-    let token: Option<tokens::Model> =
-        index_and_fetch_mint_data(conn, mint_pubkey_vec.clone()).await?;
-
-    // get supply of token, default to 1 since most cases will be NFTs. Token mint ingester will properly set supply if token_result is None
-    let supply = token.map(|t| t.supply).unwrap_or_else(|| Decimal::from(1));
-    // Map unknown ownership types based on the supply.
-    if ownership_type == OwnerType::Unknown {
-        ownership_type = match supply {
-            s if s == Decimal::from(1) => OwnerType::Single,
-            s if s > Decimal::from(1) => OwnerType::Token,
-            _ => OwnerType::Unknown,
-        };
-    };
-
-    //Map specification asset class based on the supply.
-    if class == SpecificationAssetClass::Unknown {
-        class = match supply {
-            s if s > Decimal::from(1) => SpecificationAssetClass::FungibleToken,
-            _ => SpecificationAssetClass::Unknown,
-        };
-    };
-
-    if (ownership_type == OwnerType::Single) | (ownership_type == OwnerType::Unknown) {
-        index_token_account_data(conn, mint_pubkey_vec.clone()).await?;
     }
 
     let name = metadata.name.clone().into_bytes();
@@ -271,7 +157,7 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
 
     let txn = conn.begin().await?;
 
-    let set_lock_timeout = "SET LOCAL lock_timeout = '5s';";
+    let set_lock_timeout = "SET LOCAL lock_timeout = '1s';";
     let set_local_app_name =
         "SET LOCAL application_name = 'das::program_transformers::token_metadata::v1_asset';";
     let set_lock_timeout_stmt =
@@ -281,25 +167,103 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
     txn.execute(set_lock_timeout_stmt).await?;
     txn.execute(set_local_app_name_stmt).await?;
 
-    let mut query = asset_data::Entity::insert(asset_data_model)
+    asset_data::Entity::insert(asset_data_model)
         .on_conflict(
             OnConflict::columns([asset_data::Column::Id])
                 .update_columns(columns_to_update)
+                .action_cond_where(
+                    Condition::all()
+                        .add(
+                            Condition::any()
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_data::Column::ChainDataMutability,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_data::Entity,
+                                        asset_data::Column::ChainDataMutability,
+                                    )),
+                                )
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_data::Column::ChainData,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_data::Entity,
+                                        asset_data::Column::ChainData,
+                                    )),
+                                )
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_data::Column::MetadataUrl,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_data::Entity,
+                                        asset_data::Column::MetadataUrl,
+                                    )),
+                                )
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_data::Column::MetadataMutability,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_data::Entity,
+                                        asset_data::Column::MetadataMutability,
+                                    )),
+                                )
+                                .add(
+                                    Expr::tbl(Alias::new("excluded"), asset_data::Column::Reindex)
+                                        .ne(Expr::tbl(
+                                            asset_data::Entity,
+                                            asset_data::Column::Reindex,
+                                        )),
+                                )
+                                .add(
+                                    Expr::tbl(Alias::new("excluded"), asset_data::Column::RawName)
+                                        .ne(Expr::tbl(
+                                            asset_data::Entity,
+                                            asset_data::Column::RawName,
+                                        )),
+                                )
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_data::Column::RawSymbol,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_data::Entity,
+                                        asset_data::Column::RawSymbol,
+                                    )),
+                                )
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_data::Column::BaseInfoSeq,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_data::Entity,
+                                        asset_data::Column::BaseInfoSeq,
+                                    )),
+                                ),
+                        )
+                        .add(
+                            Expr::tbl(asset_data::Entity, asset_data::Column::SlotUpdated)
+                                .lte(slot_i),
+                        ),
+                )
                 .to_owned(),
         )
-        .build(DbBackend::Postgres);
-    query.sql = format!(
-        "{} WHERE excluded.slot_updated > asset_data.slot_updated",
-        query.sql
-    );
-    txn.execute(query)
+        .exec_without_returning(&txn)
         .await
         .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
 
     upsert_assets_metadata_account_columns(
         AssetMetadataAccountColumns {
             mint: mint_pubkey_vec.clone(),
-            owner_type: ownership_type,
             specification_asset_class: Some(class),
             royalty_amount: metadata.seller_fee_basis_points as i32,
             asset_data: Some(mint_pubkey_vec.clone()),
@@ -322,14 +286,14 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         attachment_type: ActiveValue::Set(V1AccountAttachments::MasterEditionV2),
         ..Default::default()
     };
-    let query = asset_v1_account_attachments::Entity::insert(attachment)
+
+    asset_v1_account_attachments::Entity::insert(attachment)
         .on_conflict(
             OnConflict::columns([asset_v1_account_attachments::Column::Id])
                 .do_nothing()
                 .to_owned(),
         )
-        .build(DbBackend::Postgres);
-    txn.execute(query)
+        .exec_without_returning(&txn)
         .await
         .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
 
@@ -340,22 +304,34 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         slot_updated: ActiveValue::Set(slot_i),
         ..Default::default()
     };
-    let mut query = asset_authority::Entity::insert(model)
+
+    asset_authority::Entity::insert(model)
         .on_conflict(
-            OnConflict::columns([asset_authority::Column::AssetId])
+            OnConflict::column(asset_authority::Column::AssetId)
                 .update_columns([
                     asset_authority::Column::Authority,
-                    asset_authority::Column::Seq,
                     asset_authority::Column::SlotUpdated,
                 ])
+                .action_cond_where(
+                    Condition::all()
+                        .add(
+                            Expr::tbl(Alias::new("excluded"), asset_authority::Column::Authority)
+                                .ne(Expr::tbl(
+                                    asset_authority::Entity,
+                                    asset_authority::Column::Authority,
+                                )),
+                        )
+                        .add(
+                            Expr::tbl(
+                                asset_authority::Entity,
+                                asset_authority::Column::SlotUpdated,
+                            )
+                            .lte(slot_i),
+                        ),
+                )
                 .to_owned(),
         )
-        .build(DbBackend::Postgres);
-    query.sql = format!(
-        "{} WHERE excluded.slot_updated > asset_authority.slot_updated",
-        query.sql
-    );
-    txn.execute(query)
+        .exec_without_returning(&txn)
         .await
         .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
 
@@ -369,7 +345,8 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
             slot_updated: ActiveValue::Set(Some(slot_i)),
             ..Default::default()
         };
-        let mut query = asset_grouping::Entity::insert(model)
+
+        asset_grouping::Entity::insert(model)
             .on_conflict(
                 OnConflict::columns([
                     asset_grouping::Column::AssetId,
@@ -379,16 +356,40 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
                     asset_grouping::Column::GroupValue,
                     asset_grouping::Column::Verified,
                     asset_grouping::Column::SlotUpdated,
-                    asset_grouping::Column::GroupInfoSeq,
                 ])
+                .action_cond_where(
+                    Condition::all()
+                        .add(
+                            Condition::any()
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_grouping::Column::GroupValue,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_grouping::Entity,
+                                        asset_grouping::Column::GroupValue,
+                                    )),
+                                )
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_grouping::Column::Verified,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_grouping::Entity,
+                                        asset_grouping::Column::Verified,
+                                    )),
+                                ),
+                        )
+                        .add(
+                            Expr::tbl(asset_grouping::Entity, asset_grouping::Column::SlotUpdated)
+                                .lte(slot_i),
+                        ),
+                )
                 .to_owned(),
             )
-            .build(DbBackend::Postgres);
-        query.sql = format!(
-            "{} WHERE excluded.slot_updated > asset_grouping.slot_updated",
-            query.sql
-        );
-        txn.execute(query)
+            .exec_without_returning(&txn)
             .await
             .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
     }
@@ -411,7 +412,7 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         .collect::<Vec<_>>();
 
     if !creators.is_empty() {
-        let mut query = asset_creators::Entity::insert_many(creators)
+        asset_creators::Entity::insert_many(creators)
             .on_conflict(
                 OnConflict::columns([
                     asset_creators::Column::AssetId,
@@ -420,27 +421,88 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
                 .update_columns([
                     asset_creators::Column::Creator,
                     asset_creators::Column::Share,
-                    asset_creators::Column::Verified,
                     asset_creators::Column::Seq,
+                    asset_creators::Column::Verified,
                     asset_creators::Column::SlotUpdated,
                 ])
+                .action_cond_where(
+                    Condition::any()
+                        .add(
+                            Condition::all().add(
+                                Condition::any()
+                                    .add(
+                                        Expr::tbl(
+                                            Alias::new("excluded"),
+                                            asset_creators::Column::Creator,
+                                        )
+                                        .ne(Expr::tbl(
+                                            asset_creators::Entity,
+                                            asset_creators::Column::Creator,
+                                        )),
+                                    )
+                                    .add(
+                                        Expr::tbl(
+                                            Alias::new("excluded"),
+                                            asset_creators::Column::Share,
+                                        )
+                                        .ne(Expr::tbl(
+                                            asset_creators::Entity,
+                                            asset_creators::Column::Share,
+                                        )),
+                                    )
+                                    .add(
+                                        Expr::tbl(
+                                            Alias::new("excluded"),
+                                            asset_creators::Column::Verified,
+                                        )
+                                        .ne(Expr::tbl(
+                                            asset_creators::Entity,
+                                            asset_creators::Column::Verified,
+                                        )),
+                                    )
+                                    .add(
+                                        Expr::tbl(
+                                            Alias::new("excluded"),
+                                            asset_creators::Column::Seq,
+                                        )
+                                        .ne(Expr::tbl(
+                                            asset_creators::Entity,
+                                            asset_creators::Column::Seq,
+                                        )),
+                                    ),
+                            ),
+                        )
+                        .add(
+                            Condition::any()
+                                .add(
+                                    Expr::tbl(
+                                        asset_creators::Entity,
+                                        asset_creators::Column::SlotUpdated,
+                                    )
+                                    .is_null(),
+                                )
+                                .add(
+                                    Expr::tbl(
+                                        asset_creators::Entity,
+                                        asset_creators::Column::SlotUpdated,
+                                    )
+                                    .lte(slot_i),
+                                ),
+                        ),
+                )
                 .to_owned(),
             )
-            .build(DbBackend::Postgres);
-        query.sql = format!(
-                "{} WHERE excluded.slot_updated >= asset_creators.slot_updated OR asset_creators.slot_updated is NULL",
-                query.sql
-            );
-        txn.execute(query)
+            .exec_without_returning(&txn)
             .await
             .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
     }
-    txn.commit().await?;
 
     // If the asset is a non-fungible token, then we need to insert to the asset_v1_account_attachments table
     if let Some(true) = metadata.token_standard.map(|t| t.is_non_fungible()) {
-        upsert_asset_v1_account_attachments(conn, &mint_pubkey, slot).await?;
+        upsert_asset_v1_account_attachments(&txn, &mint_pubkey, slot).await?;
     }
+
+    txn.commit().await?;
 
     if uri.is_empty() {
         warn!(
@@ -477,15 +539,23 @@ async fn upsert_asset_v1_account_attachments<T: ConnectionTrait + TransactionTra
         attachment_type: ActiveValue::Set(V1AccountAttachments::MasterEditionV2),
         ..Default::default()
     };
-    let query = asset_v1_account_attachments::Entity::insert(attachment)
+
+    asset_v1_account_attachments::Entity::insert(attachment)
         .on_conflict(
             OnConflict::columns([asset_v1_account_attachments::Column::Id])
                 .update_columns([asset_v1_account_attachments::Column::AssetId])
+                .action_cond_where(
+                    Expr::tbl(
+                        asset_v1_account_attachments::Entity,
+                        asset_v1_account_attachments::Column::SlotUpdated,
+                    )
+                    .lte(slot as i64),
+                )
                 .to_owned(),
         )
-        .build(DbBackend::Postgres);
-
-    conn.execute(query).await?;
+        .exec_without_returning(conn)
+        .await
+        .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
 
     Ok(())
 }

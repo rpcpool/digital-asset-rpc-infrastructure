@@ -9,9 +9,8 @@ use {
     },
     sea_orm::{
         entity::{ActiveValue, EntityTrait},
-        query::QueryTrait,
-        sea_query::query::OnConflict,
-        ConnectionTrait, DatabaseTransaction, DbBackend,
+        sea_query::{query::OnConflict, Alias, Condition, Expr},
+        DatabaseTransaction,
     },
     solana_sdk::pubkey::Pubkey,
 };
@@ -63,7 +62,6 @@ pub async fn save_master_edition(
     txn: &DatabaseTransaction,
 ) -> ProgramTransformerResult<()> {
     let id_bytes = id.to_bytes().to_vec();
-
     let ser = serde_json::to_value(me_data)
         .map_err(|e| ProgramTransformerError::SerializatonError(e.to_string()))?;
 
@@ -75,7 +73,7 @@ pub async fn save_master_edition(
         ..Default::default()
     };
 
-    let mut query = asset_v1_account_attachments::Entity::insert(model)
+    asset_v1_account_attachments::Entity::insert(model)
         .on_conflict(
             OnConflict::columns([asset_v1_account_attachments::Column::Id])
                 .update_columns([
@@ -83,16 +81,44 @@ pub async fn save_master_edition(
                     asset_v1_account_attachments::Column::Data,
                     asset_v1_account_attachments::Column::SlotUpdated,
                 ])
+                .action_cond_where(
+                    Condition::all()
+                        .add(
+                            Condition::any()
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_v1_account_attachments::Column::AttachmentType,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_v1_account_attachments::Entity,
+                                        asset_v1_account_attachments::Column::AttachmentType,
+                                    )),
+                                )
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_v1_account_attachments::Column::Data,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_v1_account_attachments::Entity,
+                                        asset_v1_account_attachments::Column::Data,
+                                    )),
+                                ),
+                        )
+                        .add(
+                            Expr::tbl(
+                                asset_v1_account_attachments::Entity,
+                                asset_v1_account_attachments::Column::SlotUpdated,
+                            )
+                            .lte(slot as i64),
+                        ),
+                )
                 .to_owned(),
         )
-        .build(DbBackend::Postgres);
+        .exec_without_returning(txn)
+        .await?;
 
-    query.sql = format!(
-        "{} WHERE excluded.slot_updated >= asset_v1_account_attachments.slot_updated",
-        query.sql
-    );
-
-    txn.execute(query).await?;
     Ok(())
 }
 
@@ -115,7 +141,7 @@ pub async fn save_edition(
         ..Default::default()
     };
 
-    let mut query = asset_v1_account_attachments::Entity::insert(model)
+    asset_v1_account_attachments::Entity::insert(model)
         .on_conflict(
             OnConflict::columns([asset_v1_account_attachments::Column::Id])
                 .update_columns([
@@ -123,15 +149,53 @@ pub async fn save_edition(
                     asset_v1_account_attachments::Column::Data,
                     asset_v1_account_attachments::Column::SlotUpdated,
                 ])
+                .action_cond_where(
+                    Condition::all()
+                        .add(
+                            Condition::any()
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_v1_account_attachments::Column::AttachmentType,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_v1_account_attachments::Entity,
+                                        asset_v1_account_attachments::Column::AttachmentType,
+                                    )),
+                                )
+                                .add(
+                                    Expr::tbl(
+                                        Alias::new("excluded"),
+                                        asset_v1_account_attachments::Column::Data,
+                                    )
+                                    .ne(Expr::tbl(
+                                        asset_v1_account_attachments::Entity,
+                                        asset_v1_account_attachments::Column::Data,
+                                    )),
+                                ),
+                        )
+                        .add(
+                            Condition::any()
+                                .add(
+                                    Expr::tbl(
+                                        asset_v1_account_attachments::Entity,
+                                        asset_v1_account_attachments::Column::SlotUpdated,
+                                    )
+                                    .lte(slot as i64),
+                                )
+                                .add(
+                                    Expr::tbl(
+                                        asset_v1_account_attachments::Entity,
+                                        asset_v1_account_attachments::Column::SlotUpdated,
+                                    )
+                                    .is_null(),
+                                ),
+                        ),
+                )
                 .to_owned(),
         )
-        .build(DbBackend::Postgres);
+        .exec_without_returning(txn)
+        .await?;
 
-    query.sql = format!(
-        "{} WHERE excluded.slot_updated >= asset_v1_account_attachments.slot_updated",
-        query.sql
-    );
-
-    txn.execute(query).await?;
     Ok(())
 }

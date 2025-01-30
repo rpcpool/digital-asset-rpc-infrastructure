@@ -10,7 +10,7 @@ use {
         instruction::InstructionBundle,
         programs::bubblegum::{BubblegumInstruction, LeafSchema},
     },
-    sea_orm::{ConnectionTrait, TransactionTrait},
+    sea_orm::{ConnectionTrait, Statement, TransactionTrait},
 };
 
 pub async fn transfer<'c, T>(
@@ -23,7 +23,27 @@ where
     T: ConnectionTrait + TransactionTrait,
 {
     if let (Some(le), Some(cl)) = (&parsing_result.leaf_update, &parsing_result.tree_update) {
-        let seq = save_changelog_event(cl, bundle.slot, bundle.txn_id, txn, instruction).await?;
+        // Begin a transaction.  If the transaction goes out of scope (i.e. one of the executions has
+        // an error and this function returns it using the `?` operator), then the transaction is
+        // automatically rolled back.
+        let multi_txn = txn.begin().await?;
+
+        let set_lock_timeout = "SET LOCAL lock_timeout = '1s';";
+        let set_local_app_name =
+            "SET LOCAL application_name = 'das::program_transformers::bubblegum::transfer';";
+        let set_lock_timeout_stmt = Statement::from_string(
+            multi_txn.get_database_backend(),
+            set_lock_timeout.to_string(),
+        );
+        let set_local_app_name_stmt = Statement::from_string(
+            multi_txn.get_database_backend(),
+            set_local_app_name.to_string(),
+        );
+        multi_txn.execute(set_lock_timeout_stmt).await?;
+        multi_txn.execute(set_local_app_name_stmt).await?;
+
+        let seq =
+            save_changelog_event(cl, bundle.slot, bundle.txn_id, &multi_txn, instruction).await?;
         match le.schema {
             LeafSchema::V1 {
                 id,
@@ -40,11 +60,6 @@ where
                 };
                 let tree_id = cl.id.to_bytes();
                 let nonce = cl.index as i64;
-
-                // Begin a transaction.  If the transaction goes out of scope (i.e. one of the executions has
-                // an error and this function returns it using the `?` operator), then the transaction is
-                // automatically rolled back.
-                let multi_txn = txn.begin().await?;
 
                 // Partial update of asset table with just leaf.
                 upsert_asset_with_leaf_info(
