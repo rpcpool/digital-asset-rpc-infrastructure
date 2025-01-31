@@ -25,6 +25,7 @@ mod redeem;
 mod transfer;
 mod update_metadata;
 
+#[tracing::instrument(skip_all, level = "warn")]
 pub async fn handle_bubblegum_instruction<'c, T>(
     parsing_result: &'c BubblegumInstruction,
     bundle: &'c InstructionBundle<'c>,
@@ -71,7 +72,9 @@ where
             delegate::delegate(parsing_result, bundle, txn, ix_str).await?;
         }
         InstructionName::MintV1 | InstructionName::MintToCollectionV1 => {
-            if let Some(info) = mint_v1::mint_v1(parsing_result, bundle, txn, ix_str).await? {
+            let mint = mint_v1::mint_v1(parsing_result, bundle, txn, ix_str).await?;
+            tracing::warn!("mint_v1 end");
+            if let Some(info) = mint {
                 download_metadata_notifier(info)
                     .await
                     .map_err(ProgramTransformerError::DownloadMetadataNotify)?;
@@ -99,6 +102,7 @@ where
             if let Some(info) =
                 update_metadata::update_metadata(parsing_result, bundle, txn, ix_str).await?
             {
+                tracing::warn!("TransactionHandle end");
                 download_metadata_notifier(info)
                     .await
                     .map_err(ProgramTransformerError::DownloadMetadataNotify)?;

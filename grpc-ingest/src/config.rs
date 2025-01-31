@@ -291,7 +291,7 @@ pub struct ConfigIngesterDownloadMetadata {
         default = "ConfigIngesterDownloadMetadata::default_num_threads",
         deserialize_with = "deserialize_usize_str"
     )]
-    pub _num_threads: usize,
+    pub max_concurrency: usize,
     #[serde(
         default = "ConfigIngesterDownloadMetadata::default_max_attempts",
         deserialize_with = "deserialize_usize_str"
@@ -334,7 +334,7 @@ pub struct ConfigIngesterDownloadMetadata {
 
 impl ConfigIngesterDownloadMetadata {
     pub const fn default_num_threads() -> usize {
-        2
+        10
     }
 
     pub const fn default_pipeline_max_idle() -> Duration {
