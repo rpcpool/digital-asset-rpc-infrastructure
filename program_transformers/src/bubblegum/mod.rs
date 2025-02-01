@@ -100,7 +100,6 @@ where
             if let Some(info) =
                 update_metadata::update_metadata(parsing_result, bundle, txn, ix_str).await?
             {
-                tracing::warn!("TransactionHandle end");
                 download_metadata_notifier(info)
                     .await
                     .map_err(ProgramTransformerError::DownloadMetadataNotify)?;
