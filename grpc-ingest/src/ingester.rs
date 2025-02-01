@@ -4,7 +4,6 @@ use {
         postgres::{create_pool as pg_create_pool, report_pgpool},
         prom::redis_xadd_status_inc,
         redis::{AccountHandle, DownloadMetadataJsonHandle, IngestStream, TransactionHandle},
-        tracing::TracingTimingLayer,
         util::create_shutdown,
     },
     das_core::{
@@ -81,7 +80,6 @@ pub fn download_metadata_notifier_v3(
         let mut handlers = FuturesUnordered::new();
 
         while let Some(download_metadata_info) = rx.recv().await {
-            println!("handlers-rx len {} - {}", handlers.len(), rx.len());
             if handlers.len() >= worker_count {
                 handlers.next().await;
             }
@@ -92,12 +90,6 @@ pub fn download_metadata_notifier_v3(
             handlers.push(tokio::spawn(async move {
                 redis_xadd(connection, stream, stream_maxlen, download_metadata_info).await;
             }));
-
-            // println!(
-            //     "count: {}, {}",
-            //     rx.sender_strong_count(),
-            //     rx.sender_weak_count()
-            // );
         }
 
         while handlers.next().await.is_some() {}
@@ -107,7 +99,6 @@ pub fn download_metadata_notifier_v3(
 }
 
 /// Wrapper around redis xadd cmd
-#[tracing::instrument(skip_all, level = "warn")]
 pub async fn redis_xadd(
     mut connection: MultiplexedConnection,
     stream: String,
@@ -127,8 +118,6 @@ pub async fn redis_xadd(
                 .query_async::<_, redis::Value>(&mut connection)
                 .await;
 
-            tracing::warn!("download_metadata_notifier_v3 end");
-
             let status = xadd.map(|_| ()).map_err(|_| ());
 
             redis_xadd_status_inc(&stream, "metadata_notifier", status, 1);
@@ -139,26 +128,13 @@ pub async fn redis_xadd(
     }
 }
 
-pub async fn run(config: ConfigIngester, timing_tracing: TracingTimingLayer) -> anyhow::Result<()> {
+pub async fn run(config: ConfigIngester) -> anyhow::Result<()> {
     let redis_client = redis::Client::open(config.redis)?;
     let connection = redis_client.get_multiplexed_tokio_connection().await?;
     let pool = pg_create_pool(config.postgres).await?;
 
-    let timing_handle = tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(4)).await;
-            timing_tracing.clone().get_tracing_timing();
-        }
-    });
-
     let download_metadata_stream = config.download_metadata.stream.clone();
     let download_metadata_stream_maxlen = config.download_metadata.stream_maxlen;
-
-    let download_metadata_notifier = download_metadata_notifier_v2(
-        connection.clone(),
-        download_metadata_stream.name.clone(),
-        download_metadata_stream_maxlen,
-    )?;
 
     let (metadata_notifier_rec_handle, metadata_notifier_sender) = download_metadata_notifier_v3(
         connection.clone(),
@@ -167,7 +143,7 @@ pub async fn run(config: ConfigIngester, timing_tracing: TracingTimingLayer) -> 
         config.download_metadata.max_concurrency,
     );
 
-    let txs_download_metadata_notifier =
+    let download_metadata_notifier =
         create_download_metadata_notifier(metadata_notifier_sender).await;
 
     let program_transformer = Arc::new(ProgramTransformer::new(
@@ -203,17 +179,14 @@ pub async fn run(config: ConfigIngester, timing_tracing: TracingTimingLayer) -> 
     let transactions = IngestStream::build()
         .config(config.transactions)
         .connection(connection.clone())
-        .handler(TransactionHandle::new(Arc::new(ProgramTransformer::new(
-            pool.clone(),
-            txs_download_metadata_notifier,
-        ))))
+        .handler(TransactionHandle::new(Arc::clone(&program_transformer)))
         .start()
         .await?;
 
     let snapshots = IngestStream::build()
         .config(config.snapshots)
         .connection(connection.clone())
-        .handler(AccountHandle::new(Arc::clone(&program_transformer)))
+        .handler(AccountHandle::new(program_transformer))
         .start()
         .await?;
 
@@ -237,8 +210,6 @@ pub async fn run(config: ConfigIngester, timing_tracing: TracingTimingLayer) -> 
         );
     }
 
-    // drop(program_transformer);
-
     futures::future::join_all(vec![
         accounts.stop(),
         transactions.stop(),
@@ -252,7 +223,6 @@ pub async fn run(config: ConfigIngester, timing_tracing: TracingTimingLayer) -> 
     metadata_notifier_rec_handle.await?;
 
     report.abort();
-    timing_handle.abort();
 
     pool.close().await;
 

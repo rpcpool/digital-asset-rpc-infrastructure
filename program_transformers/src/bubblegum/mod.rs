@@ -25,7 +25,6 @@ mod redeem;
 mod transfer;
 mod update_metadata;
 
-#[tracing::instrument(skip_all, level = "warn")]
 pub async fn handle_bubblegum_instruction<'c, T>(
     parsing_result: &'c BubblegumInstruction,
     bundle: &'c InstructionBundle<'c>,
@@ -73,7 +72,6 @@ where
         }
         InstructionName::MintV1 | InstructionName::MintToCollectionV1 => {
             let mint = mint_v1::mint_v1(parsing_result, bundle, txn, ix_str).await?;
-            tracing::warn!("mint_v1 end");
             if let Some(info) = mint {
                 download_metadata_notifier(info)
                     .await

@@ -77,8 +77,7 @@ pub async fn create_download_metadata_notifier(
 ) -> DownloadMetadataNotifier {
     Box::new(move |info: DownloadMetadataInfo| -> BoxFuture<'static, Result<(), Box<dyn std::error::Error + Send + Sync>>>
     {
-        // let task = download_metadata_json_sender.send(info).map_err(Into::into);
-        let task = download_metadata_json_sender.clone().send(info).map_err(Into::into);
+        let task = download_metadata_json_sender.send(info).map_err(Into::into);
 
         Box::pin(async move { task })
     })
