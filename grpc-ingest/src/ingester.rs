@@ -2,7 +2,7 @@ use {
     crate::{
         config::{ConfigDownloadMetadataPublish, ConfigIngester, REDIS_STREAM_DATA_KEY},
         postgres::{create_pool as pg_create_pool, report_pgpool},
-        prom::redis_xadd_status_inc,
+        prom::{download_metadata_publish_time, redis_xadd_status_inc},
         redis::{AccountHandle, DownloadMetadataJsonHandle, IngestStream, TransactionHandle},
         util::create_shutdown,
     },
@@ -84,6 +84,7 @@ impl DownloadMetadataPublishBuilder {
 
                 let mut connection = connection.clone();
                 let stream = stream.clone();
+                let start_time = tokio::time::Instant::now();
 
                 tasks.spawn(async move {
                     match serde_json::to_vec(&download_metadata_info) {
@@ -101,7 +102,10 @@ impl DownloadMetadataPublishBuilder {
 
                             let status = xadd.map(|_| ()).map_err(|_| ());
 
-                            redis_xadd_status_inc(&stream, "metadata_notifier", status, 1);
+                            redis_xadd_status_inc(&stream, "metadata_json", status, 1);
+                            let elapsed_time = start_time.elapsed().as_secs_f64();
+
+                            download_metadata_publish_time(elapsed_time);
                         }
                         Err(_) => {
                             tracing::error!("download_metadata_info failed to bytes")
