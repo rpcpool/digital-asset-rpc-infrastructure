@@ -109,6 +109,7 @@ impl Logger for MetricMiddleware {
         _transport: TransportProtocol,
     ) {
         debug!("Call: {} {:?}", method_name, params);
+        warn!("Params: {:#?}", params);
     }
 
     fn on_response(&self, result: &str, _started_at: Self::Instant, _transport: TransportProtocol) {
