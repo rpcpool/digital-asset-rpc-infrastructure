@@ -269,7 +269,7 @@ pub struct ConfigDownloadMetadataPublish {
 
 impl ConfigDownloadMetadataPublish {
     pub fn default_stream_name() -> String {
-        "METADATA_JSON".to_owned()
+        "METADATA_JSONS".to_owned()
     }
 
     pub const fn default_max_concurrency() -> usize {

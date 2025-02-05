@@ -64,7 +64,7 @@ download_metadata_publish:
   # maximum number of concurrent tasks for processing.
   max_concurrency: 10
   # stream name
-  stream_name: METADATA_JSON
+  stream_name: METADATA_JSONS
   # stream max length
   stream_maxlen: 100_000_000
   # number of pipelines that can be processed concurrently
