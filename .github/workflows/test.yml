@@ -1,49 +1,43 @@
 name: Check lock file, fmt, clippy
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 on:
   pull_request:
   push:
     branches:
-      - "main"
+      - 'main'
   workflow_dispatch:
 
 env:
-  CARGO_TERM_COLOR: always
+   CARGO_TERM_COLOR: always
 
 jobs:
   test:
     runs-on: ubuntu-22.04
-
     steps:
       - name: checkout repo
         uses: actions/checkout@v3
-
       - name: set build cache
         uses: actions/cache@v3
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            digital-asset-rpc-infrastructure/target/
-          key: cargo-${{ hashFiles('**/Cargo.lock') }}-0001
+            path: |
+                ~/.cargo/bin/
+                ~/.cargo/registry/index/
+                ~/.cargo/registry/cache/
+                ~/.cargo/git/db/
+                digital-asset-rpc-infrastructure/target/
+            key: cargo-${{ hashFiles('**/Cargo.lock') }}-0001
 
       # Cargo.lock
       - name: Check lock file
         run: |
           cargo tree
           git checkout Cargo.lock
-          cargo tree
-
+          cargo tree --frozen
       # fmt
       - name: Check fmt
         run: cargo fmt --all -- --check
-
       # clippy
       - name: Check clippy
         run: cargo clippy --all-targets --tests -- -Dwarnings
