@@ -6,12 +6,14 @@ use {
     },
     anyhow::Context,
     clap::{Parser, Subcommand},
+    config::ConfigMonitor,
     std::net::SocketAddr,
 };
 
 mod config;
 mod grpc;
 mod ingester;
+mod monitor;
 mod postgres;
 mod prom;
 mod redis;
@@ -42,6 +44,9 @@ enum ArgsAction {
     /// Run ingester process (process events from Redis)
     #[command(name = "ingester")]
     Ingester,
+    /// Run monitor process (verify bubblegum proofs)
+    #[command(name = "monitor")]
+    Monitor,
 }
 
 #[tokio::main]
@@ -58,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
         prometheus_run_server(address)?;
     }
 
-    // Run grpc / ingester / download-metadata
+    // Run grpc / ingester / download-metadata / monitor
     match args.action {
         ArgsAction::Grpc => {
             let config = config_load::<ConfigGrpc>(&args.config)
@@ -71,6 +76,12 @@ async fn main() -> anyhow::Result<()> {
                 .await
                 .with_context(|| format!("failed to parse config from: {}", args.config))?;
             ingester::run(config).await
+        }
+        ArgsAction::Monitor => {
+            let config = config_load::<ConfigMonitor>(&args.config)
+                .await
+                .with_context(|| format!("failed to parse config from: {}", args.config))?;
+            monitor::run(config).await
         }
     }
 }
