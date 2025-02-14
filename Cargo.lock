@@ -1877,6 +1877,7 @@ dependencies = [
  "cargo-lock",
  "chrono",
  "clap 4.5.29",
+ "das-bubblegum",
  "das-core",
  "digital_asset_types",
  "futures",
