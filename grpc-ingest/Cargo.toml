@@ -21,6 +21,7 @@ chrono = { workspace = true }
 clap = { workspace = true, features = ["cargo", "derive"] }
 thiserror = { workspace = true }
 das-core = { workspace = true }
+das-bubblegum = { workspace = true }
 digital_asset_types = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
