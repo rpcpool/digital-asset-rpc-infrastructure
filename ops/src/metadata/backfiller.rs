@@ -53,7 +53,7 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
         .all(&conn)
         .await?
         .iter()
-        .map(|d| DownloadMetadataInfo::new(d.id.clone(), d.metadata_url.clone(), d.slot_updated))
+        .map(|d| DownloadMetadataInfo::new(d.id.clone(), d.metadata_url.clone()))
         .collect::<Vec<DownloadMetadataInfo>>();
 
     let metadata_vec_len = download_metadata_info_vec.len();
