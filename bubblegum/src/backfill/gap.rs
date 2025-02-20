@@ -27,7 +27,7 @@ pub struct OverfetchArgs {
 
     /// Lookup used with LEAD in the SQL query to get the overfetch tx
     #[arg(long, env, default_value = "10")]
-    pub overfetch_lookup_limit: i64,
+    pub overfetch_lookup_limit: i32,
 }
 
 const TREE_GAP_SQL: &str = r#"
@@ -38,7 +38,7 @@ WITH sequenced_data AS (
         LEAD(seq) OVER (ORDER BY seq ASC) AS next_seq,
         tx AS current_tx,
         LEAD(tx) OVER (ORDER BY seq ASC) AS next_tx,
-        LEAD(tx, $2) OVER (ORDER BY seq ASC) AS overfetch_tx,
+        LEAD(tx, $2) OVER (ORDER BY seq ASC) AS overfetch_tx
     FROM
         cl_audits_v2
     WHERE
@@ -85,14 +85,14 @@ impl TreeGapModel {
     pub async fn find(
         conn: &DatabaseConnection,
         tree: Pubkey,
-        overfetch_lookup_limit: i64,
+        overfetch_lookup_limit: i32,
     ) -> Result<Vec<Self>, ErrorKind> {
         let statement = Statement::from_sql_and_values(
             DbBackend::Postgres,
             TREE_GAP_SQL,
             vec![
                 Value::Bytes(Some(Box::new(tree.as_ref().to_vec()))),
-                Value::BigInt(Some(overfetch_lookup_limit)),
+                Value::Int(Some(overfetch_lookup_limit)),
             ],
         );
 
