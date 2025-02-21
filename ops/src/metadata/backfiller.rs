@@ -76,13 +76,9 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
     }
 
     let excess_tasks = metadata_vec_len % worker_count;
-    let mut current_tasks_per_worker = if excess_tasks > 0 {
-        metadata_vec_len / worker_count + 1
-    } else {
-        metadata_vec_len / worker_count
-    };
+    let tasks_per_worker = metadata_vec_len / worker_count;
 
-    let mut handlers: Vec<JoinHandle<()>> = Vec::with_capacity(metadata_json_download_worker_count);
+    let mut handlers: Vec<JoinHandle<()>> = Vec::with_capacity(worker_count);
 
     let mut curr_start = 0;
     let client = Client::builder()
@@ -92,10 +88,12 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
         .build()?;
 
     debug!("worker_count: {}", worker_count);
-    for _ in 0..worker_count {
+    for worker_index in 0..worker_count {
         let start = curr_start;
 
-        let end = start + current_tasks_per_worker;
+        let additional_task = if worker_index < excess_tasks { 1 } else { 0 };
+
+        let end = start + tasks_per_worker + additional_task;
 
         let handler = spawn_metadata_fetch_task(
             client.clone(),
@@ -104,8 +102,6 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
         );
 
         handlers.push(handler);
-
-        current_tasks_per_worker = current_tasks_per_worker.saturating_sub(1);
 
         curr_start = end;
     }
