@@ -6,7 +6,7 @@ use das_core::{Rpc, SolanaRpcArgs};
 use digital_asset_types::dao::{asset, token_accounts};
 use log::{debug, error};
 use sea_orm::{entity::*, sea_query::Expr, SqlxPostgresConnector};
-use sea_orm::{ConnectionTrait, DeleteMany, EntityTrait, QueryFilter};
+use sea_orm::{EntityTrait, QueryFilter};
 use solana_sdk::pubkey;
 use solana_sdk::pubkey::Pubkey;
 use tokio::task::JoinHandle;
@@ -52,6 +52,8 @@ pub async fn start_ta_purge(args: Args) -> Result<()> {
 
     let token_accounts_len = token_accounts.len();
 
+    debug!("Token accounts len: {:?}", token_accounts_len);
+
     if token_accounts_len == 0 {
         debug!("No token accounts to purge");
         return Ok(());
@@ -73,6 +75,7 @@ pub async fn start_ta_purge(args: Args) -> Result<()> {
 
     let mut curr_start = 0;
 
+    let start = tokio::time::Instant::now();
     for worker_index in 0..worker_count {
         let start = curr_start;
 
@@ -91,6 +94,8 @@ pub async fn start_ta_purge(args: Args) -> Result<()> {
 
     futures::future::join_all(tasks).await;
 
+    debug!("Purge took: {:?}", start.elapsed());
+
     Ok(())
 }
 
@@ -101,7 +106,7 @@ fn fetch_and_purge_ta(
 ) -> JoinHandle<()> {
     let acc_keys = token_accounts
         .iter()
-        .filter_map(|ta| Pubkey::try_from_slice(&ta.pubkey.as_slice()).ok())
+        .filter_map(|ta| Pubkey::try_from_slice(ta.pubkey.as_slice()).ok())
         .collect::<Vec<Pubkey>>();
 
     let rpc = rpc.clone();
@@ -112,11 +117,13 @@ fn fetch_and_purge_ta(
         let mut tasks = Vec::with_capacity(acc_keys_chuncks.len());
 
         for chunk in acc_keys_chuncks {
+            debug!("chunk len: {:?}", chunk.len());
             let keys = chunk.to_vec();
             let pool = pool.clone();
             let rpc = rpc.clone();
             let handle = tokio::spawn(async move {
                 if let Ok(accounts) = rpc.get_multiple_accounts(&keys).await {
+                    debug!("rpc fetched accounts len: {:?}", accounts.len());
                     let mut accounts_to_purge = Vec::new();
                     for (key, acc) in keys.iter().zip(accounts.iter()) {
                         match acc {
@@ -138,6 +145,8 @@ fn fetch_and_purge_ta(
                         .map(|a| a.to_bytes().to_vec())
                         .collect::<Vec<Vec<u8>>>();
 
+                    debug!("accounts to purge len: {:?}", accounts_to_purge.len());
+
                     if !accounts_to_purge.is_empty() {
                         let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone());
                         let delete_res = token_accounts::Entity::delete_many()
@@ -150,11 +159,11 @@ fn fetch_and_purge_ta(
 
                         if let Ok(res) = delete_res {
                             debug!(
-                                "Successfully deleted token accounts: {:?}",
+                                "Successfully purged token accounts: {:?}",
                                 res.rows_affected
                             );
                         } else {
-                            error!("Failed to delete token accounts: {:?}", accounts_to_purge);
+                            error!("Failed to purge token accounts: {:?}", accounts_to_purge);
                         }
                     }
                 }
@@ -178,9 +187,14 @@ pub async fn start_mint_purge(args: Args) -> Result<()> {
     };
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(db_pool.clone());
 
-    let assets = asset::Entity::find().all(&conn).await?;
+    let assets = asset::Entity::find()
+        .filter(asset::Column::Burnt.eq(false))
+        .all(&conn)
+        .await?;
 
     let assets_len = assets.len();
+
+    debug!("Assets len: {:?}", assets_len);
 
     if assets_len == 0 {
         debug!("No assets to purge");
@@ -203,6 +217,7 @@ pub async fn start_mint_purge(args: Args) -> Result<()> {
 
     let mut curr_start = 0;
 
+    let start = tokio::time::Instant::now();
     for worker_index in 0..worker_count {
         let start = curr_start;
 
@@ -221,6 +236,8 @@ pub async fn start_mint_purge(args: Args) -> Result<()> {
 
     futures::future::join_all(tasks).await;
 
+    debug!("Purge took: {:?}", start.elapsed());
+
     Ok(())
 }
 
@@ -231,7 +248,7 @@ fn fetch_and_purge_assets(
 ) -> JoinHandle<()> {
     let mint_keys = assets
         .iter()
-        .filter_map(|a| Pubkey::try_from_slice(&a.id.as_slice()).ok())
+        .filter_map(|a| Pubkey::try_from_slice(a.id.as_slice()).ok())
         .collect::<Vec<Pubkey>>();
 
     let rpc = rpc.clone();
@@ -242,11 +259,13 @@ fn fetch_and_purge_assets(
         let mut tasks = Vec::with_capacity(mint_keys_chuncks.len());
 
         for chunk in mint_keys_chuncks {
+            debug!("chunk len: {:?}", chunk.len());
             let keys = chunk.to_vec();
             let pool = pool.clone();
             let rpc = rpc.clone();
             let handle = tokio::spawn(async move {
                 if let Ok(accounts) = rpc.get_multiple_accounts(&keys).await {
+                    debug!("rpc fetched accounts len: {:?}", accounts.len());
                     let mut accounts_to_update = Vec::new();
                     for (key, acc) in keys.iter().zip(accounts.iter()) {
                         match acc {
@@ -267,6 +286,8 @@ fn fetch_and_purge_assets(
                         .iter()
                         .map(|a| a.to_bytes().to_vec())
                         .collect::<Vec<Vec<u8>>>();
+
+                    debug!("accounts to update len: {:?}", accounts_to_update.len());
 
                     if !accounts_to_update.is_empty() {
                         let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone());

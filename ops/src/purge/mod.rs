@@ -1,4 +1,5 @@
 mod cmd;
-mod purge;
+mod purger;
+
 pub use cmd::*;
-pub use purge::*;
+pub use purger::*;

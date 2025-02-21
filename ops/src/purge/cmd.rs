@@ -5,10 +5,10 @@ use clap::{Args, Subcommand};
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
     // Purge token accounts
-    #[clap(name = "token-account")]
+    #[clap(name = "token-accounts")]
     TokenAccount(PurgeArgs),
-    #[clap(name = "mint")]
     // Purge mints
+    #[clap(name = "mints")]
     Mint(PurgeArgs),
 }
 
