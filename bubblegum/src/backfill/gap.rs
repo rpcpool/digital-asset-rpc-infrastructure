@@ -116,7 +116,7 @@ impl TryFrom<TreeGapModel> for TreeGapFill {
         let overfetch = if model.gap_end_seq - model.gap_start_seq < GAP_LIMIT {
             match Signature::try_from(model.overfetch_tx) {
                 Ok(sig) => {
-                    // Account for oferfetch tx falling back to its default value
+                    // Account for overfetch tx falling back to its default value
                     if sig == lower {
                         None
                     } else {
