@@ -43,9 +43,9 @@ pub struct Args {
 }
 
 pub async fn start_ta_purge(args: Args) -> Result<()> {
-    let db_pool = connect_db(&args.database).await?;
+    let db_pool = connect_db(args.database).await?;
 
-    let rpc = Rpc::from_config(&args.solana);
+    let rpc = Rpc::from_config(args.solana);
 
     let (batch_sender, mut batch_receiver) = unbounded_channel::<Vec<Pubkey>>();
 
@@ -155,11 +155,11 @@ async fn fetch_and_purge_ta(pool: sqlx::PgPool, acc_keys: Vec<Pubkey>, rpc: Rpc)
 }
 
 pub async fn start_mint_purge(args: Args) -> Result<()> {
-    let db_pool = connect_db(&args.database).await?;
+    let db_pool = connect_db(args.database).await?;
 
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(db_pool.clone());
 
-    let rpc = Rpc::from_config(&args.solana);
+    let rpc = Rpc::from_config(args.solana);
 
     let (batch_sender, mut batch_receiver) = unbounded_channel::<Vec<Pubkey>>();
 
