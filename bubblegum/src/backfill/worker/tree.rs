@@ -228,6 +228,13 @@ impl ProofRepairWorker {
                 let sig = Signature::try_from(cl_audits.tx.as_ref()).unwrap();
 
                 let transaction = self.context.solana_rpc.get_transaction(&sig).await?;
+                if let Some(meta) = &transaction.transaction.meta {
+                    if let Some(err) = &meta.err {
+                        tracing::error!("Transaction error: {:?}", err);
+                        return proof;
+                    }
+                }
+
                 let transaction: TransactionInfo =
                     FetchedEncodedTransactionWithStatusMeta(transaction).try_into()?;
 
