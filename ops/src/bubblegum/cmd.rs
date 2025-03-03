@@ -1,4 +1,4 @@
-use super::{backfiller, replay, verify};
+use super::{backfiller, replay, rollback_err_txs, verify};
 use anyhow::Result;
 use clap::{Args, Subcommand};
 
@@ -12,6 +12,9 @@ pub enum Commands {
     Replay(replay::Args),
     /// The 'verify' command is used to verify the integrity of the bubblegum index.
     Verify(verify::Args),
+    /// The 'rollback-errored-transactions' command is used to rollback errored transactions.
+    #[clap(name = "rollback-errored-transactions")]
+    RollbackErroredTransactions(rollback_err_txs::Args),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -30,6 +33,9 @@ pub async fn subcommand(subcommand: BubblegumCommand) -> Result<()> {
         }
         Commands::Verify(args) => {
             verify::run(args).await?;
+        }
+        Commands::RollbackErroredTransactions(args) => {
+            rollback_err_txs::run(args).await?;
         }
     }
 
