@@ -59,7 +59,7 @@ impl MockDatabasePool {
     }
 }
 
-impl DatabasePool for MockDatabasePool {
+impl DatabasePool for Arc<MockDatabasePool> {
     fn connection(&self) -> DatabaseConnection {
         DatabaseConnection::MockDatabaseConnection(Arc::clone(&self.0))
     }
