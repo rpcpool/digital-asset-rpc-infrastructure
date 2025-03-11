@@ -1,6 +1,7 @@
 use crate::purge::{start_mint_purge, start_ta_purge, Args as PurgeArgs};
 use anyhow::{Ok, Result};
 use clap::{Args, Subcommand};
+use das_bubblegum::{purge_err_txs, BubblegumContext, PurgeErrTxsArgs};
 use das_core::{connect_db, PoolArgs, Rpc, SolanaRpcArgs};
 
 #[derive(Debug, Clone, Subcommand)]
@@ -11,6 +12,10 @@ pub enum Commands {
     // Purge mints
     #[clap(name = "mints")]
     Mint(PurgeArgs),
+    /// The 'purge errored-transactions' command is used to remove from the database assets
+    ///  for which the DB contains txs that have a `TransactionError`.
+    #[clap(name = "errored-transactions")]
+    ErroredTransactions(PurgeErrTxsArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -32,6 +37,10 @@ pub async fn subcommand(subcommand: PurgeCommand) -> Result<()> {
     match subcommand.action {
         Commands::TokenAccount(args) => start_ta_purge(args, pg_pool, rpc).await?,
         Commands::Mint(args) => start_mint_purge(args, pg_pool, rpc).await?,
+        Commands::ErroredTransactions(args) => {
+            let context = BubblegumContext::new(pg_pool, rpc);
+            purge_err_txs(context, args).await?;
+        }
     };
 
     Ok(())
