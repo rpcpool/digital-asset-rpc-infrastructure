@@ -1,7 +1,8 @@
-use crate::purge::{start_mint_purge, start_ta_purge, Args as PurgeArgs};
+use crate::purge::{
+    start_errored_txs_purge, start_mint_purge, start_ta_purge, Args as PurgeArgs, PurgeErrTxsArgs,
+};
 use anyhow::{Ok, Result};
 use clap::{Args, Subcommand};
-use das_bubblegum::{purge_err_txs, BubblegumContext, PurgeErrTxsArgs};
 use das_core::{connect_db, PoolArgs, Rpc, SolanaRpcArgs};
 
 #[derive(Debug, Clone, Subcommand)]
@@ -37,10 +38,7 @@ pub async fn subcommand(subcommand: PurgeCommand) -> Result<()> {
     match subcommand.action {
         Commands::TokenAccount(args) => start_ta_purge(args, pg_pool, rpc).await?,
         Commands::Mint(args) => start_mint_purge(args, pg_pool, rpc).await?,
-        Commands::ErroredTransactions(args) => {
-            let context = BubblegumContext::new(pg_pool, rpc);
-            purge_err_txs(context, args).await?;
-        }
+        Commands::ErroredTransactions(args) => start_errored_txs_purge(args, pg_pool, rpc).await?,
     };
 
     Ok(())

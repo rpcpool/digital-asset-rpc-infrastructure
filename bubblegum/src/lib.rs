@@ -1,6 +1,5 @@
 mod backfill;
 mod error;
-mod purge_err_txs;
 mod tree;
 
 use das_core::DownloadMetadataJsonRetryConfig;
@@ -23,7 +22,7 @@ use solana_sdk::signature::Signature;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::error;
-use tree::TreeResponse;
+pub use tree::TreeResponse;
 
 pub use backfill::worker::tree::ProofRepairArgs;
 
@@ -229,51 +228,4 @@ pub async fn verify_bubblegum(
     });
 
     Ok(receiver)
-}
-
-#[derive(Debug, Parser, Clone)]
-pub struct PurgeErrTxsArgs {
-    /// The list of trees to verify. If not specified, all trees will be crawled.
-    #[arg(long, env, use_value_delimiter = true)]
-    pub only_trees: Option<Vec<String>>,
-
-    /// The number of trees to rollback in parallel.
-    #[arg(long, env, default_value = "10")]
-    pub tree_concurrency: usize,
-
-    /// The number of transactions to check and purge in parallel.
-    #[arg(long, env, default_value = "20")]
-    pub tx_concurrency: usize,
-}
-
-pub async fn purge_err_txs(context: BubblegumContext, args: PurgeErrTxsArgs) -> Result<()> {
-    let trees = if let Some(ref only_trees) = args.only_trees {
-        TreeResponse::find(&context.solana_rpc, only_trees.clone()).await?
-    } else {
-        TreeResponse::all(&context.solana_rpc).await?
-    };
-
-    let mut handlers = FuturesUnordered::new();
-
-    for tree in trees {
-        if handlers.len() >= args.tree_concurrency {
-            handlers.next().await;
-        }
-
-        let tree_key = tree.pubkey;
-        let context = context.clone();
-
-        let handle = tokio::spawn(async move {
-            let res = purge_err_txs::start(context, tree, args.tx_concurrency).await;
-            if let Err(e) = res {
-                error!("Failed to purge err txs for tree {:?}: {:?}", tree_key, e);
-            }
-        });
-
-        handlers.push(handle);
-    }
-
-    futures::future::join_all(handlers).await;
-
-    Ok(())
 }

@@ -328,7 +328,7 @@ pub struct Args {
     /// The number of worker threads
     #[arg(long, env, default_value = "25")]
     pub purge_worker_count: u64,
-    /// The number of db entries to process in a single batch
+    /// The number of concurrent workers checking account deletion status
     #[arg(long, env, default_value = "100")]
     pub mark_deletion_worker_count: u64,
     /// The number of db entries to process in a single batch
