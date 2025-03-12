@@ -38,7 +38,7 @@ pub async fn subcommand(subcommand: PurgeCommand) -> Result<()> {
     match subcommand.action {
         Commands::TokenAccount(args) => start_ta_purge(args, pg_pool, rpc).await?,
         Commands::Mint(args) => start_mint_purge(args, pg_pool, rpc).await?,
-        Commands::ErroredTransactions(args) => start_errored_txs_purge(args, pg_pool, rpc).await?,
+        Commands::Cnt(args) => start_cnft_purge(args, pg_pool, rpc).await?,
     };
 
     Ok(())
