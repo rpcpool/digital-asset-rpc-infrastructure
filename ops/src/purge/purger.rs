@@ -652,7 +652,7 @@ impl<P: DatabasePool> PurgeCnft for ErrCnftPurge<P> {
 }
 
 #[derive(Debug, Parser, Clone)]
-pub struct PurgeErrTxsArgs {
+pub struct CnftArgs {
     /// The list of trees to verify. If not specified, all trees will be crawled.
     #[arg(long, env, use_value_delimiter = true)]
     pub only_trees: Option<Vec<String>>,
@@ -660,7 +660,7 @@ pub struct PurgeErrTxsArgs {
     pub purge_args: Args,
 }
 
-pub async fn start_errored_txs_purge(args: PurgeErrTxsArgs, db: PgPool, rpc: Rpc) -> Result<()> {
+pub async fn start_cnft_purge(args: CnftArgs, db: PgPool, rpc: Rpc) -> Result<()> {
     let start = tokio::time::Instant::now();
 
     let purge_worker_count = args.purge_args.purge_worker_count as usize;

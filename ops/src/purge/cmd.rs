@@ -1,5 +1,5 @@
 use crate::purge::{
-    start_errored_txs_purge, start_mint_purge, start_ta_purge, Args as PurgeArgs, PurgeErrTxsArgs,
+    start_cnft_purge, start_mint_purge, start_ta_purge, Args as PurgeArgs, CnftArgs,
 };
 use anyhow::{Ok, Result};
 use clap::{Args, Subcommand};
@@ -38,7 +38,7 @@ pub async fn subcommand(subcommand: PurgeCommand) -> Result<()> {
     match subcommand.action {
         Commands::TokenAccount(args) => start_ta_purge(args, pg_pool, rpc).await?,
         Commands::Mint(args) => start_mint_purge(args, pg_pool, rpc).await?,
-        Commands::Cnt(args) => start_cnft_purge(args, pg_pool, rpc).await?,
+        Commands::Cnft(args) => start_cnft_purge(args, pg_pool, rpc).await?,
     };
 
     Ok(())
