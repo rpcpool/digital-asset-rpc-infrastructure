@@ -22,7 +22,7 @@ use solana_sdk::signature::Signature;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::error;
-pub use tree::TreeResponse;
+use tree::TreeResponse;
 
 pub use backfill::worker::tree::ProofRepairArgs;
 
