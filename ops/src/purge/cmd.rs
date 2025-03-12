@@ -13,10 +13,10 @@ pub enum Commands {
     // Purge mints
     #[clap(name = "mints")]
     Mint(PurgeArgs),
-    /// The 'purge errored-transactions' command is used to remove from the database assets
+    /// The 'cnft' command is used to remove from the database assets
     ///  for which the DB contains txs that have a `TransactionError`.
-    #[clap(name = "errored-transactions")]
-    ErroredTransactions(PurgeErrTxsArgs),
+    #[clap(name = "cnft")]
+    Cnft(CnftArgs),
 }
 
 #[derive(Debug, Clone, Args)]
