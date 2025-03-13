@@ -14,7 +14,6 @@ use sea_orm::{
 };
 use solana_sdk::{bs58, pubkey};
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
-use sqlx::PgPool;
 use std::marker::{Send, Sync};
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -438,7 +437,7 @@ pub async fn start_mint_purge<P: DatabasePool>(args: Args, db: P, rpc: Rpc) -> R
     Ok(())
 }
 
-#[derive(FromQueryResult)]
+#[derive(FromQueryResult, Debug)]
 struct CnftQueryResult {
     tx: Vec<u8>,
     leaf_idx: i64,
@@ -574,7 +573,9 @@ impl MarkDeletionCnft {
 
                     tasks.spawn(async move {
                         let sig = Signature::try_from(tx_query_result.tx.as_ref()).unwrap();
+                        println!("######### sig: {:?}", sig);
                         if let Ok(tx) = rpc.get_transaction(&sig).await {
+                            println!("tx: {:?}", tx);
                             if tx.transaction.meta.clone().unwrap().err.is_some() {
                                 if let Err(e) = sender.send(tx_query_result) {
                                     error!("Failed to send marked leaves {:?}", e);
@@ -660,7 +661,7 @@ pub struct CnftArgs {
     pub purge_args: Args,
 }
 
-pub async fn start_cnft_purge(args: CnftArgs, db: PgPool, rpc: Rpc) -> Result<()> {
+pub async fn start_cnft_purge<P: DatabasePool>(args: CnftArgs, db: P, rpc: Rpc) -> Result<()> {
     let start = tokio::time::Instant::now();
 
     let purge_worker_count = args.purge_args.purge_worker_count as usize;
@@ -674,7 +675,7 @@ pub async fn start_cnft_purge(args: CnftArgs, db: PgPool, rpc: Rpc) -> Result<()
     let (paginate_sender, paginate_receiver) = unbounded_channel::<Vec<CnftQueryResult>>();
     let (mark_sender, mut mark_receiver) = unbounded_channel::<CnftQueryResult>();
 
-    let paginate_handle = PaginateCnft::<PgPool>::build()
+    let paginate_handle = PaginateCnft::<P>::build()
         .pool(db.clone())
         .batch_size(args.purge_args.batch_size)
         .sender(paginate_sender)
