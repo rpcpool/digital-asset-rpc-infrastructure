@@ -1,6 +1,7 @@
 ---
 source: integration_tests/tests/integration_tests/fungibles_and_token_extensions_tests.rs
 expression: response
+snapshot_kind: text
 ---
 {
   "interface": "Custom",
@@ -49,6 +50,11 @@ expression: response
     "delegate": null,
     "ownership_model": "token",
     "owner": ""
+  },
+  "supply": {
+    "print_max_supply": 0,
+    "print_current_supply": 0,
+    "edition_nonce": 252
   },
   "mutable": true,
   "burnt": false
