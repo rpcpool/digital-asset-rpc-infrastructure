@@ -1,23 +1,43 @@
 #[cfg(test)]
-use das_ops::purge::{start_mint_purge, start_ta_purge, Args, TOKEN_2022_PROGRAM_ID};
-use digital_asset_types::dao::{token_accounts, tokens};
+use das_ops::purge::{
+    start_cnft_purge, start_mint_purge, start_ta_purge, Args, CnftArgs, TOKEN_2022_PROGRAM_ID,
+};
+use digital_asset_types::dao::{
+    asset, cl_audits_v2,
+    sea_orm_active_enums::{Instruction, OwnerType, RoyaltyTargetType},
+    token_accounts, tokens,
+};
 use itertools::Itertools;
 use sea_orm::{DatabaseBackend, DbBackend, MockDatabase, MockExecResult, Transaction, Value};
 use solana_account_decoder::{UiAccount, UiAccountData};
 use sqlx::types::Decimal;
 use std::{
     collections::HashMap,
+    str::FromStr,
     sync::{Arc, Once},
 };
 
 use das_core::{DatabasePool, MockDatabasePool, Rpc};
-
+use sea_orm::prelude::DateTime;
+use serde_json::json;
 use serial_test::serial;
 use solana_client::{
     rpc_request::RpcRequest,
     rpc_response::{Response, RpcApiVersion, RpcResponseContext},
 };
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{
+    message::VersionedMessage,
+    pubkey::Pubkey,
+    signature::Signature,
+    transaction::{
+        Result as TransactionResult, TransactionError, TransactionVersion, VersionedTransaction,
+    },
+};
+use solana_transaction_status::{
+    option_serializer::OptionSerializer, EncodableWithMeta,
+    EncodedConfirmedTransactionWithStatusMeta, EncodedTransactionWithStatusMeta,
+    UiTransactionStatusMeta,
+};
 
 static INIT: Once = Once::new();
 
@@ -77,6 +97,107 @@ fn mint_model_with_pubkey(pubkey: &Pubkey) -> tokens::Model {
         slot_updated: 0,
         extensions: None,
         extension_data: None,
+    }
+}
+
+fn encoded_confirmed_transaction_with_status_meta(
+    err: Option<TransactionError>,
+    signature: Signature,
+) -> EncodedConfirmedTransactionWithStatusMeta {
+    let transaction = VersionedTransaction {
+        signatures: vec![signature],
+        message: VersionedMessage::default(),
+    };
+
+    EncodedConfirmedTransactionWithStatusMeta {
+        slot: 0,
+        transaction: EncodedTransactionWithStatusMeta {
+            meta: Some(UiTransactionStatusMeta {
+                err,
+                status: TransactionResult::Ok(()),
+                fee: 0,
+                pre_balances: vec![],
+                post_balances: vec![],
+                inner_instructions: OptionSerializer::None,
+                log_messages: OptionSerializer::None,
+                pre_token_balances: OptionSerializer::None,
+                post_token_balances: OptionSerializer::None,
+                rewards: OptionSerializer::None,
+                loaded_addresses: OptionSerializer::None,
+                return_data: OptionSerializer::None,
+                compute_units_consumed: OptionSerializer::None,
+            }),
+            transaction: transaction.json_encode(),
+            version: Some(TransactionVersion::Number(0)),
+        },
+        block_time: None,
+    }
+}
+
+fn asset_model() -> asset::Model {
+    let tree_pubkey = Pubkey::new_unique();
+    let mpl_bubblegum_id =
+        Pubkey::from_str("BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY").unwrap();
+
+    let (asset_pubkey, _) = Pubkey::find_program_address(
+        &[b"asset", &tree_pubkey.to_bytes(), &[0]],
+        &mpl_bubblegum_id,
+    );
+    let tree_pubkey = Pubkey::new_unique();
+
+    asset::Model {
+        id: asset_pubkey.to_bytes().to_vec(),
+        alt_id: None,
+        specification_version: None,
+        specification_asset_class: None,
+        owner: None,
+        owner_type: OwnerType::Single,
+        delegate: None,
+        frozen: false,
+        supply: Decimal::from(0),
+        supply_mint: None,
+        compressed: true,
+        compressible: true,
+        seq: Some(0),
+        tree_id: Some(tree_pubkey.to_bytes().to_vec()),
+        leaf: None,
+        nonce: Some(0),
+        royalty_target_type: RoyaltyTargetType::Creators,
+        royalty_target: None,
+        royalty_amount: 0,
+        asset_data: None,
+        created_at: None,
+        burnt: false,
+        slot_updated: None,
+        slot_updated_metadata_account: None,
+        slot_updated_mint_account: None,
+        slot_updated_token_account: None,
+        slot_updated_cnft_transaction: None,
+        data_hash: None,
+        creator_hash: None,
+        owner_delegate_seq: None,
+        leaf_seq: None,
+        base_info_seq: None,
+        mint_extensions: None,
+        mpl_core_plugins: None,
+        mpl_core_unknown_plugins: None,
+        mpl_core_collection_num_minted: None,
+        mpl_core_collection_current_size: None,
+        mpl_core_plugins_json_version: None,
+        mpl_core_external_plugins: None,
+        mpl_core_unknown_external_plugins: None,
+    }
+}
+
+fn cl_audit_v2_model_with_tree(tree: Vec<u8>) -> cl_audits_v2::Model {
+    cl_audits_v2::Model {
+        id: 0,
+        tree,
+        seq: 0,
+        leaf_idx: 0,
+        created_at: DateTime::default(),
+        tx: Signature::new_unique().as_ref().to_vec(),
+        instruction: Instruction::MintV1,
     }
 }
 
@@ -311,6 +432,156 @@ async fn test_purging_mints() {
     ];
 
     assert_eq!(expected_db_txs, db_txs);
+
+    assert!(res.is_ok());
+}
+
+#[tokio::test]
+#[serial]
+async fn test_skipping_purge_cnft_on_successful_transaction() {
+    init_logger();
+
+    let mock_asset_model = asset_model();
+    let mock_cl_audit_v2_model =
+        cl_audit_v2_model_with_tree(mock_asset_model.tree_id.clone().unwrap());
+
+    let mock_db = MockDatabase::new(DatabaseBackend::Postgres)
+        .append_query_results(vec![vec![mock_cl_audit_v2_model.clone()]])
+        .append_exec_results(vec![MockExecResult {
+            rows_affected: 1,
+            last_insert_id: 1,
+        }])
+        .append_query_results(vec![vec![mock_asset_model.clone()]])
+        .append_exec_results(vec![MockExecResult {
+            rows_affected: 1,
+            last_insert_id: 1,
+        }]);
+
+    let db = Arc::new(MockDatabasePool::from(mock_db));
+
+    let mut rpc_mock_responses = HashMap::new();
+    let rpc_response = encoded_confirmed_transaction_with_status_meta(
+        None,
+        Signature::try_from(mock_cl_audit_v2_model.tx.as_slice()).unwrap(),
+    );
+
+    rpc_mock_responses.insert(
+        RpcRequest::GetTransaction,
+        serde_json::json!(Response {
+            context: RpcResponseContext {
+                slot: 0,
+                api_version: Some(RpcApiVersion::default()),
+            },
+            value: json!(rpc_response),
+        }),
+    );
+
+    let rpc = Rpc::from_mocks(rpc_mock_responses, "succeeds".to_string());
+
+    let res = start_cnft_purge(
+        CnftArgs {
+            only_trees: None,
+            purge_args: Args {
+                purge_worker_count: 10,
+                mark_deletion_worker_count: 10,
+                batch_size: 10,
+            },
+        },
+        Arc::clone(&db),
+        rpc,
+    )
+    .await;
+
+    let expected_transactions: Vec<Transaction> = vec![
+        Transaction::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"SELECT "cl_audits_v2"."tx", "cl_audits_v2"."leaf_idx", "cl_audits_v2"."tree" FROM "cl_audits_v2" LIMIT $1 OFFSET $2"#,
+            vec![10u64.into(), 0u64.into()],
+        ),
+        Transaction::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"SELECT "cl_audits_v2"."tx", "cl_audits_v2"."leaf_idx", "cl_audits_v2"."tree" FROM "cl_audits_v2" LIMIT $1 OFFSET $2"#,
+            vec![10u64.into(), 10u64.into()],
+        ),
+    ];
+
+    assert_eq!(
+        expected_transactions,
+        db.connection().into_transaction_log()
+    );
+    assert!(res.is_ok());
+}
+
+#[tokio::test]
+#[serial]
+async fn test_purging_cnft_with_failed_transaction() {
+    init_logger();
+
+    let mock_asset_model = asset_model();
+    let mock_cl_audit_v2_model =
+        cl_audit_v2_model_with_tree(mock_asset_model.tree_id.clone().unwrap());
+
+    let mock_db = MockDatabase::new(DatabaseBackend::Postgres)
+        .append_query_results(vec![vec![mock_cl_audit_v2_model.clone()]])
+        .append_exec_results(vec![MockExecResult {
+            rows_affected: 1,
+            last_insert_id: 1,
+        }])
+        .append_query_results(vec![vec![mock_asset_model]])
+        .append_exec_results(vec![MockExecResult {
+            rows_affected: 1,
+            last_insert_id: 1,
+        }]);
+
+    let db = Arc::new(MockDatabasePool::from(mock_db));
+
+    let mut rpc_mock_responses = HashMap::new();
+    let rpc_response = encoded_confirmed_transaction_with_status_meta(
+        Some(TransactionError::InvalidAccountForFee),
+        Signature::try_from(mock_cl_audit_v2_model.tx.as_slice()).unwrap(),
+    );
+
+    rpc_mock_responses.insert(
+        RpcRequest::GetTransaction,
+        serde_json::json!(Response {
+            context: RpcResponseContext {
+                slot: 0,
+                api_version: Some(RpcApiVersion::default()),
+            },
+            value: json!(rpc_response),
+        }),
+    );
+
+    let rpc = Rpc::from_mocks(rpc_mock_responses, "succeeds".to_string());
+
+    let res = start_cnft_purge(
+        CnftArgs {
+            only_trees: None,
+            purge_args: Args {
+                purge_worker_count: 10,
+                mark_deletion_worker_count: 10,
+                batch_size: 10,
+            },
+        },
+        Arc::clone(&db),
+        rpc,
+    )
+    .await;
+
+    let expected_db_txs = vec![
+        Transaction::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"SELECT "cl_audits_v2"."tx", "cl_audits_v2"."leaf_idx", "cl_audits_v2"."tree" FROM "cl_audits_v2" LIMIT $1 OFFSET $2"#,
+            vec![10u64.into(), 0u64.into()],
+        ),
+        Transaction::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"SELECT "cl_audits_v2"."tx", "cl_audits_v2"."leaf_idx", "cl_audits_v2"."tree" FROM "cl_audits_v2" LIMIT $1 OFFSET $2"#,
+            vec![10u64.into(), 10u64.into()],
+        ),
+    ];
+
+    assert_eq!(expected_db_txs, db.connection().into_transaction_log());
 
     assert!(res.is_ok());
 }
