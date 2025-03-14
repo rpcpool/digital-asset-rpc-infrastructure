@@ -19,6 +19,7 @@ use std::{
 
 use das_core::{DatabasePool, MockDatabasePool, Rpc};
 use sea_orm::prelude::DateTime;
+use serde_json::json;
 use serial_test::serial;
 use solana_client::{
     rpc_request::RpcRequest,
@@ -133,33 +134,19 @@ fn encoded_confirmed_transaction_with_status_meta(
     }
 }
 
-struct Asset {
-    pubkey: Pubkey,
-    tree_pubkey: Pubkey,
-    leaf_idx: i64,
-    tx_sig: Signature,
-}
-
-fn generate_asset(tree_pubkey: Pubkey, leaf_id: i64) -> Asset {
+fn asset_model() -> asset::Model {
+    let tree_pubkey = Pubkey::new_unique();
     let mpl_bubblegum_id =
         Pubkey::from_str("BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY").unwrap();
 
     let (asset_pubkey, _) = Pubkey::find_program_address(
-        &[b"asset", &tree_pubkey.to_bytes(), &leaf_id.to_le_bytes()],
+        &[b"asset", &tree_pubkey.to_bytes(), &[0]],
         &mpl_bubblegum_id,
     );
+    let tree_pubkey = Pubkey::new_unique();
 
-    Asset {
-        pubkey: asset_pubkey,
-        tree_pubkey,
-        leaf_idx: leaf_id,
-        tx_sig: Signature::new_unique(),
-    }
-}
-
-fn generate_asset_model(asset: &Asset) -> asset::Model {
     asset::Model {
-        id: asset.pubkey.to_bytes().to_vec(),
+        id: asset_pubkey.to_bytes().to_vec(),
         alt_id: None,
         specification_version: None,
         specification_asset_class: None,
@@ -171,8 +158,8 @@ fn generate_asset_model(asset: &Asset) -> asset::Model {
         supply_mint: None,
         compressed: true,
         compressible: true,
-        seq: Some(asset.leaf_idx),
-        tree_id: Some(asset.tree_pubkey.to_bytes().to_vec()),
+        seq: Some(0),
+        tree_id: Some(tree_pubkey.to_bytes().to_vec()),
         leaf: None,
         nonce: Some(0),
         royalty_target_type: RoyaltyTargetType::Creators,
@@ -202,14 +189,14 @@ fn generate_asset_model(asset: &Asset) -> asset::Model {
     }
 }
 
-fn cl_audit_v2_model_from_asset(asset: &Asset, id: i64) -> cl_audits_v2::Model {
+fn cl_audit_v2_model_with_tree(tree: Vec<u8>) -> cl_audits_v2::Model {
     cl_audits_v2::Model {
-        id,
-        tree: asset.tree_pubkey.to_bytes().to_vec(),
-        seq: asset.leaf_idx,
-        leaf_idx: asset.leaf_idx,
+        id: 0,
+        tree,
+        seq: 0,
+        leaf_idx: 0,
         created_at: DateTime::default(),
-        tx: asset.tx_sig.as_ref().to_vec(),
+        tx: Signature::new_unique().as_ref().to_vec(),
         instruction: Instruction::MintV1,
     }
 }
@@ -451,60 +438,32 @@ async fn test_purging_mints() {
 
 #[tokio::test]
 #[serial]
-async fn test_purging_cnfts() {
+async fn test_skipping_purge_cnft_on_successful_transaction() {
     init_logger();
 
-    let mut assets = Vec::new();
-    for _ in 0..4 {
-        let tree_pubkey = Pubkey::new_unique();
-        for i in 0..25i64 {
-            assets.push(generate_asset(tree_pubkey, i));
-        }
-    }
+    let mock_asset_model = asset_model();
+    let mock_cl_audit_v2_model =
+        cl_audit_v2_model_with_tree(mock_asset_model.tree_id.clone().unwrap());
 
-    let mock_cl_audit_v2_models: Vec<cl_audits_v2::Model> = assets
-        .iter()
-        .enumerate()
-        .map(|(i, asset)| cl_audit_v2_model_from_asset(asset, i as i64))
-        .collect();
-
-    let mock_asset_models: Vec<asset::Model> = assets.iter().map(generate_asset_model).collect();
-
-    let cl_audit_rows_affected = mock_cl_audit_v2_models.len() as u64;
-    let asset_rows_affected = mock_asset_models.len() as u64;
     let mock_db = MockDatabase::new(DatabaseBackend::Postgres)
-        .append_query_results(vec![mock_cl_audit_v2_models])
+        .append_query_results(vec![vec![mock_cl_audit_v2_model.clone()]])
         .append_exec_results(vec![MockExecResult {
-            rows_affected: cl_audit_rows_affected,
-            last_insert_id: cl_audit_rows_affected,
+            rows_affected: 1,
+            last_insert_id: 1,
         }])
-        .append_query_results(vec![mock_asset_models])
+        .append_query_results(vec![vec![mock_asset_model.clone()]])
         .append_exec_results(vec![MockExecResult {
-            rows_affected: asset_rows_affected,
-            last_insert_id: asset_rows_affected,
+            rows_affected: 1,
+            last_insert_id: 1,
         }]);
 
     let db = Arc::new(MockDatabasePool::from(mock_db));
 
-    let err_txs_index: [usize; 5] = [1, 15, 22, 40, 89];
     let mut rpc_mock_responses = HashMap::new();
-
-    let rpc_responses: Vec<EncodedConfirmedTransactionWithStatusMeta> = assets
-        .iter()
-        .enumerate()
-        .map(|(i, asset)| {
-            if err_txs_index.contains(&i) {
-                encoded_confirmed_transaction_with_status_meta(
-                    Some(TransactionError::AccountNotFound),
-                    asset.tx_sig,
-                )
-            } else {
-                encoded_confirmed_transaction_with_status_meta(None, asset.tx_sig)
-            }
-        })
-        .collect();
-
-    let json_res = serde_json::to_value(rpc_responses).unwrap();
+    let rpc_response = encoded_confirmed_transaction_with_status_meta(
+        None,
+        Signature::try_from(mock_cl_audit_v2_model.tx.as_slice()).unwrap(),
+    );
 
     rpc_mock_responses.insert(
         RpcRequest::GetTransaction,
@@ -513,7 +472,7 @@ async fn test_purging_cnfts() {
                 slot: 0,
                 api_version: Some(RpcApiVersion::default()),
             },
-            value: json_res
+            value: json!(rpc_response),
         }),
     );
 
@@ -532,6 +491,97 @@ async fn test_purging_cnfts() {
         rpc,
     )
     .await;
+
+    let expected_transactions: Vec<Transaction> = vec![
+        Transaction::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"SELECT "cl_audits_v2"."tx", "cl_audits_v2"."leaf_idx", "cl_audits_v2"."tree" FROM "cl_audits_v2" LIMIT $1 OFFSET $2"#,
+            vec![10u64.into(), 0u64.into()],
+        ),
+        Transaction::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"SELECT "cl_audits_v2"."tx", "cl_audits_v2"."leaf_idx", "cl_audits_v2"."tree" FROM "cl_audits_v2" LIMIT $1 OFFSET $2"#,
+            vec![10u64.into(), 10u64.into()],
+        ),
+    ];
+
+    assert_eq!(
+        expected_transactions,
+        db.connection().into_transaction_log()
+    );
+    assert!(res.is_ok());
+}
+
+#[tokio::test]
+#[serial]
+async fn test_purging_cnft_with_failed_transaction() {
+    init_logger();
+
+    let mock_asset_model = asset_model();
+    let mock_cl_audit_v2_model =
+        cl_audit_v2_model_with_tree(mock_asset_model.tree_id.clone().unwrap());
+
+    let mock_db = MockDatabase::new(DatabaseBackend::Postgres)
+        .append_query_results(vec![vec![mock_cl_audit_v2_model.clone()]])
+        .append_exec_results(vec![MockExecResult {
+            rows_affected: 1,
+            last_insert_id: 1,
+        }])
+        .append_query_results(vec![vec![mock_asset_model]])
+        .append_exec_results(vec![MockExecResult {
+            rows_affected: 1,
+            last_insert_id: 1,
+        }]);
+
+    let db = Arc::new(MockDatabasePool::from(mock_db));
+
+    let mut rpc_mock_responses = HashMap::new();
+    let rpc_response = encoded_confirmed_transaction_with_status_meta(
+        Some(TransactionError::InvalidAccountForFee),
+        Signature::try_from(mock_cl_audit_v2_model.tx.as_slice()).unwrap(),
+    );
+
+    rpc_mock_responses.insert(
+        RpcRequest::GetTransaction,
+        serde_json::json!(Response {
+            context: RpcResponseContext {
+                slot: 0,
+                api_version: Some(RpcApiVersion::default()),
+            },
+            value: json!(rpc_response),
+        }),
+    );
+
+    let rpc = Rpc::from_mocks(rpc_mock_responses, "succeeds".to_string());
+
+    let res = start_cnft_purge(
+        CnftArgs {
+            only_trees: None,
+            purge_args: Args {
+                purge_worker_count: 10,
+                mark_deletion_worker_count: 10,
+                batch_size: 10,
+            },
+        },
+        Arc::clone(&db),
+        rpc,
+    )
+    .await;
+
+    let expected_db_txs = vec![
+        Transaction::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"SELECT "cl_audits_v2"."tx", "cl_audits_v2"."leaf_idx", "cl_audits_v2"."tree" FROM "cl_audits_v2" LIMIT $1 OFFSET $2"#,
+            vec![10u64.into(), 0u64.into()],
+        ),
+        Transaction::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"SELECT "cl_audits_v2"."tx", "cl_audits_v2"."leaf_idx", "cl_audits_v2"."tree" FROM "cl_audits_v2" LIMIT $1 OFFSET $2"#,
+            vec![10u64.into(), 10u64.into()],
+        ),
+    ];
+
+    assert_eq!(expected_db_txs, db.connection().into_transaction_log());
 
     assert!(res.is_ok());
 }
