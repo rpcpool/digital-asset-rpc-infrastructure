@@ -27,7 +27,8 @@ use solana_client::{
 };
 use solana_sdk::{
     message::VersionedMessage,
-    pubkey::Pubkey,
+    pubkey as pubkey_macro,
+    pubkey::{self, Pubkey},
     signature::Signature,
     transaction::{
         Result as TransactionResult, TransactionError, TransactionVersion, VersionedTransaction,
@@ -40,6 +41,8 @@ use solana_transaction_status::{
 };
 
 static INIT: Once = Once::new();
+
+const BGUM_PROGRAM_ID: Pubkey = pubkey_macro!("BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY");
 
 fn init_logger() {
     INIT.call_once(|| {
@@ -136,13 +139,9 @@ fn encoded_confirmed_transaction_with_status_meta(
 
 fn asset_model() -> asset::Model {
     let tree_pubkey = Pubkey::new_unique();
-    let mpl_bubblegum_id =
-        Pubkey::from_str("BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY").unwrap();
 
-    let (asset_pubkey, _) = Pubkey::find_program_address(
-        &[b"asset", &tree_pubkey.to_bytes(), &[0]],
-        &mpl_bubblegum_id,
-    );
+    let (asset_pubkey, _) =
+        Pubkey::find_program_address(&[b"asset", &tree_pubkey.to_bytes(), &[0]], &BGUM_PROGRAM_ID);
     let tree_pubkey = Pubkey::new_unique();
 
     asset::Model {

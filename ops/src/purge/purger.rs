@@ -592,16 +592,25 @@ impl MarkDeletionCnft {
                     let sender = sender.clone();
 
                     tasks.spawn(async move {
-                        let sig = Signature::try_from(tx_query_result.tx.as_ref()).unwrap();
+                        let sig = match Signature::try_from(tx_query_result.tx.as_ref()) {
+                            Ok(sig) => sig,
+                            Err(e) => {
+                                error!("Failed to parse signature: {:?}", e);
+                                return;
+                            }
+                        };
 
                         match rpc.get_transaction(&sig).await {
-                            Ok(tx) => {
-                                if tx.transaction.meta.clone().unwrap().err.is_some() {
-                                    if let Err(e) = sender.send(tx_query_result) {
-                                        error!("Failed to send marked leaves {:?}", e);
+                            Ok(tx) => match &tx.transaction.meta {
+                                Some(meta) => {
+                                    if meta.err.is_some() {
+                                        if let Err(e) = sender.send(tx_query_result) {
+                                            error!("Failed to send marked leaves {:?}", e);
+                                        }
                                     }
                                 }
-                            }
+                                None => error!("Non existent tx meta on tx: {:?}", sig),
+                            },
                             Err(e) => {
                                 tracing::error!("Failed to get transaction {:?}", e);
                             }
@@ -716,8 +725,13 @@ pub async fn start_cnft_purge<P: DatabasePool>(args: CnftArgs, db: P, rpc: Rpc) 
     let only_trees = args.only_trees.map(|trees| {
         trees
             .into_iter()
-            .map(|tree| bs58::decode(tree).into_vec())
-            .collect::<Result<Vec<u8>>>()
+            .filter_map(|tree| {
+                bs58::decode(tree.clone()).into_vec().ok().or_else(|| {
+                    error!("Failed to decode tree: {:?}", tree);
+                    None
+                })
+            })
+            .collect()
     });
 
     let (paginate_sender, paginate_receiver) = tokio::sync::mpsc::channel::<Vec<CnftQueryResult>>(
