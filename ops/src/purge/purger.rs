@@ -716,8 +716,8 @@ pub async fn start_cnft_purge<P: DatabasePool>(args: CnftArgs, db: P, rpc: Rpc) 
     let only_trees = args.only_trees.map(|trees| {
         trees
             .into_iter()
-            .map(|tree| bs58::decode(tree).into_vec().unwrap())
-            .collect()
+            .map(|tree| bs58::decode(tree).into_vec())
+            .collect::<Result<Vec<u8>>>()
     });
 
     let (paginate_sender, paginate_receiver) = tokio::sync::mpsc::channel::<Vec<CnftQueryResult>>(
