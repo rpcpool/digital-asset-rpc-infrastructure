@@ -3,19 +3,19 @@ use borsh::BorshDeserialize;
 use clap::Parser;
 use das_core::{DatabasePool, Rpc};
 use digital_asset_types::dao::{
-    asset, asset_authority, asset_creators, asset_data, asset_grouping, cl_audits_v2,
+    asset, asset_authority, asset_creators, asset_data, asset_grouping, cl_audits_v2, cl_items,
     token_accounts, tokens,
 };
 use log::{debug, error};
-use sea_orm::TransactionTrait;
 use sea_orm::{
     sea_query::Expr, ColumnTrait, EntityTrait, FromQueryResult, PaginatorTrait, QueryFilter,
     QuerySelect,
 };
+use sea_orm::{DatabaseConnection, Order, QueryOrder, TransactionTrait};
 use solana_sdk::{bs58, pubkey};
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
 use std::marker::{Send, Sync};
-use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::mpsc::{unbounded_channel, Receiver, Sender};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::{JoinHandle, JoinSet};
 
@@ -337,6 +337,9 @@ pub struct Args {
     /// The number of db entries to process in a single batch
     #[arg(long, env, default_value = "100")]
     pub batch_size: u64,
+    /// Channel size for db pagination, to add backpressure and avoid memory consumption
+    #[arg(long, env, default_value = "10")]
+    pub paginate_channel_size: u64,
 }
 
 pub async fn start_ta_purge<P: DatabasePool>(args: Args, db: P, rpc: Rpc) -> Result<()> {
@@ -439,15 +442,17 @@ pub async fn start_mint_purge<P: DatabasePool>(args: Args, db: P, rpc: Rpc) -> R
 
 #[derive(FromQueryResult, Debug)]
 struct CnftQueryResult {
+    id: i64,
     tx: Vec<u8>,
     leaf_idx: i64,
     tree: Vec<u8>,
+    seq: i64,
 }
 
 struct PaginateCnft<P: DatabasePool> {
     pool: Option<P>,
     batch_size: Option<u64>,
-    sender: Option<UnboundedSender<Vec<CnftQueryResult>>>,
+    sender: Option<Sender<Vec<CnftQueryResult>>>,
     only_trees: Option<Vec<Vec<u8>>>,
 }
 
@@ -473,7 +478,7 @@ impl<P: DatabasePool> PaginateCnft<P> {
         self
     }
 
-    fn sender(mut self, sender: UnboundedSender<Vec<CnftQueryResult>>) -> Self {
+    fn sender(mut self, sender: Sender<Vec<CnftQueryResult>>) -> Self {
         self.sender = Some(sender);
         self
     }
@@ -483,41 +488,55 @@ impl<P: DatabasePool> PaginateCnft<P> {
         self
     }
 
-    fn start(self) -> JoinHandle<()> {
+    fn start(self) -> JoinHandle<Result<()>> {
         tokio::spawn(async move {
             let pool = self.pool.expect("Pool not set");
             let sender = self.sender.expect("Sender not set");
             let batch_size = self.batch_size.unwrap_or(Self::DEFAULT_DB_BATCH_SIZE);
             let conn = pool.connection();
+            let mut last_id = 0;
 
-            let mut paginator = cl_audits_v2::Entity::find();
+            loop {
+                let mut txs_batch = cl_audits_v2::Entity::find();
 
-            if let Some(only_trees) = self.only_trees {
-                paginator = paginator.filter(cl_audits_v2::Column::Tree.is_in(only_trees));
-            }
+                if let Some(only_trees) = self.only_trees.clone() {
+                    txs_batch = txs_batch.filter(cl_audits_v2::Column::Tree.is_in(only_trees));
+                }
 
-            let mut paginator = paginator
-                .select_only()
-                .columns([
-                    cl_audits_v2::Column::Tx,
-                    cl_audits_v2::Column::LeafIdx,
-                    cl_audits_v2::Column::Tree,
-                ])
-                .into_model::<CnftQueryResult>()
-                .paginate(&conn, batch_size);
+                let txs_batch = txs_batch
+                    .filter(cl_audits_v2::Column::Id.gt(last_id))
+                    .select_only()
+                    .columns([
+                        cl_audits_v2::Column::Id,
+                        cl_audits_v2::Column::Tx,
+                        cl_audits_v2::Column::LeafIdx,
+                        cl_audits_v2::Column::Tree,
+                        cl_audits_v2::Column::Seq,
+                    ])
+                    .order_by(cl_audits_v2::Column::Id, Order::Asc)
+                    .limit(batch_size)
+                    .into_model::<CnftQueryResult>()
+                    .all(&conn)
+                    .await?;
 
-            while let Ok(Some(records)) = paginator.fetch_and_next().await {
-                if sender.send(records).is_err() {
+                match txs_batch.last() {
+                    Some(last) => last_id = last.id,
+                    None => break,
+                }
+
+                if sender.send(txs_batch).await.is_err() {
                     error!("Failed to send keys");
                 }
             }
+
+            Ok(())
         })
     }
 }
 
 struct MarkDeletionCnft {
     rpc: Option<Rpc>,
-    receiver: Option<UnboundedReceiver<Vec<CnftQueryResult>>>,
+    receiver: Option<Receiver<Vec<CnftQueryResult>>>,
     sender: Option<UnboundedSender<CnftQueryResult>>,
     concurrency: Option<usize>,
 }
@@ -539,7 +558,7 @@ impl MarkDeletionCnft {
         self
     }
 
-    fn receiver(mut self, receiver: UnboundedReceiver<Vec<CnftQueryResult>>) -> Self {
+    fn receiver(mut self, receiver: Receiver<Vec<CnftQueryResult>>) -> Self {
         self.receiver = Some(receiver);
         self
     }
@@ -562,36 +581,42 @@ impl MarkDeletionCnft {
 
         tokio::spawn(async move {
             let mut tasks = JoinSet::new();
-            while let Some(chunk) = receiver.recv().await {
-                if tasks.len() >= concurrency {
-                    tasks.join_next().await;
-                }
 
+            while let Some(chunk) = receiver.recv().await {
                 for tx_query_result in chunk {
+                    if tasks.len() >= concurrency {
+                        tasks.join_next().await;
+                    }
+
                     let rpc = rpc.clone();
                     let sender = sender.clone();
 
                     tasks.spawn(async move {
                         let sig = Signature::try_from(tx_query_result.tx.as_ref()).unwrap();
-                        println!("######### sig: {:?}", sig);
-                        if let Ok(tx) = rpc.get_transaction(&sig).await {
-                            println!("tx: {:?}", tx);
-                            if tx.transaction.meta.clone().unwrap().err.is_some() {
-                                if let Err(e) = sender.send(tx_query_result) {
-                                    error!("Failed to send marked leaves {:?}", e);
+
+                        match rpc.get_transaction(&sig).await {
+                            Ok(tx) => {
+                                if tx.transaction.meta.clone().unwrap().err.is_some() {
+                                    if let Err(e) = sender.send(tx_query_result) {
+                                        error!("Failed to send marked leaves {:?}", e);
+                                    }
                                 }
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to get transaction {:?}", e);
                             }
                         }
                     });
                 }
             }
+
             while tasks.join_next().await.is_some() {}
         })
     }
 }
 
 trait PurgeCnft {
-    async fn purge(&self, leaf_idx: i64, tree: Vec<u8>) -> Result<()>;
+    async fn purge(&self, leaf_idx: i64, tree: Vec<u8>, tx_seq: i64) -> Result<()>;
 }
 
 #[derive(Clone)]
@@ -606,7 +631,7 @@ impl<P: DatabasePool> ErrCnftPurge<P> {
 }
 
 impl<P: DatabasePool> PurgeCnft for ErrCnftPurge<P> {
-    async fn purge(&self, leaf_idx: i64, tree: Vec<u8>) -> Result<()> {
+    async fn purge(&self, leaf_idx: i64, tree: Vec<u8>, tx_seq: i64) -> Result<()> {
         let conn = self.pool.connection();
 
         let (asset, _) = Pubkey::find_program_address(
@@ -614,37 +639,60 @@ impl<P: DatabasePool> PurgeCnft for ErrCnftPurge<P> {
             &mpl_bubblegum::ID,
         );
         let asset_bytes = asset.to_bytes().to_vec();
+
+        let node_path = calculate_node_path(leaf_idx, tree.clone(), &conn).await?;
+
         let multi_txn = conn.begin().await?;
 
-        asset_data::Entity::delete_by_id(asset_bytes.clone())
+        let asset_data = asset_data::Entity::delete_by_id(asset_bytes.clone())
             .exec(&multi_txn)
             .await?;
 
-        asset::Entity::delete_by_id(asset_bytes.clone())
+        debug!("asset_data DeleteResult: {:?}", asset_data);
+
+        let asset = asset::Entity::delete_by_id(asset_bytes.clone())
             .exec(&multi_txn)
             .await?;
 
-        asset_creators::Entity::delete_many()
+        debug!("asset DeleteResult: {:?}", asset);
+
+        let asset_creators = asset_creators::Entity::delete_many()
             .filter(asset_creators::Column::AssetId.eq(asset_bytes.clone()))
             .exec(&multi_txn)
             .await?;
 
-        asset_authority::Entity::delete_many()
+        debug!("asset_creators DeleteResult: {:?}", asset_creators);
+
+        let asset_authority = asset_authority::Entity::delete_many()
             .filter(asset_authority::Column::AssetId.eq(asset_bytes.clone()))
             .exec(&multi_txn)
             .await?;
 
-        asset_grouping::Entity::delete_many()
+        debug!("asset_authority DeleteResult: {:?}", asset_authority);
+
+        let asset_grouping = asset_grouping::Entity::delete_many()
             .filter(asset_grouping::Column::AssetId.eq(asset_bytes))
             .exec(&multi_txn)
             .await?;
 
+        debug!("asset_grouping DeleteResult: {:?}", asset_grouping);
+
+        let cl_items = cl_items::Entity::delete_many()
+            .filter(cl_items::Column::Tree.eq(tree.clone()))
+            .filter(cl_items::Column::NodeIdx.is_in(node_path))
+            .filter(cl_items::Column::Seq.lte(tx_seq))
+            .exec(&multi_txn)
+            .await?;
+
+        debug!("cl_items DeleteResult: {:?}", cl_items);
+
         // Remove all txs for the asset from cl_audits_v2 so that the asset can be re-indexed by the backfiller
-        cl_audits_v2::Entity::delete_many()
+        let cl_audits_v2 = cl_audits_v2::Entity::delete_many()
             .filter(cl_audits_v2::Column::LeafIdx.eq(leaf_idx))
             .filter(cl_audits_v2::Column::Tree.eq(tree.clone()))
             .exec(&multi_txn)
             .await?;
+        debug!("cl_audits_v2 DeleteResult: {:?}", cl_audits_v2);
 
         multi_txn.commit().await?;
 
@@ -665,14 +713,16 @@ pub async fn start_cnft_purge<P: DatabasePool>(args: CnftArgs, db: P, rpc: Rpc) 
     let start = tokio::time::Instant::now();
 
     let purge_worker_count = args.purge_args.purge_worker_count as usize;
-    let only_trees = args.only_trees.clone().map(|trees| {
+    let only_trees = args.only_trees.map(|trees| {
         trees
             .into_iter()
-            .map(|tree| tree.as_bytes().to_vec())
+            .map(|tree| bs58::decode(tree).into_vec().unwrap())
             .collect()
     });
 
-    let (paginate_sender, paginate_receiver) = unbounded_channel::<Vec<CnftQueryResult>>();
+    let (paginate_sender, paginate_receiver) = tokio::sync::mpsc::channel::<Vec<CnftQueryResult>>(
+        args.purge_args.paginate_channel_size as usize,
+    );
     let (mark_sender, mut mark_receiver) = unbounded_channel::<CnftQueryResult>();
 
     let paginate_handle = PaginateCnft::<P>::build()
@@ -704,7 +754,11 @@ pub async fn start_cnft_purge<P: DatabasePool>(args: CnftArgs, db: P, rpc: Rpc) 
 
             tasks.spawn(async move {
                 if let Err(e) = purge
-                    .purge(tx_query_result.leaf_idx, tx_query_result.tree)
+                    .purge(
+                        tx_query_result.leaf_idx,
+                        tx_query_result.tree,
+                        tx_query_result.seq,
+                    )
                     .await
                 {
                     error!("Failed to purge asset {:?}", e);
@@ -720,4 +774,39 @@ pub async fn start_cnft_purge<P: DatabasePool>(args: CnftArgs, db: P, rpc: Rpc) 
     debug!("Purge took: {:?}", start.elapsed());
 
     Ok(())
+}
+
+/// Calculate all cl_items nodes in the path for the given leaf
+async fn calculate_node_path(
+    leaf_idx: i64,
+    tree: Vec<u8>,
+    db: &DatabaseConnection,
+) -> Result<Vec<i64>> {
+    let mut node_path = vec![];
+
+    let mut leaf_node_idx = get_leaf_node_idx(leaf_idx, tree, db).await?;
+
+    while leaf_node_idx != 1 {
+        node_path.push(leaf_node_idx);
+        leaf_node_idx /= 2;
+    }
+
+    node_path.push(1);
+
+    debug!("node_path: {:?}", node_path);
+
+    Ok(node_path)
+}
+
+async fn get_leaf_node_idx(leaf_idx: i64, tree: Vec<u8>, db: &DatabaseConnection) -> Result<i64> {
+    let cl_item = cl_items::Entity::find()
+        .filter(cl_items::Column::Tree.eq(tree))
+        .filter(cl_items::Column::LeafIdx.eq(leaf_idx))
+        .one(db)
+        .await?;
+
+    match cl_item {
+        Some(cl_item) => Ok(cl_item.node_idx),
+        None => Err(anyhow::anyhow!("No cl_item found")),
+    }
 }
