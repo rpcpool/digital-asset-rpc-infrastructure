@@ -13,7 +13,6 @@ use solana_account_decoder::{UiAccount, UiAccountData};
 use sqlx::types::Decimal;
 use std::{
     collections::HashMap,
-    str::FromStr,
     sync::{Arc, Once},
 };
 
@@ -27,8 +26,8 @@ use solana_client::{
 };
 use solana_sdk::{
     message::VersionedMessage,
-    pubkey as pubkey_macro,
-    pubkey::{self, Pubkey},
+    pubkey,
+    pubkey::Pubkey,
     signature::Signature,
     transaction::{
         Result as TransactionResult, TransactionError, TransactionVersion, VersionedTransaction,
@@ -42,7 +41,7 @@ use solana_transaction_status::{
 
 static INIT: Once = Once::new();
 
-const BGUM_PROGRAM_ID: Pubkey = pubkey_macro!("BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY");
+const BGUM_PROGRAM_ID: Pubkey = pubkey!("BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY");
 
 fn init_logger() {
     INIT.call_once(|| {
