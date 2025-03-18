@@ -800,6 +800,11 @@ async fn calculate_node_path(
 
     let mut leaf_node_idx = get_leaf_node_idx(leaf_idx, tree, db).await?;
 
+    if leaf_node_idx < 1 {
+        error!("Leaf node idx is less than 1: {:?}", leaf_node_idx);
+        return Err(anyhow::anyhow!("Leaf node idx is less than 1"));
+    }
+
     while leaf_node_idx != 1 {
         node_path.push(leaf_node_idx);
         leaf_node_idx /= 2;
