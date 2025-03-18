@@ -267,10 +267,11 @@ pub async fn get_related_for_assets(
 ) -> Result<Vec<FullAsset>, DbErr> {
     let asset_ids = assets.iter().map(|a| a.id.clone()).collect::<Vec<_>>();
 
-    let asset_data: Vec<asset_data::Model> = asset_data::Entity::find()
+    let asset_data = asset_data::Entity::find()
         .filter(asset_data::Column::Id.is_in(asset_ids.clone()))
         .all(conn)
         .await?;
+
     let asset_data_map = asset_data.into_iter().fold(HashMap::new(), |mut acc, ad| {
         acc.insert(ad.id.clone(), ad);
         acc
@@ -297,6 +298,7 @@ pub async fn get_related_for_assets(
         };
         acc
     });
+
     let ids = assets_map.keys().cloned().collect::<Vec<_>>();
 
     // Get all creators for all assets in `assets_map``.
@@ -326,77 +328,104 @@ pub async fn get_related_for_assets(
     if let Some(required) = required_creator {
         assets_map.retain(|_id, asset| asset.creators.iter().any(|c| c.creator == required));
     }
-
     let ids = assets_map.keys().cloned().collect::<Vec<_>>();
-    let authorities = asset_authority::Entity::find()
-        .filter(asset_authority::Column::AssetId.is_in(ids.clone()))
-        .order_by_asc(asset_authority::Column::AssetId)
-        .all(conn)
-        .await?;
+
+    // Fetch asset_data, creators, authorities, and other related data in parallel
+    let (authorities, tokens, attachments, groups) = tokio::join!(
+        // Fetch authorities
+        asset_authority::Entity::find()
+            .filter(asset_authority::Column::AssetId.is_in(ids.clone()))
+            .order_by_asc(asset_authority::Column::AssetId)
+            .all(conn),
+        // Fetch tokens (fungible assets)
+        async {
+            if options.show_fungible {
+                find_tokens(conn, ids.clone()).await
+            } else {
+                Ok(Vec::new())
+            }
+        },
+        // Fetch attachments (inscriptions)
+        async {
+            if options.show_inscription {
+                asset_v1_account_attachments::Entity::find()
+                    .filter(
+                        asset_v1_account_attachments::Column::AttachmentType
+                            .eq(V1AccountAttachments::TokenInscription),
+                    )
+                    .filter(asset_v1_account_attachments::Column::AssetId.is_in(ids.clone()))
+                    .all(conn)
+                    .await
+            } else {
+                Ok(Vec::new())
+            }
+        },
+        // Fetch groups
+        async {
+            let cond = if options.show_unverified_collections {
+                Condition::all()
+            } else {
+                Condition::any()
+                    .add(asset_grouping::Column::Verified.eq(true))
+                    // Older versions of the indexer did not have the verified flag. A group would be present if and only if it was verified.
+                    // Therefore if verified is null, we can assume that the group is verified.
+                    .add(asset_grouping::Column::Verified.is_null())
+            };
+            let grouping_base_query = asset_grouping::Entity::find()
+                .filter(asset_grouping::Column::AssetId.is_in(ids.clone()))
+                .filter(asset_grouping::Column::GroupValue.is_not_null())
+                .filter(cond)
+                .order_by_asc(asset_grouping::Column::AssetId);
+
+            if options.show_collection_metadata {
+                grouping_base_query
+                    .find_also_related(asset_data::Entity)
+                    .all(conn)
+                    .await
+            } else {
+                grouping_base_query
+                    .all(conn)
+                    .await
+                    .map(|groups| groups.into_iter().map(|g| (g, None)).collect())
+            }
+        },
+    );
+
+    // Handle errors from any of the parallel queries
+    let authorities = authorities?;
+    let groups = groups?;
+    let attachments = attachments?;
+    let tokens = tokens?;
+
+    // Add authorities to assets
     for a in authorities.into_iter() {
         if let Some(asset) = assets_map.get_mut(&a.asset_id) {
             asset.authorities.push(a);
         }
     }
 
-    if options.show_fungible {
-        find_tokens(conn, ids.clone())
-            .await?
-            .into_iter()
-            .for_each(|t| {
-                if let Some(asset) = assets_map.get_mut(&t.mint.clone()) {
-                    asset.token_info = Some(t);
-                }
-            });
+    // Add tokens to assets
+    for t in tokens.into_iter() {
+        if let Some(asset) = assets_map.get_mut(&t.mint.clone()) {
+            asset.token_info = Some(t);
+        }
     }
 
-    let cond = if options.show_unverified_collections {
-        Condition::all()
-    } else {
-        Condition::any()
-            .add(asset_grouping::Column::Verified.eq(true))
-            // Older versions of the indexer did not have the verified flag. A group would be present if and only if it was verified.
-            // Therefore if verified is null, we can assume that the group is verified.
-            .add(asset_grouping::Column::Verified.is_null())
-    };
+    // Add groups to assets
+    for (g, a) in groups.into_iter() {
+        if let Some(asset) = assets_map.get_mut(&g.asset_id) {
+            asset.groups.push((g, a));
+        }
+    }
 
-    let grouping_base_query = asset_grouping::Entity::find()
-        .filter(asset_grouping::Column::AssetId.is_in(ids.clone()))
-        .filter(asset_grouping::Column::GroupValue.is_not_null())
-        .filter(cond)
-        .order_by_asc(asset_grouping::Column::AssetId);
-
-    if options.show_inscription {
-        let attachments = asset_v1_account_attachments::Entity::find()
-            .filter(asset_v1_account_attachments::Column::AssetId.is_in(asset_ids))
-            .all(conn)
-            .await?;
-
-        for a in attachments.into_iter() {
-            if let Some(asset) = assets_map.get_mut(&a.id) {
+    // Add inscriptions to assets
+    for a in attachments.into_iter() {
+        a.asset_id.clone().and_then(|asset_id| {
+            assets_map.get_mut(&asset_id).map(|asset| {
                 asset.inscription = Some(a);
-            }
-        }
+            })
+        });
     }
-
-    if options.show_collection_metadata {
-        let combined_group_query = grouping_base_query
-            .find_also_related(asset_data::Entity)
-            .all(conn)
-            .await?;
-        for (g, a) in combined_group_query.into_iter() {
-            if let Some(asset) = assets_map.get_mut(&g.asset_id) {
-                asset.groups.push((g, a));
-            }
-        }
-    } else {
-        let single_group_query = grouping_base_query.all(conn).await?;
-        for g in single_group_query.into_iter() {
-            if let Some(asset) = assets_map.get_mut(&g.asset_id) {
-                asset.groups.push((g, None));
-            }
-        }
-    };
 
     Ok(assets_map.into_iter().map(|(_, v)| v).collect())
 }
