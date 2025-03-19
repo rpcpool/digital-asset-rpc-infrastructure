@@ -1,8 +1,14 @@
 #[cfg(test)]
-use das_ops::purge::{start_mint_purge, start_ta_purge, Args, TOKEN_2022_PROGRAM_ID};
-use digital_asset_types::dao::{token_accounts, tokens};
+use das_ops::purge::{
+    start_cnft_purge, start_mint_purge, start_ta_purge, Args, CnftArgs, TOKEN_2022_PROGRAM_ID,
+};
+use digital_asset_types::dao::{
+    cl_audits_v2, cl_items, sea_orm_active_enums::Instruction, token_accounts, tokens,
+};
 use itertools::Itertools;
-use sea_orm::{DatabaseBackend, DbBackend, MockDatabase, MockExecResult, Transaction, Value};
+use sea_orm::{
+    DatabaseBackend, DbBackend, MockDatabase, MockExecResult, Statement, Transaction, Value, Values,
+};
 use solana_account_decoder::{UiAccount, UiAccountData};
 use sqlx::types::Decimal;
 use std::{
@@ -11,15 +17,29 @@ use std::{
 };
 
 use das_core::{DatabasePool, MockDatabasePool, Rpc};
-
+use sea_orm::prelude::DateTime;
+use serde_json::json;
 use serial_test::serial;
 use solana_client::{
     rpc_request::RpcRequest,
     rpc_response::{Response, RpcApiVersion, RpcResponseContext},
 };
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{
+    message::MessageHeader,
+    pubkey,
+    pubkey::Pubkey,
+    signature::Signature,
+    transaction::{TransactionError, TransactionVersion},
+};
+use solana_transaction_status::{
+    option_serializer::OptionSerializer, EncodedConfirmedTransactionWithStatusMeta,
+    EncodedTransaction, EncodedTransactionWithStatusMeta, UiCompiledInstruction, UiMessage,
+    UiRawMessage, UiTransaction, UiTransactionStatusMeta,
+};
 
 static INIT: Once = Once::new();
+
+const BGUM_PROGRAM_ID: Pubkey = pubkey!("BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY");
 
 fn init_logger() {
     INIT.call_once(|| {
@@ -77,6 +97,77 @@ fn mint_model_with_pubkey(pubkey: &Pubkey) -> tokens::Model {
         slot_updated: 0,
         extensions: None,
         extension_data: None,
+    }
+}
+
+fn encoded_confirmed_transaction_with_status_meta(
+    err: Option<TransactionError>,
+    signature: Signature,
+) -> EncodedConfirmedTransactionWithStatusMeta {
+    EncodedConfirmedTransactionWithStatusMeta {
+        slot: 1,
+        transaction: EncodedTransactionWithStatusMeta {
+            version: Some(TransactionVersion::LEGACY),
+            transaction: EncodedTransaction::Json(UiTransaction {
+                signatures: vec![signature.to_string()],
+                message: UiMessage::Raw(UiRawMessage {
+                    header: MessageHeader {
+                        num_required_signatures: 0,
+                        num_readonly_signed_accounts: 0,
+                        num_readonly_unsigned_accounts: 1,
+                    },
+                    account_keys: vec!["C6eBmAXKg6JhJWkajGa5YRGUfG4YKXwbxF5Ufv7PtExZ".to_string()],
+                    recent_blockhash: "D37n3BSG71oUWcWjbZ37jZP7UfsxG2QMKeuALJ1PYvM6".to_string(),
+                    instructions: vec![UiCompiledInstruction {
+                        program_id_index: 2,
+                        accounts: vec![0, 1],
+                        data: "3Bxs49DitAvXtoDR".to_string(),
+                        stack_height: None,
+                    }],
+                    address_table_lookups: None,
+                }),
+            }),
+            meta: Some(UiTransactionStatusMeta {
+                err,
+                status: Ok(()),
+                fee: 0,
+                pre_balances: vec![499999999999999950, 50, 1],
+                post_balances: vec![499999999999999950, 50, 1],
+                inner_instructions: OptionSerializer::None,
+                log_messages: OptionSerializer::None,
+                pre_token_balances: OptionSerializer::None,
+                post_token_balances: OptionSerializer::None,
+                rewards: OptionSerializer::None,
+                loaded_addresses: OptionSerializer::Skip,
+                return_data: OptionSerializer::Skip,
+                compute_units_consumed: OptionSerializer::Skip,
+            }),
+        },
+        block_time: Some(1628633791),
+    }
+}
+
+fn cl_audit_v2_model_with_tree() -> cl_audits_v2::Model {
+    cl_audits_v2::Model {
+        id: 0,
+        tree: Pubkey::new_unique().to_bytes().to_vec(),
+        seq: 0,
+        leaf_idx: 0,
+        created_at: DateTime::default(),
+        tx: Signature::new_unique().as_ref().to_vec(),
+        instruction: Instruction::MintV1,
+    }
+}
+
+fn cl_items_model_with_tree(tree: Vec<u8>) -> cl_items::Model {
+    cl_items::Model {
+        id: 1,
+        tree,
+        seq: 0,
+        leaf_idx: Some(0),
+        node_idx: 1,
+        level: 0,
+        hash: vec![0],
     }
 }
 
@@ -147,6 +238,7 @@ async fn test_purging_token_accounts() {
             purge_worker_count: 10,
             mark_deletion_worker_count: 10,
             batch_size: 10,
+            paginate_channel_size: 10,
         },
         Arc::clone(&db),
         rpc,
@@ -257,6 +349,7 @@ async fn test_purging_mints() {
             purge_worker_count: 10,
             mark_deletion_worker_count: 10,
             batch_size: 10,
+            paginate_channel_size: 10,
         },
         Arc::clone(&db),
         rpc,
@@ -313,4 +406,208 @@ async fn test_purging_mints() {
     assert_eq!(expected_db_txs, db_txs);
 
     assert!(res.is_ok());
+}
+
+#[tokio::test]
+#[serial]
+async fn test_skipping_purge_cnft_on_successful_transaction() {
+    init_logger();
+
+    // Set DB
+    let mock_cl_audit_v2_model = cl_audit_v2_model_with_tree();
+
+    let mock_db = MockDatabase::new(DatabaseBackend::Postgres)
+        .append_query_results(vec![vec![mock_cl_audit_v2_model.clone()]]);
+
+    let db = Arc::new(MockDatabasePool::from(mock_db));
+
+    // Set RPC
+    let mut rpc_mock_responses = HashMap::new();
+    let tx_sig = Signature::try_from(mock_cl_audit_v2_model.tx.as_slice()).unwrap();
+    let rpc_response = encoded_confirmed_transaction_with_status_meta(None, tx_sig);
+
+    rpc_mock_responses.insert(RpcRequest::GetTransaction, json!(rpc_response));
+
+    let rpc = Rpc::from_mocks(rpc_mock_responses, "succeeds".to_string());
+
+    let res = start_cnft_purge(
+        CnftArgs {
+            only_trees: None,
+            purge_args: Args {
+                purge_worker_count: 10,
+                mark_deletion_worker_count: 10,
+                batch_size: 10,
+                paginate_channel_size: 10,
+            },
+        },
+        Arc::clone(&db),
+        rpc,
+    )
+    .await;
+
+    let select_batch_query = Transaction::from_sql_and_values(
+        DbBackend::Postgres,
+        r#"SELECT "cl_audits_v2"."id", "cl_audits_v2"."tx", "cl_audits_v2"."leaf_idx", "cl_audits_v2"."tree", "cl_audits_v2"."seq" FROM "cl_audits_v2" WHERE "cl_audits_v2"."id" > $1 ORDER BY "cl_audits_v2"."id" ASC LIMIT $2"#,
+        vec![0i64.into(), 10u64.into()],
+    );
+
+    // We expect the query 2 times the 1st one is actually going to query all db records and the 2nd one
+    //  is going to return an empty response that will make the query loop break
+    let expected_transactions: Vec<Transaction> = vec![select_batch_query; 2];
+
+    assert_eq!(
+        expected_transactions,
+        db.connection().into_transaction_log()
+    );
+    assert!(res.is_ok());
+}
+
+#[tokio::test]
+#[serial]
+async fn test_purging_cnft_with_failed_transaction() {
+    init_logger();
+
+    // Set DB
+    let mock_cl_audit_v2_model = cl_audit_v2_model_with_tree();
+    let tree_bytes = mock_cl_audit_v2_model.tree.clone();
+    let mock_cl_item_model = cl_items_model_with_tree(tree_bytes.clone());
+
+    let (asset, _) = Pubkey::find_program_address(
+        &[
+            b"asset",
+            &tree_bytes,
+            &mock_cl_audit_v2_model.leaf_idx.to_le_bytes(),
+        ],
+        &BGUM_PROGRAM_ID,
+    );
+    let asset_bytes = asset.to_bytes().to_vec();
+
+    let mock_db = MockDatabase::new(DatabaseBackend::Postgres)
+        .append_query_results(vec![vec![mock_cl_audit_v2_model.clone()], vec![]])
+        .append_query_results(vec![vec![mock_cl_item_model.clone()]])
+        .append_exec_results(vec![
+            MockExecResult {
+                rows_affected: 1,
+                last_insert_id: 0,
+            };
+            7
+        ]);
+
+    let db = Arc::new(MockDatabasePool::from(mock_db));
+
+    // Set RPC
+    let mut rpc_mock_responses = HashMap::new();
+    let rpc_response = encoded_confirmed_transaction_with_status_meta(
+        Some(TransactionError::AccountInUse),
+        Signature::new_unique(),
+    );
+
+    rpc_mock_responses.insert(RpcRequest::GetTransaction, json!(rpc_response));
+
+    let rpc = Rpc::from_mocks(rpc_mock_responses, "succeeds".to_string());
+
+    let res = start_cnft_purge(
+        CnftArgs {
+            only_trees: None,
+            purge_args: Args {
+                purge_worker_count: 1,
+                mark_deletion_worker_count: 1,
+                batch_size: 10,
+                paginate_channel_size: 10,
+            },
+        },
+        Arc::clone(&db),
+        rpc,
+    )
+    .await;
+
+    assert!(res.is_ok());
+
+    let select_batch_query = Transaction::from_sql_and_values(
+        DbBackend::Postgres,
+        r#"SELECT "cl_audits_v2"."id", "cl_audits_v2"."tx", "cl_audits_v2"."leaf_idx", "cl_audits_v2"."tree", "cl_audits_v2"."seq" FROM "cl_audits_v2" WHERE "cl_audits_v2"."id" > $1 ORDER BY "cl_audits_v2"."id" ASC LIMIT $2"#,
+        vec![0i64.into(), 10u64.into()],
+    );
+
+    let select_cl_items = Transaction::from_sql_and_values(
+        DbBackend::Postgres,
+        r#"SELECT "cl_items"."id", "cl_items"."tree", "cl_items"."node_idx", "cl_items"."leaf_idx", "cl_items"."seq", "cl_items"."level", "cl_items"."hash" FROM "cl_items" WHERE "cl_items"."tree" = $1 AND "cl_items"."leaf_idx" = $2 LIMIT $3"#,
+        vec![
+            Value::Bytes(Some(Box::new(tree_bytes.clone()))),
+            Value::BigInt(Some(0)),
+            Value::BigUnsigned(Some(1)),
+        ],
+    );
+
+    let asset_values = Some(Values(vec![Value::Bytes(Some(Box::new(asset_bytes)))]));
+
+    let delete_tx = Transaction::many(vec![
+        Statement {
+            sql: "BEGIN".to_string(),
+            values: None,
+            db_backend: DbBackend::Postgres,
+        },
+        Statement {
+            sql: r#"DELETE FROM "asset_data" WHERE "asset_data"."id" = $1"#.to_string(),
+            values: asset_values.clone(),
+            db_backend: DbBackend::Postgres,
+        },
+        Statement {
+            sql: r#"DELETE FROM "asset" WHERE "asset"."id" = $1"#.to_string(),
+            values: asset_values.clone(),
+            db_backend: DbBackend::Postgres,
+        },
+        Statement {
+            sql: r#"DELETE FROM "asset_creators" WHERE "asset_creators"."asset_id" = $1"#
+                .to_string(),
+            values: asset_values.clone(),
+            db_backend: DbBackend::Postgres,
+        },
+        Statement {
+            sql: r#"DELETE FROM "asset_authority" WHERE "asset_authority"."asset_id" = $1"#
+                .to_string(),
+            values: asset_values.clone(),
+            db_backend: DbBackend::Postgres,
+        },
+        Statement {
+            sql: r#"DELETE FROM "asset_grouping" WHERE "asset_grouping"."asset_id" = $1"#
+                .to_string(),
+            values: asset_values.clone(),
+            db_backend: DbBackend::Postgres,
+        },
+        Statement {
+            sql: r#"DELETE FROM "cl_items" WHERE "cl_items"."tree" = $1 AND "cl_items"."node_idx" IN ($2) AND "cl_items"."seq" <= $3"#.to_string(),
+            values: Some(Values(vec![
+                Value::Bytes(Some(Box::new(tree_bytes.clone()))),
+                Value::BigInt(Some(1)),
+                Value::BigInt(Some(0)),
+            ])),
+            db_backend: DbBackend::Postgres,
+        },
+        Statement {
+            sql: r#"DELETE FROM "cl_audits_v2" WHERE "cl_audits_v2"."leaf_idx" = $1 AND "cl_audits_v2"."tree" = $2"#.to_string(),
+            values: Some(Values(vec![
+                Value::BigInt(Some(0)),
+                Value::Bytes(Some(Box::new(tree_bytes))),
+            ])),
+            db_backend: DbBackend::Postgres,
+        },
+        Statement {
+            sql: "COMMIT".to_string(),
+            values: None,
+            db_backend: DbBackend::Postgres,
+        },
+    ]);
+
+    let expected_transactions: Vec<Transaction> = vec![
+        select_batch_query.clone(),
+        select_batch_query,
+        select_cl_items,
+        delete_tx,
+    ];
+
+    assert_eq!(
+        expected_transactions,
+        db.connection().into_transaction_log()
+    );
 }
