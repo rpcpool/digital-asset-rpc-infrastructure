@@ -7,6 +7,7 @@ use {
         mpl_core::types::{Plugin, PluginAuthority, PluginType, UpdateAuthority},
         programs::mpl_core_program::MplCoreAccountData,
     },
+    das_core::skip_metadata_json_download,
     digital_asset_types::{
         dao::{
             asset, asset_authority, asset_creators, asset_data, asset_grouping,
@@ -193,33 +194,45 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         _ => ChainMutability::Mutable,
     };
 
-    let asset_data_model = asset_data::ActiveModel {
+    let skip_metadata_json_download = skip_metadata_json_download(&id_vec, &uri, &txn).await;
+
+    let mut asset_data_model = asset_data::ActiveModel {
         chain_data_mutability: ActiveValue::Set(chain_mutability),
         chain_data: ActiveValue::Set(chain_data_json),
-        metadata_url: ActiveValue::Set(uri.clone()),
-        metadata: ActiveValue::Set(JsonValue::String("processing".to_string())),
         metadata_mutability: ActiveValue::Set(Mutability::Mutable),
         slot_updated: ActiveValue::Set(slot_i),
-        reindex: ActiveValue::Set(Some(true)),
         id: ActiveValue::Set(id_vec.clone()),
         raw_name: ActiveValue::Set(Some(name.to_vec())),
         raw_symbol: ActiveValue::Set(None),
         base_info_seq: ActiveValue::Set(Some(0)),
+        ..Default::default()
     };
+
+    let mut columns_to_update = vec![
+        asset_data::Column::ChainDataMutability,
+        asset_data::Column::ChainData,
+        asset_data::Column::MetadataMutability,
+        asset_data::Column::SlotUpdated,
+        asset_data::Column::RawName,
+        asset_data::Column::RawSymbol,
+        asset_data::Column::BaseInfoSeq,
+    ];
+
+    if !skip_metadata_json_download {
+        asset_data_model.metadata_url = ActiveValue::Set(uri.clone());
+        asset_data_model.metadata = ActiveValue::Set(JsonValue::String("processing".to_string()));
+        asset_data_model.reindex = ActiveValue::Set(Some(true));
+
+        columns_to_update.extend_from_slice(&[
+            asset_data::Column::MetadataUrl,
+            asset_data::Column::Metadata,
+            asset_data::Column::Reindex,
+        ]);
+    }
     asset_data::Entity::insert(asset_data_model)
         .on_conflict(
             OnConflict::columns([asset_data::Column::Id])
-                .update_columns([
-                    asset_data::Column::ChainDataMutability,
-                    asset_data::Column::ChainData,
-                    asset_data::Column::MetadataUrl,
-                    asset_data::Column::MetadataMutability,
-                    asset_data::Column::SlotUpdated,
-                    asset_data::Column::Reindex,
-                    asset_data::Column::RawName,
-                    asset_data::Column::RawSymbol,
-                    asset_data::Column::BaseInfoSeq,
-                ])
+                .update_columns(columns_to_update)
                 .action_cond_where(
                     Condition::all()
                         .add(
@@ -808,6 +821,11 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
             "URI is empty for mint {}. Skipping background task.",
             bs58::encode(id_vec.clone()).into_string()
         );
+        return Ok(None);
+    }
+
+    // If the metadata JSON exists, skip downloading it.
+    if skip_metadata_json_download {
         return Ok(None);
     }
 
