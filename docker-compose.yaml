@@ -140,6 +140,7 @@ services:
     container_name: prometheus
     volumes:
       - ./prometheus-config.yaml:/etc/prometheus/prometheus-config.yaml
+      - prometheus_data:/prometheus
     command: ["--config.file=/etc/prometheus/prometheus-config.yaml"]
     ports:
       - "9090:9090"
@@ -148,3 +149,4 @@ services:
 volumes:
   grafana_data: {}
   graphite_data: {}
+  prometheus_data: {}
