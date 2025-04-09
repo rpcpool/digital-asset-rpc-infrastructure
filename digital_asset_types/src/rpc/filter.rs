@@ -57,3 +57,19 @@ pub enum SearchConditionType {
     #[serde(rename = "any")]
     Any,
 }
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq, JsonSchema, Default)]
+pub enum CommitmentLevel {
+    #[serde(rename = "processed")]
+    Processed,
+    #[serde(rename = "confirmed")]
+    Confirmed,
+    #[serde(rename = "finalized")]
+    #[default]
+    Finalized,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq, JsonSchema)]
+pub struct CommitmentConfig {
+    commitment: CommitmentLevel,
+}
