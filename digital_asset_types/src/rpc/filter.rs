@@ -60,8 +60,6 @@ pub enum SearchConditionType {
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq, JsonSchema, Default)]
 pub enum CommitmentLevel {
-    #[serde(rename = "processed")]
-    Processed,
     #[serde(rename = "confirmed")]
     Confirmed,
     #[serde(rename = "finalized")]
