@@ -1,6 +1,6 @@
 use crate::error::DasApiError;
 use crate::validation::{validate_opt_pubkey, validate_search_with_name};
-use digital_asset_types::dao::scopes::asset::get_token_supply;
+use digital_asset_types::dao::scopes::asset::{get_token_accounts_by_owner, get_token_supply};
 use digital_asset_types::{
     dao::{
         scopes::asset::{get_grouping, get_nft_editions, get_token_largest_accounts},
@@ -33,7 +33,7 @@ use {
     sqlx::postgres::PgPoolOptions,
 };
 
-use digital_asset_types::rpc::RpcTokenAccountBalance;
+use digital_asset_types::rpc::RpcTokenAccountBalanceWithAddress;
 
 pub struct DasApi {
     db_connection: DatabaseConnection,
@@ -585,7 +585,8 @@ impl ApiContract for DasApi {
     async fn get_token_largest_accounts(
         self: &DasApi,
         payload: GetTokenLargestAccounts,
-    ) -> Result<SolanaRpcResponseAndContext<Vec<RpcTokenAccountBalance>>, DasApiError> {
+    ) -> Result<SolanaRpcResponseAndContext<Vec<RpcTokenAccountBalanceWithAddress>>, DasApiError>
+    {
         let GetTokenLargestAccounts(mint_address, _d) = payload;
         let mint_address = validate_pubkey(mint_address.clone())?;
 
@@ -604,5 +605,23 @@ impl ApiContract for DasApi {
         get_token_supply(&self.db_connection, mint_address.to_bytes().to_vec())
             .await
             .map_err(Into::into)
+    }
+
+    async fn get_token_accounts_by_owner(
+        self: &DasApi,
+        payload: GetTokenAccountsByOwner,
+    ) -> Result<SolanaRpcResponseAndContext<Vec<RpcData<RpcTokenInfo>>>, DasApiError> {
+        let GetTokenAccountsByOwner(owner, params, _config) = payload;
+        let owner_address = validate_pubkey(owner.clone())?;
+        let (mint_address, program_id) = GetTokenAccountOptionalParams::validate(&params)?;
+
+        get_token_accounts_by_owner(
+            &self.db_connection,
+            owner_address.to_bytes().to_vec(),
+            mint_address,
+            program_id,
+        )
+        .await
+        .map_err(Into::into)
     }
 }
