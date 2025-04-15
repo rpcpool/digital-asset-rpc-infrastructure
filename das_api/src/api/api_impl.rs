@@ -38,7 +38,7 @@ use {
     sqlx::postgres::PgPoolOptions,
 };
 
-use digital_asset_types::rpc::RpcTokenAccountBalanceWithAddress;
+use digital_asset_types::rpc::{RpcTokenAccountBalanceWithAddress, RpcTokenInfoWithDelegate};
 
 pub struct DasApi {
     pool: Pool<Postgres>,
