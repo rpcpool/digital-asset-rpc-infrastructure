@@ -12,8 +12,8 @@ use crate::{
         options::Options,
         response::{NftEdition, NftEditions},
         RpcAccountData, RpcAccountDataInner, RpcData, RpcParsedAccount, RpcTokenAccountBalance,
-        RpcTokenAccountBalanceWithAddress, RpcTokenInfo, RpcTokenSupply, SolanaRpcContext,
-        SolanaRpcResponseAndContext, UiTokenAmount,
+        RpcTokenAccountBalanceWithAddress, RpcTokenInfo, RpcTokenInfoWithDelegate, RpcTokenSupply,
+        SolanaRpcContext, SolanaRpcResponseAndContext, UiTokenAmount,
     },
 };
 use indexmap::IndexMap;
@@ -831,6 +831,110 @@ pub async fn get_token_accounts_by_owner(
                 },
             })
         })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(SolanaRpcResponseAndContext {
+        value: token_accounts,
+        context: SolanaRpcContext::default(),
+    })
+}
+
+pub async fn get_token_accounts_by_delegate(
+    conn: &impl ConnectionTrait,
+    delegate_address: Vec<u8>,
+    mint_address: Option<Vec<u8>>,
+    token_program: Option<Vec<u8>>,
+) -> Result<SolanaRpcResponseAndContext<Vec<RpcData<RpcTokenInfoWithDelegate>>>, DbErr> {
+    let mut conditions =
+        Condition::all().add(token_accounts::Column::Delegate.eq(delegate_address));
+
+    if let Some(token_program) = token_program {
+        conditions = conditions.add(token_accounts::Column::TokenProgram.eq(token_program));
+    }
+
+    if let Some(ref mint) = mint_address {
+        conditions = conditions.add(token_accounts::Column::Mint.eq(mint.clone()));
+    }
+
+    let token_accounts = token_accounts::Entity::find()
+        .filter(conditions)
+        .all(conn)
+        .await?;
+
+    let mints = if let Some(mint) = mint_address {
+        vec![mint]
+    } else {
+        token_accounts
+            .iter()
+            .map(|ta| ta.mint.clone())
+            .collect::<Vec<_>>()
+    };
+
+    let mint_accounts = tokens::Entity::find()
+        .filter(tokens::Column::Mint.is_in(mints))
+        .all(conn)
+        .await?;
+
+    let mut token_accounts_with_decimals = Vec::new();
+
+    for ta in &token_accounts {
+        let mint_acc_index = mint_accounts.iter().position(|m| m.mint == ta.mint);
+
+        if let Some(mint_acc_index) = mint_acc_index {
+            token_accounts_with_decimals.push((ta.clone(), mint_accounts[mint_acc_index].decimals));
+        }
+    }
+
+    let token_accounts = token_accounts_with_decimals
+        .into_iter()
+        .filter(|(ta, _)| ta.delegate.is_some())
+        .map(
+            |(ta, decimals)| -> Result<RpcData<RpcTokenInfoWithDelegate>, DbErr> {
+                let ui_token_amount: f64 =
+                    (ta.amount as f64).div(10u64.pow(decimals as u32) as f64);
+                let ui_delegate_amount: f64 =
+                    (ta.delegated_amount as f64).div(10u64.pow(decimals as u32) as f64);
+                Ok(RpcData {
+                    pubkey: bs58::encode(ta.pubkey.clone()).into_string(),
+                    account: RpcAccountData {
+                        data: RpcAccountDataInner {
+                            program: get_token_program_name(ta.token_program.clone()),
+                            parsed: RpcParsedAccount {
+                                info: RpcTokenInfoWithDelegate {
+                                    delegate: bs58::encode(ta.delegate.unwrap_or_default())
+                                        .into_string(), // this will always be Some bcos we filtered above
+                                    delegated_amount: RpcTokenAccountBalance {
+                                        amount: UiTokenAmount {
+                                            ui_amount: Some(ui_delegate_amount),
+                                            decimals: decimals as u8,
+                                            amount: ta.amount.to_string(),
+                                            ui_amount_string: ui_delegate_amount.to_string(),
+                                        },
+                                    },
+                                    owner: bs58::encode(ta.owner).into_string(),
+                                    is_native: is_native_token(&ta.mint),
+                                    state: "initialized".to_string(),
+                                    token_amount: RpcTokenAccountBalance {
+                                        amount: UiTokenAmount {
+                                            ui_amount: Some(ui_token_amount),
+                                            decimals: decimals as u8,
+                                            amount: ta.amount.to_string(),
+                                            ui_amount_string: ui_token_amount.to_string(),
+                                        },
+                                    },
+                                    mint: bs58::encode(ta.mint).into_string(),
+                                },
+                                account_type: "account".to_string(),
+                            },
+                            ..Default::default()
+                        },
+
+                        owner: bs58::encode(ta.token_program).into_string(),
+                        ..Default::default()
+                    },
+                })
+            },
+        )
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(SolanaRpcResponseAndContext {
