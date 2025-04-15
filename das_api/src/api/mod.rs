@@ -275,6 +275,13 @@ pub struct GetTokenAccountsByOwner(
     #[serde(default)] pub Option<RpcConfiguration>,
 );
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GetTokenAccountsByDelegate(
+    pub String,
+    #[serde(default)] pub Option<GetTokenAccountOptionalParams>,
+    #[serde(default)] pub Option<RpcConfiguration>,
+);
+
 #[document_rpc]
 #[async_trait]
 pub trait ApiContract: Send + Sync + 'static {
