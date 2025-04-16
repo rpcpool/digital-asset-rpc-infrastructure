@@ -156,3 +156,45 @@ async fn test_get_token_supply() {
 
     insta::assert_json_snapshot!(name, response);
 }
+
+#[tokio::test]
+#[serial]
+#[named]
+async fn test_get_token_account_balance() {
+    let name = trim_test_name(function_name!());
+
+    let setup = TestSetup::new_with_options(
+        name.clone(),
+        TestSetupOptions {
+            network: Some(Network::Mainnet),
+        },
+    )
+    .await;
+
+    let seeds: Vec<SeedEvent> = seed_accounts([
+        "EiPT5rMWjejZ4x7gVBbqpeGWjk78ma9EcERc3hjn7EeK",
+        "A3eME5CetyZPBoWbRUwY3tSe25S6tb18ba9ZPbWk9eFJ",
+    ]);
+
+    apply_migrations_and_delete_data(setup.db.clone()).await;
+    index_seed_events(&setup, seeds.iter().collect_vec()).await;
+
+    let request = r#"
+    [
+        "EiPT5rMWjejZ4x7gVBbqpeGWjk78ma9EcERc3hjn7EeK",
+        
+      {
+        "commitment": "confirmed"
+      }
+    ]
+    "#;
+
+    let request: api::GetTokenAccountBalance = serde_json::from_str(request).unwrap();
+    let response = setup
+        .das_api
+        .get_token_account_balance(request)
+        .await
+        .unwrap();
+
+    insta::assert_json_snapshot!(name, response);
+}

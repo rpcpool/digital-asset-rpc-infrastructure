@@ -10,6 +10,7 @@ use digital_asset_types::rpc::response::{
 use digital_asset_types::rpc::{filter::AssetSorting, response::GetGroupingResponse};
 use digital_asset_types::rpc::{
     Asset, AssetProof, Interface, OwnershipModel, RoyaltyModel, SolanaRpcResponseAndContext,
+    UiTokenAmount,
 };
 use digital_asset_types::rpc::{RpcTokenAccountBalance, RpcTokenSupply};
 use open_rpc_derive::{document_rpc, rpc};
@@ -205,6 +206,9 @@ pub struct GetTokenLargestAccounts(pub String, #[serde(default)] pub Option<Comm
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct GetTokenSupply(pub String, #[serde(default)] pub Option<CommitmentConfig>);
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GetTokenAccountBalance(pub String, #[serde(default)] pub Option<CommitmentConfig>);
+
 #[document_rpc]
 #[async_trait]
 pub trait ApiContract: Send + Sync + 'static {
@@ -323,4 +327,9 @@ pub trait ApiContract: Send + Sync + 'static {
         &self,
         payload: GetTokenSupply,
     ) -> Result<SolanaRpcResponseAndContext<RpcTokenSupply>, DasApiError>;
+
+    async fn get_token_account_balance(
+        &self,
+        payload: GetTokenAccountBalance,
+    ) -> Result<SolanaRpcResponseAndContext<UiTokenAmount>, DasApiError>;
 }

@@ -701,7 +701,8 @@ pub async fn get_token_largest_accounts(
     let value = largest_token_accounts
         .into_iter()
         .map(|ta| {
-            let ui_amount: f64 = (ta.amount as f64).div(10u64.pow(mint_acc.decimals as u32) as f64);
+            let ui_amount = ui_amount(ta.amount, mint_acc.decimals);
+
             RpcTokenAccountBalance {
                 address: bs58::encode(ta.pubkey).into_string(),
                 amount: UiTokenAmount {
@@ -724,22 +725,53 @@ pub async fn get_token_supply(
     conn: &impl ConnectionTrait,
     mint_address: Vec<u8>,
 ) -> Result<SolanaRpcResponseAndContext<RpcTokenSupply>, DbErr> {
-    let token = tokens::Entity::find()
+    let mint_acc = tokens::Entity::find()
         .filter(tokens::Column::Mint.eq(mint_address))
         .one(conn)
         .await?
         .ok_or(DbErr::RecordNotFound("Token Not Found".to_string()))?;
 
-    let ui_supply = token
+    let ui_supply = mint_acc
         .supply
         .to_f64()
-        .map_or(0f64, |s| s.div(10u64.pow(token.decimals as u32) as f64));
+        .map_or(0f64, |s| s.div(10u64.pow(mint_acc.decimals as u32) as f64));
 
     let value = RpcTokenSupply {
-        amount: token.supply.to_string(),
-        decimals: token.decimals as u8,
+        amount: mint_acc.supply.to_string(),
+        decimals: mint_acc.decimals as u8,
         ui_amount: Some(ui_supply),
         ui_amount_string: ui_supply.to_string(),
+    };
+
+    Ok(SolanaRpcResponseAndContext {
+        value,
+        context: SolanaRpcContext::default(),
+    })
+}
+
+pub async fn get_token_account_balance(
+    conn: &impl ConnectionTrait,
+    token_acc_address: Vec<u8>,
+) -> Result<SolanaRpcResponseAndContext<UiTokenAmount>, DbErr> {
+    let token_acc = token_accounts::Entity::find()
+        .filter(token_accounts::Column::Pubkey.eq(token_acc_address))
+        .one(conn)
+        .await?
+        .ok_or(DbErr::RecordNotFound("Token Account Not Found".to_string()))?;
+
+    let mint_acc = tokens::Entity::find()
+        .filter(tokens::Column::Mint.eq(token_acc.mint))
+        .one(conn)
+        .await?
+        .ok_or(DbErr::RecordNotFound("Mint Account Not Found".to_string()))?;
+
+    let ui_amount = ui_amount(token_acc.amount, mint_acc.decimals);
+
+    let value = UiTokenAmount {
+        amount: token_acc.amount.to_string(),
+        decimals: mint_acc.decimals as u8,
+        ui_amount: Some(ui_amount),
+        ui_amount_string: ui_amount.to_string(),
     };
 
     Ok(SolanaRpcResponseAndContext {
@@ -885,4 +917,10 @@ async fn find_tokens(
         .all(conn)
         .await
         .map_err(|_| DbErr::RecordNotFound("Token (s) Not Found".to_string()))
+}
+
+fn ui_amount(amount: i64, decimals: i32) -> f64 {
+    amount
+        .to_f64()
+        .map_or(0f64, |s| s.div(10u64.pow(decimals as u32) as f64))
 }
