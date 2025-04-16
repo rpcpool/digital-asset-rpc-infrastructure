@@ -160,6 +160,18 @@ impl RpcApiBuilder {
         })?;
         module.register_alias("getTokenSupply", "get_token_supply")?;
 
+        module.register_async_method(
+            "get_token_account_balance",
+            |rpc_params, rpc_context| async move {
+                let payload = rpc_params.parse::<GetTokenAccountBalance>()?;
+                rpc_context
+                    .get_token_account_balance(payload)
+                    .await
+                    .map_err(Into::into)
+            },
+        )?;
+        module.register_alias("getTokenAccountBalance", "get_token_account_balance")?;
+
         Ok(module)
     }
 }
