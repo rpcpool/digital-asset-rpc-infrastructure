@@ -13,7 +13,7 @@ use {
         FetchMetadataJsonError, MetadataJsonTaskError, StatusCode,
     },
     futures::future::BoxFuture,
-    program_transformers::{AccountInfo, ProgramTransformer, TransactionInfo},
+    program_transformers::{AccountInfo, ProgramTransformer, SlotInfo, TransactionInfo},
     redis::{
         aio::MultiplexedConnection,
         streams::{StreamId, StreamKey, StreamMaxlen, StreamReadOptions, StreamReadReply},
@@ -30,6 +30,7 @@ use {
         convert_from::{
             create_message_instructions, create_meta_inner_instructions, create_pubkey_vec,
         },
+        geyser::SubscribeUpdateBlockMeta,
         prelude::{SubscribeUpdateAccount, SubscribeUpdateTransaction},
         prost::Message,
     },
@@ -157,6 +158,16 @@ impl RedisStreamMessage<Self> for DownloadMetadataInfo {
         let info: DownloadMetadataInfo = serde_json::from_slice(metadata_data.as_ref())?;
 
         Ok(info)
+    }
+}
+
+impl RedisStreamMessage<Self> for SlotInfo {
+    fn try_parse_msg(msg: HashMap<String, RedisValue>) -> Result<Self, RedisStreamMessageError> {
+        let block_meta_data = Self::get_data_as_vec(&msg)?;
+
+        let SubscribeUpdateBlockMeta { slot, .. } = Message::decode(block_meta_data.as_ref())?;
+
+        Ok(SlotInfo { slot: slot as i64 })
     }
 }
 
@@ -300,6 +311,37 @@ impl MessageHandler for TransactionHandle {
 impl Clone for TransactionHandle {
     fn clone(&self) -> Self {
         Self(Arc::clone(&self.0))
+    }
+}
+
+pub struct SlotHandle(Arc<ProgramTransformer>);
+
+impl SlotHandle {
+    pub const fn new(program_transformer: Arc<ProgramTransformer>) -> Self {
+        Self(program_transformer)
+    }
+}
+
+impl Clone for SlotHandle {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl MessageHandler for SlotHandle {
+    fn handle(
+        &self,
+        input: HashMap<String, RedisValue>,
+    ) -> BoxFuture<'static, Result<(), IngestMessageError>> {
+        let program_transformer = Arc::clone(&self.0);
+
+        Box::pin(async move {
+            let SlotInfo { slot } = SlotInfo::try_parse_msg(input)?;
+            program_transformer
+                .handle_slot_update(slot)
+                .await
+                .map_err(IngestMessageError::ProgramTransformer)
+        })
     }
 }
 

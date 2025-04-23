@@ -22,10 +22,13 @@ use {
         },
     },
     das_core::{DownloadMetadataInfo, DownloadMetadataNotifier},
-    digital_asset_types::dao::{asset, token_accounts, tokens},
+    digital_asset_types::dao::{asset, slot, token_accounts, tokens},
     sea_orm::{
-        entity::EntityTrait, query::Select, sea_query::Expr, ColumnTrait, ConnectionTrait,
-        DatabaseConnection, DbErr, QueryFilter, SqlxPostgresConnector, TransactionTrait,
+        entity::EntityTrait,
+        query::Select,
+        sea_query::{Expr, OnConflict},
+        ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, QueryFilter, Set,
+        SqlxPostgresConnector, TransactionTrait,
     },
     serde::Deserialize,
     serde_json::{Map, Value},
@@ -64,6 +67,10 @@ pub struct TransactionInfo {
     pub account_keys: Vec<Pubkey>,
     pub message_instructions: Vec<CompiledInstruction>,
     pub meta_inner_instructions: Vec<InnerInstructions>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SlotInfo {
+    pub slot: i64,
 }
 
 pub struct ProgramTransformer {
@@ -257,6 +264,26 @@ impl ProgramTransformer {
                 _ => Err(ProgramTransformerError::NotImplemented),
             }?;
         }
+        Ok(())
+    }
+
+    pub async fn handle_slot_update(&self, slot: i64) -> ProgramTransformerResult<()> {
+        let db = SqlxPostgresConnector::from_sqlx_postgres_pool(self.storage.clone());
+
+        let model = slot::ActiveModel {
+            index: Set(0),
+            slot: Set(slot),
+        };
+        // Insert or update the slot in the database
+        slot::Entity::insert(model)
+            .on_conflict(
+                OnConflict::columns([slot::Column::Index])
+                    .update_columns([slot::Column::Slot])
+                    .to_owned(),
+            )
+            .exec(&db)
+            .await?;
+
         Ok(())
     }
 }
