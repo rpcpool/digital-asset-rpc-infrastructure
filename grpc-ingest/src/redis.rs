@@ -2,10 +2,10 @@ use {
     crate::{
         config::{ConfigIngestStream, REDIS_STREAM_DATA_KEY},
         prom::{
-            ack_tasks_total_dec, ack_tasks_total_inc, download_metadata_json_task_status_count_inc,
-            ingest_job_time_set, ingest_tasks_total_dec, ingest_tasks_total_inc,
-            program_transformer_task_status_inc, redis_xack_inc, redis_xlen_set, redis_xread_inc,
-            ProgramTransformerTaskStatusKind,
+            ack_tasks_total_dec, ack_tasks_total_inc, current_ingester_slot_set,
+            download_metadata_json_task_status_count_inc, ingest_job_time_set,
+            ingest_tasks_total_dec, ingest_tasks_total_inc, program_transformer_task_status_inc,
+            redis_xack_inc, redis_xlen_set, redis_xread_inc, ProgramTransformerTaskStatusKind,
         },
     },
     das_core::{
@@ -337,6 +337,7 @@ impl MessageHandler for SlotHandle {
 
         Box::pin(async move {
             let SlotInfo { slot } = SlotInfo::try_parse_msg(input)?;
+            current_ingester_slot_set(slot);
             program_transformer
                 .handle_slot_update(slot)
                 .await
