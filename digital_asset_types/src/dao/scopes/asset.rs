@@ -24,7 +24,7 @@ use sea_orm::{
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use solana_sdk::pubkey::Pubkey;
-use std::{collections::HashMap, ops::Div};
+use std::{collections::HashMap, ops::Div, vec};
 
 pub fn paginate<T, C>(
     pagination: &Pagination,
@@ -165,9 +165,7 @@ pub async fn get_assets_by_owner(
     limit: u64,
     options: &Options,
 ) -> Result<Vec<FullAsset>, DbErr> {
-    let mut joins = Vec::new();
-
-    if options.show_fungible {
+    let (join, condition) = if options.show_fungible {
         let rel = extensions::token_accounts::Relation::Asset
             .def()
             .rev()
@@ -177,24 +175,27 @@ pub async fn get_assets_by_owner(
                         .eq(Expr::tbl(left, asset::Column::Id)),
                 )
             });
-        joins.push(rel);
-    }
-
-    let cond = if options.show_fungible {
-        Condition::all().add(asset::Column::Supply.gt(0)).add(
-            Condition::any()
-                .add(asset::Column::Owner.eq(owner.clone()))
-                .add(token_accounts::Column::Owner.eq(owner.clone())),
+        (
+            Some(rel),
+            Condition::all().add(asset::Column::Supply.gt(0)).add(
+                Condition::any()
+                    .add(asset::Column::Owner.eq(owner.clone()))
+                    .add(token_accounts::Column::Owner.eq(owner.clone())),
+            ),
         )
     } else {
-        Condition::all()
-            .add(asset::Column::Supply.gt(0))
-            .add(asset::Column::Owner.eq(owner.clone()))
+        (
+            None,
+            Condition::all()
+                .add(asset::Column::Supply.gt(0))
+                .add(asset::Column::Owner.eq(owner.clone())),
+        )
     };
 
+    let joins = join.map(|j| vec![j]).unwrap_or_default();
     get_assets_by_condition(
         conn,
-        cond,
+        condition,
         joins,
         sort_by,
         sort_direction,
