@@ -144,6 +144,10 @@ impl DasApi {
         }
         Ok(page_opt)
     }
+
+    pub const fn db_conn(&self) -> &DatabaseConnection {
+        &self.db_connection
+    }
 }
 
 pub fn not_found(asset_id: &String) -> DbErr {

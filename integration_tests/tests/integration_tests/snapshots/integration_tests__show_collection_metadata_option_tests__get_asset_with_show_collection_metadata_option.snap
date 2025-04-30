@@ -9,13 +9,23 @@ snapshot_kind: text
   "content": {
     "$schema": "https://schema.metaplex.com/nft1.0.json",
     "json_uri": "https://madlads.s3.us-west-2.amazonaws.com/json/1983.json",
-    "files": [],
+    "files": [
+      {
+        "uri": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png",
+        "mime": "image/png"
+      }
+    ],
     "metadata": {
+      "attributes": [],
+      "description": "Fock it.",
       "name": "Mad Lads #1983",
       "symbol": "MAD",
       "token_standard": "ProgrammableNonFungible"
     },
-    "links": {}
+    "links": {
+      "external_url": "https://madlads.com",
+      "image": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png"
+    }
   },
   "authorities": [
     {
@@ -39,7 +49,13 @@ snapshot_kind: text
     {
       "group_key": "collection",
       "group_value": "J1S9H3QjnRtBbbuD4HjPV6RpRhwuk4zKbxsnCHuTgh9w",
-      "collection_metadata": {}
+      "collection_metadata": {
+        "description": "Fock it.",
+        "external_url": "https://madlads.com",
+        "image": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png",
+        "name": "Mad Lads",
+        "symbol": "MAD"
+      }
     }
   ],
   "royalty": {
