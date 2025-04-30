@@ -36,7 +36,7 @@ use {
 use digital_asset_types::rpc::RpcTokenAccountBalance;
 
 pub struct DasApi {
-    db_connection: DatabaseConnection,
+    pub db_connection: DatabaseConnection,
 }
 
 impl DasApi {
@@ -143,10 +143,6 @@ impl DasApi {
                 .map(|x| bs58::decode(x).into_vec().unwrap_or_default());
         }
         Ok(page_opt)
-    }
-
-    pub const fn db_conn(&self) -> &DatabaseConnection {
-        &self.db_connection
     }
 }
 

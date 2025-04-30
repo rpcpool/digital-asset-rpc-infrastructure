@@ -1,7 +1,6 @@
 ---
 source: integration_tests/tests/integration_tests/show_collection_metadata_option_tests.rs
 expression: response
-snapshot_kind: text
 ---
 {
   "interface": "ProgrammableNFT",
@@ -23,8 +22,8 @@ snapshot_kind: text
       "token_standard": "ProgrammableNonFungible"
     },
     "links": {
-      "external_url": "https://madlads.com",
-      "image": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png"
+      "image": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png",
+      "external_url": "https://madlads.com"
     }
   },
   "authorities": [
