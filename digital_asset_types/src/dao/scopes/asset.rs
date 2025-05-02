@@ -771,7 +771,11 @@ pub async fn get_token_accounts_by_owner(
         conditions = conditions.add(token_accounts::Column::TokenProgram.eq(token_program));
     }
 
-    let token_accounts = token_accounts.filter(conditions).all(conn).await?;
+    let token_accounts = token_accounts
+        .filter(conditions)
+        .order_by_desc(token_accounts::Column::Amount)
+        .all(conn)
+        .await?;
 
     let mints = if let Some(mint) = mint_address {
         vec![mint]
@@ -789,11 +793,14 @@ pub async fn get_token_accounts_by_owner(
 
     let mut token_accounts_with_decimals = Vec::new();
 
-    for ta in &token_accounts {
-        let mint_acc_index = mint_accounts.iter().position(|m| m.mint == ta.mint);
+    let mint_decimals_map = mint_accounts
+        .into_iter()
+        .map(|m| (m.mint.clone(), m.decimals))
+        .collect::<HashMap<_, _>>();
 
-        if let Some(mint_acc_index) = mint_acc_index {
-            token_accounts_with_decimals.push((ta.clone(), mint_accounts[mint_acc_index].decimals));
+    for ta in &token_accounts {
+        if let Some(mint_decimals) = mint_decimals_map.get(&ta.mint) {
+            token_accounts_with_decimals.push((ta.clone(), *mint_decimals));
         }
     }
 
