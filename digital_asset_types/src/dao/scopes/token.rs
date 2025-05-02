@@ -3,13 +3,13 @@ use crate::{
     dao::{token_accounts, tokens, Pagination},
     rpc::{
         options::Options, RpcAccountData, RpcAccountDataInner, RpcData, RpcParsedAccount,
-        RpcTokenAccountBalance, RpcTokenInfo, RpcTokenSupply, SolanaRpcContext,
-        SolanaRpcResponseAndContext, UiTokenAmount,
+        RpcTokenAccountBalance, RpcTokenAccountBalanceWithAddress, RpcTokenInfo, RpcTokenSupply,
+        SolanaRpcContext, SolanaRpcResponseAndContext, UiTokenAmount,
     },
 };
 use num_traits::ToPrimitive;
 use sea_orm::{entity::*, query::*, ConnectionTrait, DbErr, Order};
-use std::ops::Div;
+use std::{collections::HashMap, ops::Div};
 
 pub const SPL_TOKEN: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 pub const SPL_TOKEN_2022: &str = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
@@ -61,7 +61,7 @@ pub async fn get_token_accounts(
 pub async fn get_token_largest_accounts(
     conn: &impl ConnectionTrait,
     mint_address: Vec<u8>,
-) -> Result<SolanaRpcResponseAndContext<Vec<RpcTokenAccountBalance>>, DbErr> {
+) -> Result<SolanaRpcResponseAndContext<Vec<RpcTokenAccountBalanceWithAddress>>, DbErr> {
     let mint_acc = tokens::Entity::find()
         .filter(tokens::Column::Mint.eq(mint_address.clone()))
         .one(conn)
@@ -79,7 +79,9 @@ pub async fn get_token_largest_accounts(
         .into_iter()
         .map(|ta| {
             let ui_amount: f64 = (ta.amount as f64).div(10u64.pow(mint_acc.decimals as u32) as f64);
-            RpcTokenAccountBalance {
+
+            RpcTokenAccountBalanceWithAddress {
+                address: bs58::encode(ta.pubkey).into_string(),
                 amount: UiTokenAmount {
                     ui_amount: Some(ui_amount),
                     decimals: mint_acc.decimals as u8,
@@ -146,7 +148,11 @@ pub async fn get_token_accounts_by_owner(
         conditions = conditions.add(token_accounts::Column::TokenProgram.eq(token_program));
     }
 
-    let token_accounts = token_accounts.filter(conditions).all(conn).await?;
+    let token_accounts = token_accounts
+        .filter(conditions)
+        .order_by_desc(token_accounts::Column::Amount)
+        .all(conn)
+        .await?;
 
     let mints = if let Some(mint) = mint_address {
         vec![mint]
@@ -164,11 +170,14 @@ pub async fn get_token_accounts_by_owner(
 
     let mut token_accounts_with_decimals = Vec::new();
 
-    for ta in &token_accounts {
-        let mint_acc_index = mint_accounts.iter().position(|m| m.mint == ta.mint);
+    let mint_decimals_map = mint_accounts
+        .into_iter()
+        .map(|m| (m.mint.clone(), m.decimals))
+        .collect::<HashMap<_, _>>();
 
-        if let Some(mint_acc_index) = mint_acc_index {
-            token_accounts_with_decimals.push((ta.clone(), mint_accounts[mint_acc_index].decimals));
+    for ta in &token_accounts {
+        if let Some(mint_decimals) = mint_decimals_map.get(&ta.mint) {
+            token_accounts_with_decimals.push((ta.clone(), *mint_decimals));
         }
     }
 
