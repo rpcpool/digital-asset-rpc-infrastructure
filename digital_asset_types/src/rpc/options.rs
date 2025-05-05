@@ -15,3 +15,81 @@ pub struct Options {
     #[serde(default)]
     pub show_fungible: bool,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema, Default)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct GetByMethodsOptions {
+    #[serde(default)]
+    pub show_unverified_collections: bool,
+    #[serde(default)]
+    pub show_grand_total: bool,
+    #[serde(default)]
+    pub show_native_balance: bool,
+    #[serde(default)]
+    pub show_collection_metadata: bool,
+    #[serde(default)]
+    pub show_inscription: bool,
+    #[serde(default)]
+    pub show_zero_balance: bool,
+    #[serde(default)]
+    pub show_fungible: bool,
+}
+
+impl From<GetByMethodsOptions> for Options {
+    fn from(options: GetByMethodsOptions) -> Self {
+        Options {
+            show_unverified_collections: options.show_unverified_collections,
+            show_collection_metadata: options.show_collection_metadata,
+            show_zero_balance: options.show_zero_balance,
+            show_inscription: options.show_inscription,
+            show_fungible: options.show_fungible,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, JsonSchema, Default)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SearchAssetsOptions {
+    #[serde(default)]
+    pub show_unverified_collections: bool,
+    #[serde(default)]
+    pub show_grand_total: bool,
+    #[serde(default)]
+    pub show_native_balance: bool,
+    #[serde(default)]
+    pub show_collection_metadata: bool,
+    #[serde(default)]
+    pub show_inscription: bool,
+    #[serde(default)]
+    pub show_zero_balance: bool,
+}
+
+impl From<SearchAssetsOptions> for Options {
+    fn from(options: SearchAssetsOptions) -> Self {
+        Options {
+            show_unverified_collections: options.show_unverified_collections,
+            show_collection_metadata: options.show_collection_metadata,
+            show_zero_balance: options.show_zero_balance,
+            show_inscription: options.show_inscription,
+            show_fungible: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayOptions {
+    pub show_zero_balance: bool,
+}
+
+impl From<DisplayOptions> for Options {
+    fn from(options: DisplayOptions) -> Self {
+        Options {
+            show_unverified_collections: false,
+            show_collection_metadata: false,
+            show_zero_balance: options.show_zero_balance,
+            show_inscription: false,
+            show_fungible: false,
+        }
+    }
+}

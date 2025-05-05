@@ -104,7 +104,7 @@ impl DasApi {
                 return Err(DasApiError::PaginationError);
             }
             if let Some(sort) = &sorting {
-                if sort.sort_by != AssetSortBy::Id {
+                if sort.sort_by != AssetSortBy::Key {
                     return Err(DasApiError::PaginationSortingValidationError);
                 }
             }
@@ -117,7 +117,7 @@ impl DasApi {
                 return Err(DasApiError::PaginationError);
             }
             if let Some(sort) = &sorting {
-                if sort.sort_by != AssetSortBy::Id {
+                if sort.sort_by != AssetSortBy::Key {
                     return Err(DasApiError::PaginationSortingValidationError);
                 }
             }
@@ -128,7 +128,7 @@ impl DasApi {
         page_opt.limit = limit.map(|x| x as u64).unwrap_or(1000);
         if is_cursor_enabled {
             if let Some(sort) = &sorting {
-                if sort.sort_by != AssetSortBy::Id {
+                if sort.sort_by != AssetSortBy::Key {
                     return Err(DasApiError::PaginationSortingValidationError);
                 }
                 page_opt.cursor = Some(self.get_cursor(cursor)?);
@@ -208,7 +208,6 @@ impl ApiContract for DasApi {
     async fn get_asset(self: &DasApi, payload: GetAsset) -> Result<Asset, DasApiError> {
         let GetAsset { id, options } = payload;
         let id_bytes = validate_pubkey(id.clone())?.to_bytes().to_vec();
-        let options = options.unwrap_or_default();
         get_asset(&self.db_connection, id_bytes, &options)
             .await
             .map_err(Into::into)
@@ -232,8 +231,6 @@ impl ApiContract for DasApi {
             .iter()
             .map(|id| validate_pubkey(id.clone()).map(|id| id.to_bytes().to_vec()))
             .collect::<Result<Vec<Vec<u8>>, _>>()?;
-
-        let options = options.unwrap_or_default();
 
         let assets = get_assets(&self.db_connection, id_bytes, batch_size as u64, &options).await?;
 
@@ -260,9 +257,9 @@ impl ApiContract for DasApi {
         let owner_address = validate_pubkey(owner_address.clone())?;
         let owner_address_bytes = owner_address.to_bytes().to_vec();
         let sort_by = sort_by.unwrap_or_default();
-        let options = options.unwrap_or_default();
         let page_options =
             self.validate_pagination(limit, page, &before, &after, &cursor, Some(sort_by))?;
+        let options = options.into();
         get_assets_by_owner(
             &self.db_connection,
             owner_address_bytes,
@@ -293,9 +290,9 @@ impl ApiContract for DasApi {
         let before: Option<String> = before.filter(|before| !before.is_empty());
         let after: Option<String> = after.filter(|after| !after.is_empty());
         let sort_by = sort_by.unwrap_or_default();
-        let options = options.unwrap_or_default();
         let page_options =
             self.validate_pagination(limit, page, &before, &after, &cursor, Some(sort_by))?;
+        let options = options.into();
         get_assets_by_group(
             &self.db_connection,
             group_key,
@@ -325,12 +322,11 @@ impl ApiContract for DasApi {
         } = payload;
         let creator_address = validate_pubkey(creator_address.clone())?;
         let creator_address_bytes = creator_address.to_bytes().to_vec();
-
+        let options = options.into();
         let sort_by = sort_by.unwrap_or_default();
         let page_options =
             self.validate_pagination(limit, page, &before, &after, &cursor, Some(sort_by))?;
         let only_verified = only_verified.unwrap_or_default();
-        let options = options.unwrap_or_default();
         get_assets_by_creator(
             &self.db_connection,
             creator_address_bytes,
@@ -360,10 +356,10 @@ impl ApiContract for DasApi {
         let sort_by = sort_by.unwrap_or_default();
         let authority_address = validate_pubkey(authority_address.clone())?;
         let authority_address_bytes = authority_address.to_bytes().to_vec();
-        let options = options.unwrap_or_default();
 
         let page_options =
             self.validate_pagination(limit, page, &before, &after, &cursor, Some(sort_by))?;
+        let options = options.into();
         get_assets_by_authority(
             &self.db_connection,
             authority_address_bytes,
@@ -461,11 +457,11 @@ impl ApiContract for DasApi {
             name,
             token_type,
         };
-        let options = options.unwrap_or_default();
+
         let sort_by = sort_by.unwrap_or_default();
         let page_options =
             self.validate_pagination(limit, page, &before, &after, &cursor, Some(sort_by))?;
-        // Execute query
+        let options = options.into();
         search_assets(&self.db_connection, saq, sort_by, &page_options, &options)
             .await
             .map_err(Into::into)
@@ -532,8 +528,8 @@ impl ApiContract for DasApi {
         payload: GetTokenAccounts,
     ) -> Result<TokenAccountList, DasApiError> {
         let GetTokenAccounts {
-            owner_address,
-            mint_address,
+            owner,
+            mint,
             limit,
             page,
             before,
@@ -541,9 +537,8 @@ impl ApiContract for DasApi {
             options,
             cursor,
         } = payload;
-        let owner_address = validate_opt_pubkey(&owner_address)?;
-        let mint_address = validate_opt_pubkey(&mint_address)?;
-        let options = options.unwrap_or_default();
+        let owner_address = validate_opt_pubkey(&owner)?;
+        let mint_address = validate_opt_pubkey(&mint)?;
         let page_options = self.validate_pagination(limit, page, &before, &after, &cursor, None)?;
         get_token_accounts(
             &self.db_connection,
@@ -561,7 +556,7 @@ impl ApiContract for DasApi {
         payload: GetNftEditions,
     ) -> Result<NftEditions, DasApiError> {
         let GetNftEditions {
-            mint_address,
+            mint,
             page,
             limit,
             before,
@@ -570,7 +565,7 @@ impl ApiContract for DasApi {
         } = payload;
 
         let page_options = self.validate_pagination(limit, page, &before, &after, &cursor, None)?;
-        let mint_address = validate_pubkey(mint_address.clone())?;
+        let mint_address = validate_pubkey(mint.clone())?;
         let pagination = create_pagination(&page_options)?;
         get_nft_editions(
             &self.db_connection,

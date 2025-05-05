@@ -12,7 +12,7 @@ pub struct AssetSorting {
 impl Default for AssetSorting {
     fn default() -> AssetSorting {
         AssetSorting {
-            sort_by: AssetSortBy::Id,
+            sort_by: AssetSortBy::Key,
             sort_direction: Some(AssetSortDirection::default()),
         }
     }
@@ -20,29 +20,26 @@ impl Default for AssetSorting {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub enum AssetSortBy {
-    #[serde(rename = "id")]
-    Id,
     #[serde(rename = "created")]
     Created,
     #[serde(rename = "updated")]
     Updated,
     #[serde(rename = "recent_action")]
     RecentAction,
+    #[serde(rename = "key")]
+    Key,
     #[serde(rename = "none")]
     None,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, Serialize, Deserialize, JsonSchema)]
-pub enum TokenTypeClass {
-    #[serde(rename = "fungible")]
+pub enum TokenType {
     Fungible,
-    #[serde(rename = "nonFungible")]
     NonFungible,
     #[serde(rename = "regularNFT")]
-    Nft,
+    RegularNFT,
     #[serde(rename = "compressedNFT")]
-    Compressed,
-    #[serde(rename = "all")]
+    CompressedNFT,
     All,
 }
 

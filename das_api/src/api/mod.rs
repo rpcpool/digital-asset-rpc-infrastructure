@@ -1,9 +1,9 @@
 use crate::error::DasApiError;
 use async_trait::async_trait;
 use digital_asset_types::rpc::filter::{
-    AssetSortDirection, CommitmentConfig, SearchConditionType, TokenTypeClass,
+    AssetSortDirection, CommitmentConfig, SearchConditionType, TokenType,
 };
-use digital_asset_types::rpc::options::Options;
+use digital_asset_types::rpc::options::{GetByMethodsOptions, Options, SearchAssetsOptions};
 use digital_asset_types::rpc::response::{
     AssetList, NftEditions, TokenAccountList, TransactionSignatureList,
 };
@@ -14,6 +14,7 @@ use digital_asset_types::rpc::{
 use digital_asset_types::rpc::{RpcTokenAccountBalance, RpcTokenSupply};
 use open_rpc_derive::{document_rpc, rpc};
 use open_rpc_schema::schemars::JsonSchema;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -31,7 +32,7 @@ pub struct GetAssetsByGroup {
     pub before: Option<String>,
     pub after: Option<String>,
     #[serde(default, alias = "displayOptions")]
-    pub options: Option<Options>,
+    pub options: GetByMethodsOptions,
     #[serde(default)]
     pub cursor: Option<String>,
 }
@@ -46,7 +47,7 @@ pub struct GetAssetsByOwner {
     pub before: Option<String>,
     pub after: Option<String>,
     #[serde(default, alias = "displayOptions")]
-    pub options: Option<Options>,
+    pub options: GetByMethodsOptions,
     #[serde(default)]
     pub cursor: Option<String>,
 }
@@ -56,7 +57,7 @@ pub struct GetAssetsByOwner {
 pub struct GetAsset {
     pub id: String,
     #[serde(default, alias = "displayOptions")]
-    pub options: Option<Options>,
+    pub options: Options,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -64,7 +65,7 @@ pub struct GetAsset {
 pub struct GetAssets {
     pub ids: Vec<String>,
     #[serde(default, alias = "displayOptions")]
-    pub options: Option<Options>,
+    pub options: Options,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -90,7 +91,7 @@ pub struct GetAssetsByCreator {
     pub before: Option<String>,
     pub after: Option<String>,
     #[serde(default, alias = "displayOptions")]
-    pub options: Option<Options>,
+    pub options: GetByMethodsOptions,
     #[serde(default)]
     pub cursor: Option<String>,
 }
@@ -125,13 +126,13 @@ pub struct SearchAssets {
     #[serde(default)]
     pub json_uri: Option<String>,
     #[serde(default, alias = "displayOptions")]
-    pub options: Option<Options>,
+    pub options: SearchAssetsOptions,
     #[serde(default)]
     pub cursor: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
-    pub token_type: Option<TokenTypeClass>,
+    pub token_type: Option<TokenType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -144,7 +145,7 @@ pub struct GetAssetsByAuthority {
     pub before: Option<String>,
     pub after: Option<String>,
     #[serde(default, alias = "displayOptions")]
-    pub options: Option<Options>,
+    pub options: GetByMethodsOptions,
     #[serde(default)]
     pub cursor: Option<String>,
 }
@@ -159,7 +160,7 @@ pub struct GetGrouping {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct GetNftEditions {
-    pub mint_address: String,
+    pub mint: String,
     pub page: Option<u32>,
     pub limit: Option<u32>,
     pub before: Option<String>,
@@ -174,6 +175,8 @@ pub struct GetAssetSignatures {
     pub id: Option<String>,
     pub limit: Option<u32>,
     pub page: Option<u32>,
+    // before and after params for this method
+    // represented as sequence numbers
     pub before: Option<String>,
     pub after: Option<String>,
     pub tree: Option<String>,
@@ -187,14 +190,14 @@ pub struct GetAssetSignatures {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct GetTokenAccounts {
-    pub owner_address: Option<String>,
-    pub mint_address: Option<String>,
+    pub owner: Option<String>,
+    pub mint: Option<String>,
     pub limit: Option<u32>,
     pub page: Option<u32>,
     pub before: Option<String>,
     pub after: Option<String>,
     #[serde(default, alias = "displayOptions")]
-    pub options: Option<Options>,
+    pub options: Options,
     #[serde(default)]
     pub cursor: Option<String>,
 }
