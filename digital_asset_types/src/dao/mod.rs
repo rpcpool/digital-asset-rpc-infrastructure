@@ -2,7 +2,7 @@
 mod full_asset;
 mod generated;
 pub mod scopes;
-use crate::rpc::{filter::TokenTypeClass, Interface};
+use crate::rpc::{filter::TokenType, Interface};
 
 use self::sea_orm_active_enums::{
     OwnerType, RoyaltyTargetType, SpecificationAssetClass, SpecificationVersions,
@@ -70,7 +70,7 @@ pub struct SearchAssetsQuery {
     pub burnt: Option<bool>,
     pub json_uri: Option<String>,
     pub name: Option<Vec<u8>>,
-    pub token_type: Option<TokenTypeClass>,
+    pub token_type: Option<TokenType>,
 }
 
 impl SearchAssetsQuery {

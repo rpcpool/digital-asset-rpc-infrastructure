@@ -80,13 +80,13 @@ expression: response
       "mutable": true,
       "burnt": false,
       "token_info": {
+        "balance": 1,
         "supply": 1,
         "decimals": 0,
         "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "associated_token_address": "7DS81LourvNXo5PiWZp6G3vaSHZhY1rxT9VpG8YuFBiq",
         "mint_authority": "AMgreyN1PLncz1gh4RFTpAyP7gscfKKPF3swky7Kpbqo",
-        "freeze_authority": "AMgreyN1PLncz1gh4RFTpAyP7gscfKKPF3swky7Kpbqo",
-        "balance": 1,
-        "associated_token_address": "7DS81LourvNXo5PiWZp6G3vaSHZhY1rxT9VpG8YuFBiq"
+        "freeze_authority": "AMgreyN1PLncz1gh4RFTpAyP7gscfKKPF3swky7Kpbqo"
       }
     }
   ]

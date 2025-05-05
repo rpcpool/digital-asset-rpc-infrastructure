@@ -17,10 +17,10 @@ use crate::rpc::{
     Uses,
 };
 use blockbuster::programs::token_inscriptions::InscriptionData;
+use indexmap::IndexMap;
 use jsonpath_lib::JsonPathError;
 use log::warn;
 use mime_guess::Mime;
-use num_traits::ToPrimitive;
 
 use sea_orm::DbErr;
 use serde_json::Value;
@@ -240,7 +240,7 @@ pub fn v1_content_from_json(asset_data: &extensions::asset::Row) -> Result<Conte
     if let Some(token_standard) = token_standard {
         meta.set_item("token_standard", token_standard.clone());
     }
-    let mut links = HashMap::new();
+    let mut links = IndexMap::new();
     let link_fields = vec!["image", "animation_url", "external_url"];
     for f in link_fields {
         let l = safe_select(selector, format!("$.{}", f).as_str());
@@ -455,7 +455,7 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
     let mpl_core_info = match interface {
         Interface::MplCoreAsset | Interface::MplCoreCollection => Some(MplCoreInfo {
             num_minted: asset.mpl_core_collection_num_minted,
-            current_size: asset.mpl_core_collection_current_size,
+            current_size: asset.mpl_core_collection_current_size.map(|s| s as u32),
             plugins_json_version: asset.mpl_core_plugins_json_version,
         }),
         _ => None,
@@ -472,9 +472,11 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
                     Ok(TokenInscriptionInfo {
                         authority: deserialized_data.authority,
                         root: deserialized_data.root,
-                        content: deserialized_data.content,
+                        content: deserialized_data.content.clone(),
+                        content_type: deserialized_data.content,
                         encoding: deserialized_data.encoding,
-                        inscription_data: deserialized_data.inscription_data,
+                        inscription_data: deserialized_data.inscription_data.clone(),
+                        inscription_data_account: deserialized_data.inscription_data,
                         order: deserialized_data.order,
                         size: deserialized_data.size,
                         validation_hash: deserialized_data.validation_hash,
