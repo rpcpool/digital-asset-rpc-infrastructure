@@ -55,15 +55,15 @@ snapshot_kind: text
         "delegated": false,
         "delegate": null,
         "ownership_model": "token",
-        "owner": ""
+        "owner": "2oerfxddTpK5hWAmCMYB6fr9WvNrjEH54CHCWK8sAq7g"
       },
       "mutable": true,
       "burnt": false,
       "token_info": {
+        "balance": 95000000000,
         "supply": 999913158412306321,
         "decimals": 9,
         "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "balance": 95000000000,
         "associated_token_address": "6BRNfDfdq1nKyU1TQiCEQLWyPtD8EwUH9Kt2ahsbidUx"
       }
     }

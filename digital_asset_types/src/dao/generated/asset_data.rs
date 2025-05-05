@@ -14,7 +14,9 @@ impl EntityName for Entity {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Serialize, Deserialize)]
+#[derive(
+    Default, Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Serialize, Deserialize,
+)]
 pub struct Model {
     pub id: Vec<u8>,
     pub chain_data_mutability: ChainMutability,

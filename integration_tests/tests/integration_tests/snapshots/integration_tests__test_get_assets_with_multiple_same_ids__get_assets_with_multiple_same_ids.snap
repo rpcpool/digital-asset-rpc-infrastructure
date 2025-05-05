@@ -1,6 +1,7 @@
 ---
 source: integration_tests/tests/integration_tests/test_get_assets_with_multiple_same_ids.rs
 expression: response
+snapshot_kind: text
 ---
 [
   {
@@ -76,13 +77,13 @@ expression: response
     "mutable": true,
     "burnt": false,
     "token_info": {
+      "balance": 1,
       "supply": 1,
       "decimals": 0,
       "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "associated_token_address": "6vED2BfbqyAGvrXH2psdDvmgZQxhSLRyhotShBPrHqBr",
       "mint_authority": "TdMA45ZnakQCBt5XUvm7ib2htKuTWdcgGKu1eUGrDyJ",
-      "freeze_authority": "TdMA45ZnakQCBt5XUvm7ib2htKuTWdcgGKu1eUGrDyJ",
-      "balance": 1,
-      "associated_token_address": "6vED2BfbqyAGvrXH2psdDvmgZQxhSLRyhotShBPrHqBr"
+      "freeze_authority": "TdMA45ZnakQCBt5XUvm7ib2htKuTWdcgGKu1eUGrDyJ"
     }
   },
   {
@@ -148,13 +149,13 @@ expression: response
     "mutable": false,
     "burnt": false,
     "token_info": {
+      "balance": 1,
       "supply": 1,
       "decimals": 0,
       "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "associated_token_address": "GCp9i8hnPMyiVEdsA7mgGz4ngaDh6PHQ2utPrvbm13Nu",
       "mint_authority": "FWPk3ooJdPND2E7PGyiDieAJzSimaFfRM4nxP1tpr9TN",
-      "freeze_authority": "FWPk3ooJdPND2E7PGyiDieAJzSimaFfRM4nxP1tpr9TN",
-      "balance": 1,
-      "associated_token_address": "GCp9i8hnPMyiVEdsA7mgGz4ngaDh6PHQ2utPrvbm13Nu"
+      "freeze_authority": "FWPk3ooJdPND2E7PGyiDieAJzSimaFfRM4nxP1tpr9TN"
     }
   }
 ]

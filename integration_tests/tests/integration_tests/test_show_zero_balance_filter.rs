@@ -69,7 +69,7 @@ async fn test_show_zero_balance_filter_being_disabled() {
 
     let request = r#"        
     {
-        "ownerAddress":"2oerfxddTpK5hWAmCMYB6fr9WvNrjEH54CHCWK8sAq7g",
+        "owner":"2oerfxddTpK5hWAmCMYB6fr9WvNrjEH54CHCWK8sAq7g",
         "displayOptions": {
             "showZeroBalance": false
         }
