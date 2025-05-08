@@ -322,6 +322,7 @@ pub async fn get_related_for_assets(
     required_creator: Option<Vec<u8>>,
 ) -> Result<Vec<FullAsset>, DbErr> {
     let asset_ids = assets.iter().map(|a| a.id.clone()).collect::<Vec<_>>();
+
     let asset_data: Vec<asset_data::Model> = asset_data::Entity::find()
         .filter(asset_data::Column::Id.is_in(asset_ids.clone()))
         .all(conn)
@@ -391,8 +392,6 @@ pub async fn get_related_for_assets(
         }
     }
 
-    let mut token_account_condition = Condition::all();
-
     let mut asset_owners: Vec<Vec<u8>> = Vec::new();
 
     for id in asset_ids.iter() {
@@ -403,29 +402,41 @@ pub async fn get_related_for_assets(
         }
     }
 
-    if let Some(query_owner) = owner {
-        token_account_condition =
-            token_account_condition.add(token_accounts::Column::Owner.eq(query_owner));
+    let mints_with_tas = if owner.is_some() || !asset_owners.is_empty() {
+        let mut token_account_owner_condition = Condition::all();
+        if let Some(query_owner) = owner {
+            token_account_owner_condition =
+                token_account_owner_condition.add(token_accounts::Column::Owner.eq(query_owner));
+        } else if !asset_owners.is_empty() {
+            token_account_owner_condition = token_account_owner_condition
+                .add(token_accounts::Column::Owner.is_in(asset_owners));
+        };
+
+        tokens::Entity::find()
+            .find_also_related(token_accounts::Entity)
+            .filter(tokens::Column::Mint.is_in(asset_ids.clone()))
+            .filter(token_account_owner_condition)
+            .filter(token_accounts::Column::Amount.gt(0))
+            .all(conn)
+            .await?
     } else {
-        token_account_condition =
-            token_account_condition.add(token_accounts::Column::Owner.is_in(asset_owners));
+        tokens::Entity::find()
+            .filter(tokens::Column::Mint.is_in(asset_ids.clone()))
+            .filter(tokens::Column::Supply.gt(0))
+            .all(conn)
+            .await?
+            .into_iter()
+            .map(|m| (m, None))
+            .collect()
     };
 
-    let token_accounts = tokens::Entity::find()
-        .find_also_related(token_accounts::Entity)
-        .filter(tokens::Column::Mint.is_in(asset_ids.clone()))
-        .filter(token_account_condition)
-        .filter(token_accounts::Column::Amount.gt(0))
-        .all(conn)
-        .await?;
-
-    for (t, ta) in token_accounts.into_iter() {
-        if let Some(asset) = assets_map.get_mut(&t.mint) {
+    for (m, ta) in mints_with_tas.into_iter() {
+        if let Some(asset) = assets_map.get_mut(&m.mint) {
             if let Some(ta) = ta {
                 asset.asset.owner = Some(ta.owner.clone());
                 asset.token_account = Some(ta);
             }
-            asset.mint = Some(t.clone());
+            asset.mint = Some(m.clone());
         }
     }
 
@@ -552,17 +563,35 @@ pub async fn get_by_id(
         None
     };
 
-    let mint = tokens::Entity::find()
-        .filter(tokens::Column::Mint.eq(asset_id.clone()))
-        .filter(tokens::Column::Supply.gt(0))
-        .one(conn)
-        .await?;
-
     let (asset, data): (asset::Model, asset_data::Model) =
         asset_data.one(conn).await.and_then(|o| match o {
             Some((a, Some(d))) => Ok((a, d)),
             _ => Err(DbErr::RecordNotFound("Asset Not Found".to_string())),
         })?;
+
+    let mint_with_ta = if let Some(owner) = asset.owner.clone() {
+        tokens::Entity::find()
+            .find_also_related(token_accounts::Entity)
+            .filter(tokens::Column::Mint.eq(asset_id.clone()))
+            .filter(tokens::Column::Supply.gt(0))
+            .filter(token_accounts::Column::Owner.eq(owner))
+            .filter(token_accounts::Column::Amount.gt(0))
+            .one(conn)
+            .await?
+    } else {
+        tokens::Entity::find()
+            .filter(tokens::Column::Mint.eq(asset_id.clone()))
+            .filter(tokens::Column::Supply.gt(0))
+            .one(conn)
+            .await?
+            .map(|m| (m, None))
+    };
+
+    let (mint, token_account) = match mint_with_ta {
+        Some((m, Some(ta))) => (Some(m), Some(ta)),
+        Some((m, None)) => (Some(m), None),
+        None => (None, None),
+    };
 
     if asset.supply == Decimal::from(0) {
         return Err(DbErr::Custom("Asset has no supply".to_string()));
@@ -651,7 +680,7 @@ pub async fn get_by_id(
         inscription,
         groups,
         mint,
-        ..Default::default()
+        token_account,
     })
 }
 
