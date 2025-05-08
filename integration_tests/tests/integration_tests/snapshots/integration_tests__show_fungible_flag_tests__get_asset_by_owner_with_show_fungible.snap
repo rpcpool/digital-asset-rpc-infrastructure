@@ -59,12 +59,12 @@ expression: response
       "mutable": true,
       "burnt": false,
       "token_info": {
+        "balance": 84532784,
         "supply": 14621664301193772,
         "decimals": 9,
         "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "mint_authority": "6iQKfEyhr3bZMotVkW6beNZz5CPAkiwvgV2CTje9pVSS",
-        "balance": 84532784,
-        "associated_token_address": "4gbnMK8Yv5ySJ4aFFTR9EFf3nY2GKbDwd9U1zh41inX9"
+        "associated_token_address": "4gbnMK8Yv5ySJ4aFFTR9EFf3nY2GKbDwd9U1zh41inX9",
+        "mint_authority": "6iQKfEyhr3bZMotVkW6beNZz5CPAkiwvgV2CTje9pVSS"
       }
     },
     {
@@ -119,10 +119,10 @@ expression: response
       "mutable": true,
       "burnt": false,
       "token_info": {
+        "balance": 1029793957,
         "supply": 9999987499189378,
         "decimals": 6,
         "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "balance": 1029793957,
         "associated_token_address": "Ah32VqAKNiE68qP35aPwxUbS15AuMo6d37ppyexR1CVe"
       }
     },
@@ -178,12 +178,12 @@ expression: response
       "mutable": true,
       "burnt": false,
       "token_info": {
+        "balance": 1326233303008,
         "supply": 36398767150957003,
         "decimals": 9,
         "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "mint_authority": "2xUUmrWUv8dQsgGR9gEg7vcZU8X7UhxpZbiNDRCfWU9W",
-        "balance": 1326233303008,
-        "associated_token_address": "5CUdD64Zktf2KJyHpaEKMzAVrNwG2saYX4FSsCheuLdA"
+        "associated_token_address": "5CUdD64Zktf2KJyHpaEKMzAVrNwG2saYX4FSsCheuLdA",
+        "mint_authority": "2xUUmrWUv8dQsgGR9gEg7vcZU8X7UhxpZbiNDRCfWU9W"
       }
     },
     {
@@ -259,13 +259,13 @@ expression: response
       "mutable": true,
       "burnt": false,
       "token_info": {
+        "balance": 1,
         "supply": 1,
         "decimals": 0,
         "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "associated_token_address": "FQ3ePUyLt2UvuQCw2nBKG8LGLvXHAZPzpdD6QQAAv9pW",
         "mint_authority": "E5MbS9TUY3P7nmQ1JLuR7bLPBfEW7m36cKJ9kRWZSbuk",
-        "freeze_authority": "E5MbS9TUY3P7nmQ1JLuR7bLPBfEW7m36cKJ9kRWZSbuk",
-        "balance": 1,
-        "associated_token_address": "FQ3ePUyLt2UvuQCw2nBKG8LGLvXHAZPzpdD6QQAAv9pW"
+        "freeze_authority": "E5MbS9TUY3P7nmQ1JLuR7bLPBfEW7m36cKJ9kRWZSbuk"
       }
     },
     {
@@ -324,13 +324,13 @@ expression: response
       "mutable": true,
       "burnt": false,
       "token_info": {
+        "balance": 10385573,
         "supply": 2389929362214841,
         "decimals": 6,
         "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "associated_token_address": "4Av8W98PVbeYcdaw6T3L6STDdL5p3MWrqU7RkB8os4i7",
         "mint_authority": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi",
-        "freeze_authority": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi",
-        "balance": 10385573,
-        "associated_token_address": "4Av8W98PVbeYcdaw6T3L6STDdL5p3MWrqU7RkB8os4i7"
+        "freeze_authority": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi"
       }
     }
   ]

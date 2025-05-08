@@ -137,7 +137,6 @@ async fn test_account_updates() {
         account: Pubkey,
         update: AccountUpdate,
     }
-
     let token_updated = NamedUpdate {
         name: "token".to_string(),
         account: nft_accounts.token,

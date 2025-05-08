@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use crate::dao::token_accounts;
 use crate::dao::FullAsset;
 use crate::dao::PageOptions;
@@ -16,10 +18,10 @@ use crate::rpc::{
     Uses,
 };
 use blockbuster::programs::token_inscriptions::InscriptionData;
+use indexmap::IndexMap;
 use jsonpath_lib::JsonPathError;
 use log::warn;
 use mime_guess::Mime;
-use num_traits::ToPrimitive;
 
 use sea_orm::DbErr;
 use serde_json::Value;
@@ -204,7 +206,7 @@ pub fn v1_content_from_json(asset_data: &asset_data::Model) -> Result<Content, D
     if let Some(token_standard) = token_standard {
         meta.set_item("token_standard", token_standard.clone());
     }
-    let mut links = HashMap::new();
+    let mut links = IndexMap::new();
     let link_fields = vec!["image", "animation_url", "external_url"];
     for f in link_fields {
         let l = safe_select(selector, format!("$.{}", f).as_str());
@@ -411,7 +413,7 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
     let mpl_core_info = match interface {
         Interface::MplCoreAsset | Interface::MplCoreCollection => Some(MplCoreInfo {
             num_minted: asset.mpl_core_collection_num_minted,
-            current_size: asset.mpl_core_collection_current_size,
+            current_size: asset.mpl_core_collection_current_size.map(|s| s as u32),
             plugins_json_version: asset.mpl_core_plugins_json_version,
         }),
         _ => None,
@@ -428,9 +430,11 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
                     Ok(TokenInscriptionInfo {
                         authority: deserialized_data.authority,
                         root: deserialized_data.root,
-                        content: deserialized_data.content,
+                        content: deserialized_data.content.clone(),
+                        content_type: deserialized_data.content,
                         encoding: deserialized_data.encoding,
-                        inscription_data: deserialized_data.inscription_data,
+                        inscription_data: deserialized_data.inscription_data.clone(),
+                        inscription_data_account: deserialized_data.inscription_data,
                         order: deserialized_data.order,
                         size: deserialized_data.size,
                         validation_hash: deserialized_data.validation_hash,
@@ -443,12 +447,12 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
     };
 
     let token_info = mint.map(|m| TokenInfo {
-        supply: m.supply.to_u64(),
-        decimals: Some(m.decimals as u8),
+        supply: m.supply.try_into().ok(),
+        decimals: Some(m.decimals),
         mint_authority: m.mint_authority.map(|s| bs58::encode(s).into_string()),
         freeze_authority: m.freeze_authority.map(|s| bs58::encode(s).into_string()),
         token_program: Some(bs58::encode(m.token_program).into_string()),
-        balance: token_account.as_ref().map(|t| t.amount as u64),
+        balance: token_account.as_ref().map(|t| t.amount),
         associated_token_address: token_account
             .as_ref()
             .map(|t| bs58::encode(&t.pubkey).into_string()),
@@ -499,7 +503,7 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
             locked: false,
         }),
         creators: Some(rpc_creators),
-        ownership: Some(Ownership {
+        ownership: Ownership {
             frozen: asset.frozen,
             non_transferable: asset.non_transferable,
             delegated: asset.delegate.is_some(),
@@ -509,7 +513,7 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
                 .owner
                 .map(|o| bs58::encode(o).into_string())
                 .unwrap_or("".to_string()),
-        }),
+        },
         supply: match interface {
             Interface::V1NFT
             | Interface::LEGACY_NFT

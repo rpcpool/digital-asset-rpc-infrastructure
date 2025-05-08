@@ -13,8 +13,8 @@ const METADATA_JSON: &str = r#"{
   "symbol": "MAD",
   "description": "Fock it.",
   "seller_fee_basis_points": 500,
-  "image": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png",
   "external_url": "https://madlads.com",
+  "image": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png",
   "collection": {
     "name": "Mad Lads",
     "family": "MAD"

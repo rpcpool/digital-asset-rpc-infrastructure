@@ -2,7 +2,7 @@
 mod full_asset;
 mod generated;
 pub mod scopes;
-use crate::rpc::{filter::TokenTypeClass, Interface};
+use crate::rpc::{filter::TokenType, Interface};
 
 use self::sea_orm_active_enums::{
     OwnerType, RoyaltyTargetType, SpecificationAssetClass, SpecificationVersions,
@@ -74,7 +74,7 @@ pub struct SearchAssetsQuery {
     pub burnt: Option<bool>,
     pub json_uri: Option<String>,
     pub name: Option<Vec<u8>>,
-    pub token_type: Option<TokenTypeClass>,
+    pub token_type: Option<TokenType>,
 }
 
 impl SearchAssetsQuery {
@@ -118,8 +118,8 @@ impl SearchAssetsQuery {
             )
             .add_option(self.token_type.as_ref().map(|x| {
                 match x {
-                    TokenTypeClass::Compressed => asset::Column::TreeId.is_not_null(),
-                    TokenTypeClass::Nft | TokenTypeClass::NonFungible => {
+                    TokenType::CompressedNFT => asset::Column::TreeId.is_not_null(),
+                    TokenType::RegularNFT | TokenType::NonFungible => {
                         asset::Column::TreeId.is_null().and(
                             asset::Column::SpecificationAssetClass
                                 .eq(SpecificationAssetClass::Nft)
@@ -141,11 +141,11 @@ impl SearchAssetsQuery {
                                     .eq(SpecificationAssetClass::TransferRestrictedNft)),
                         )
                     }
-                    TokenTypeClass::Fungible => asset::Column::SpecificationAssetClass
+                    TokenType::Fungible => asset::Column::SpecificationAssetClass
                         .eq(SpecificationAssetClass::FungibleAsset)
                         .or(asset::Column::SpecificationAssetClass
                             .eq(SpecificationAssetClass::FungibleToken)),
-                    TokenTypeClass::All => asset::Column::SpecificationAssetClass.is_not_null(),
+                    TokenType::All => asset::Column::SpecificationAssetClass.is_not_null(),
                 }
             }))
             .add_option(
@@ -155,7 +155,7 @@ impl SearchAssetsQuery {
             )
             .add_option(self.owner_address.as_ref().map(|o| {
                 match self.token_type {
-                    Some(TokenTypeClass::Fungible) => {
+                    Some(TokenType::Fungible) => {
                         let rel = extensions::token_accounts::Relation::Asset
                             .def()
                             .rev()
@@ -168,7 +168,7 @@ impl SearchAssetsQuery {
 
                         token_accounts::Column::Owner.eq(o.clone())
                     }
-                    Some(TokenTypeClass::All) => {
+                    Some(TokenType::All) => {
                         asset::Column::Owner
                             .eq(o.clone())
                             .or(asset::Column::Id.in_subquery(
@@ -246,11 +246,11 @@ impl SearchAssetsQuery {
             conditions = conditions.add(asset::Column::OwnerType.eq(o));
         } else {
             match self.token_type {
-                Some(TokenTypeClass::Fungible) => {
+                Some(TokenType::Fungible) => {
                     conditions =
                         conditions.add_option(Some(asset::Column::OwnerType.eq(OwnerType::Token)));
                 }
-                Some(TokenTypeClass::All) => {
+                Some(TokenType::All) => {
                     conditions = conditions.add_option(Some(
                         asset::Column::OwnerType
                             .eq(OwnerType::Token)

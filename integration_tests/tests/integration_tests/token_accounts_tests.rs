@@ -63,7 +63,7 @@ async fn test_get_token_accounts_by_owner() {
 
     let request = r#"        
     {
-        "ownerAddress":"CeviT1DTQLuicEB7yLeFkkAGmam5GnJssbGb7CML4Tgx"
+        "owner":"CeviT1DTQLuicEB7yLeFkkAGmam5GnJssbGb7CML4Tgx"
     }
     "#;
 
