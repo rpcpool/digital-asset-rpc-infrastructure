@@ -5,12 +5,10 @@ use crate::dao::sea_orm_active_enums::{
 use std::collections::BTreeMap;
 
 use crate::dao::sea_orm_active_enums::ChainMutability;
+use indexmap::IndexMap;
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use {
-    serde::{Deserialize, Serialize},
-    std::collections::HashMap,
-};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct AssetProof {
@@ -167,8 +165,8 @@ impl MetadataMap {
     }
 }
 
-// TODO sub schema support
-pub type Links = HashMap<String, serde_json::Value>;
+// Indexmap to preserve insertion order
+pub type Links = IndexMap<String, serde_json::Value>;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Content {
@@ -385,41 +383,55 @@ pub struct MplCoreInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub num_minted: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub current_size: Option<i32>,
+    pub current_size: Option<u32>,
     pub plugins_json_version: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct TokenInscriptionInfo {
-    pub authority: String,
-    pub root: String,
-    pub inscription_data: String,
-    pub content: String,
-    pub encoding: String,
     pub order: u64,
     pub size: u32,
+    #[deprecated(note = "This field is deprecated. Use `content_type` instead.")]
+    pub content: String,
+    pub content_type: String,
+    pub encoding: String,
     pub validation_hash: Option<String>,
+    pub inscription_data_account: String,
+    #[deprecated(note = "This field is deprecated. Use `inscription_data_account` instead.")]
+    pub inscription_data: String,
+    pub authority: String,
+    #[deprecated(note = "This field is deprecated and will be removed in the future soon")]
+    pub root: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct PriceInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price_per_token: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_price: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+}
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct TokenInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub supply: Option<u64>,
+    pub balance: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub decimals: Option<u8>,
+    pub supply: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token_program: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub associated_token_address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mint_authority: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub freeze_authority: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub balance: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub associated_token_address: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Asset {
     pub interface: Interface,
     pub id: String,
@@ -435,8 +447,7 @@ pub struct Asset {
     pub royalty: Option<Royalty>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub creators: Option<Vec<Creator>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ownership: Option<Ownership>,
+    pub ownership: Ownership,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uses: Option<Uses>,
     #[serde(skip_serializing_if = "Option::is_none")]

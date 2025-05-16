@@ -85,13 +85,13 @@ expression: response
       "mutable": true,
       "burnt": false,
       "token_info": {
+        "balance": 1,
         "supply": 1,
         "decimals": 0,
         "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "associated_token_address": "Eft9Evw7Jqd5ZeDhpTXHbpv5ZrZ3tvc1paSXAqHd51cy",
         "mint_authority": "8cYUXv8x9ekF2JUQiiheaf6v9NfNt1ZMWmwHG5gTXkgp",
-        "freeze_authority": "8cYUXv8x9ekF2JUQiiheaf6v9NfNt1ZMWmwHG5gTXkgp",
-        "balance": 1,
-        "associated_token_address": "Eft9Evw7Jqd5ZeDhpTXHbpv5ZrZ3tvc1paSXAqHd51cy"
+        "freeze_authority": "8cYUXv8x9ekF2JUQiiheaf6v9NfNt1ZMWmwHG5gTXkgp"
       }
     }
   ]

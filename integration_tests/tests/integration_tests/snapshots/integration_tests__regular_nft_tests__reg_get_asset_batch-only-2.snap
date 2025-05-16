@@ -76,13 +76,13 @@ expression: response
     "mutable": true,
     "burnt": false,
     "token_info": {
+      "balance": 1,
       "supply": 1,
       "decimals": 0,
       "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "associated_token_address": "13YBWA4DyLJc8QZPAAajNLefise35GZ2pVG2R97n5NYa",
       "mint_authority": "HtNRkAnm459dDAxznkh2jEsHXkKRUfkojToMTnxiwWNk",
-      "freeze_authority": "HtNRkAnm459dDAxznkh2jEsHXkKRUfkojToMTnxiwWNk",
-      "balance": 1,
-      "associated_token_address": "13YBWA4DyLJc8QZPAAajNLefise35GZ2pVG2R97n5NYa"
+      "freeze_authority": "HtNRkAnm459dDAxznkh2jEsHXkKRUfkojToMTnxiwWNk"
     }
   },
   {
@@ -158,13 +158,13 @@ expression: response
     "mutable": true,
     "burnt": false,
     "token_info": {
+      "balance": 1,
       "supply": 1,
       "decimals": 0,
       "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "associated_token_address": "CxYMsK8m52REmAv8mre7TNJx2QLfHnVEdhnt4vht37q4",
       "mint_authority": "6BiYUFJnBuHMuhNot6GvJi8gCNT3yqQqxxgV6rtnSK1c",
-      "freeze_authority": "6BiYUFJnBuHMuhNot6GvJi8gCNT3yqQqxxgV6rtnSK1c",
-      "balance": 1,
-      "associated_token_address": "CxYMsK8m52REmAv8mre7TNJx2QLfHnVEdhnt4vht37q4"
+      "freeze_authority": "6BiYUFJnBuHMuhNot6GvJi8gCNT3yqQqxxgV6rtnSK1c"
     }
   }
 ]

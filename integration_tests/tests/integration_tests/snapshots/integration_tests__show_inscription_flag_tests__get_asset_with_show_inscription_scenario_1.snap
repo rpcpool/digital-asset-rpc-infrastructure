@@ -66,14 +66,16 @@ snapshot_kind: text
   "mutable": true,
   "burnt": false,
   "inscription": {
-    "authority": "11111111111111111111111111111111",
-    "root": "9FkS3kZV4MoGps14tUSp7iVnizGbxcK4bDEhSoF5oYAZ",
-    "inscription_data": "4Q18N6XrfJHgDbRTaHJR328jN9dixCLQAQhDsTsRzg3v",
-    "content": "image/net/riupjyro3lsvkb_listajh0jdsrsjmnyhusxvznycqw",
-    "encoding": "base64",
     "order": 1733,
     "size": 202,
-    "validation_hash": "7fa0041483b92f5a0448067ecef9beca2192b13bfe86fbd53a0024e84fcea652"
+    "content": "image/net/riupjyro3lsvkb_listajh0jdsrsjmnyhusxvznycqw",
+    "content_type": "image/net/riupjyro3lsvkb_listajh0jdsrsjmnyhusxvznycqw",
+    "encoding": "base64",
+    "validation_hash": "7fa0041483b92f5a0448067ecef9beca2192b13bfe86fbd53a0024e84fcea652",
+    "inscription_data_account": "4Q18N6XrfJHgDbRTaHJR328jN9dixCLQAQhDsTsRzg3v",
+    "inscription_data": "4Q18N6XrfJHgDbRTaHJR328jN9dixCLQAQhDsTsRzg3v",
+    "authority": "11111111111111111111111111111111",
+    "root": "9FkS3kZV4MoGps14tUSp7iVnizGbxcK4bDEhSoF5oYAZ"
   },
   "token_info": {
     "supply": 1,

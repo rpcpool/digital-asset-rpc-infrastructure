@@ -1,6 +1,7 @@
 ---
 source: integration_tests/tests/integration_tests/general_scenario_tests.rs
 expression: response
+snapshot_kind: text
 ---
 {
   "interface": "ProgrammableNFT",
