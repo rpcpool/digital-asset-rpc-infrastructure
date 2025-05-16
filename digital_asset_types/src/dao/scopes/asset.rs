@@ -64,7 +64,7 @@ pub async fn get_by_creator<D>(
     conn: &D,
     creator: Vec<u8>,
     only_verified: bool,
-    sort_by: Option<asset::Column>,
+    sort_by: Option<extensions::asset::Column>,
     sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
@@ -179,7 +179,12 @@ where
     stmt = stmt.sort_by(sort_by, &sort_direction).to_owned();
 
     stmt = stmt
-        .page_by(pagination, limit, &sort_direction, asset::Column::Id)
+        .page_by(
+            pagination,
+            limit,
+            &sort_direction,
+            extensions::asset::Column::Id,
+        )
         .to_owned();
 
     let (sql, values) = stmt.build(PostgresQueryBuilder);
@@ -198,7 +203,7 @@ pub async fn get_by_grouping<D>(
     conn: &D,
     group_key: String,
     group_value: String,
-    sort_by: Option<asset::Column>,
+    sort_by: Option<extensions::asset::Column>,
     sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
@@ -317,7 +322,12 @@ where
     stmt = stmt.sort_by(sort_by, &sort_direction).to_owned();
 
     stmt = stmt
-        .page_by(pagination, limit, &sort_direction, asset::Column::Id)
+        .page_by(
+            pagination,
+            limit,
+            &sort_direction,
+            extensions::asset::Column::Id,
+        )
         .to_owned();
 
     let (sql, values) = stmt.build(PostgresQueryBuilder);
@@ -334,7 +344,7 @@ where
 pub async fn get_assets_by_owner<D>(
     conn: &D,
     owner: Vec<u8>,
-    sort_by: Option<asset::Column>,
+    sort_by: Option<extensions::asset::Column>,
     sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
@@ -662,7 +672,12 @@ where
 
     stmt = stmt
         .sort_by(sort_by, &sort_direction)
-        .page_by(pagination, limit, &sort_direction, asset::Column::Id)
+        .page_by(
+            pagination,
+            limit,
+            &sort_direction,
+            extensions::asset::Column::Id,
+        )
         .to_owned();
 
     let (sql, values) = stmt.build(PostgresQueryBuilder);
@@ -679,7 +694,7 @@ where
 pub async fn search_assets<D>(
     conn: &D,
     query: &SearchAssetsQuery,
-    sort_by: Option<asset::Column>,
+    sort_by: Option<extensions::asset::Column>,
     sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
@@ -1138,7 +1153,8 @@ where
     }
 
     if let Some(ju) = query.json_uri.as_ref() {
-        let cond = Condition::all().add(asset_data::Column::MetadataUrl.eq(ju.to_owned()));
+        let cond = Condition::all()
+            .add(Expr::col(extensions::asset::Column::MetadataUrl).eq(ju.to_owned()));
         conditions = conditions.add(cond);
     }
 
@@ -1159,7 +1175,12 @@ where
 
     stmt = stmt
         .sort_by(sort_by, &sort_direction)
-        .page_by(pagination, limit, &sort_direction, asset::Column::Id)
+        .page_by(
+            pagination,
+            limit,
+            &sort_direction,
+            extensions::asset::Column::Id,
+        )
         .to_owned();
 
     let (sql, values) = stmt.build(PostgresQueryBuilder);
@@ -1276,7 +1297,12 @@ where
     stmt = stmt.order_by(asset::Column::Id, Order::Desc).to_owned();
 
     stmt = stmt
-        .page_by(pagination, limit, &Order::Desc, asset::Column::Id)
+        .page_by(
+            pagination,
+            limit,
+            &Order::Desc,
+            extensions::asset::Column::Id,
+        )
         .to_owned();
 
     let (sql, values) = stmt.build(PostgresQueryBuilder);
@@ -1293,7 +1319,7 @@ where
 pub async fn get_by_authority<D>(
     conn: &D,
     authority: Vec<u8>,
-    sort_by: Option<asset::Column>,
+    sort_by: Option<extensions::asset::Column>,
     sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
@@ -1401,7 +1427,12 @@ where
     stmt = stmt.sort_by(sort_by, &sort_direction).to_owned();
 
     stmt = stmt
-        .page_by(pagination, limit, &sort_direction, asset::Column::Id)
+        .page_by(
+            pagination,
+            limit,
+            &sort_direction,
+            extensions::asset::Column::Id,
+        )
         .to_owned();
 
     let (sql, values) = stmt.build(PostgresQueryBuilder);

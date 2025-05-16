@@ -3,7 +3,7 @@ use crate::dao::token_accounts;
 use crate::dao::FullAsset;
 use crate::dao::PageOptions;
 use crate::dao::Pagination;
-use crate::dao::{asset, asset_authority, asset_creators, asset_data, asset_grouping};
+use crate::dao::{asset_authority, asset_creators, asset_data, asset_grouping};
 use crate::rpc::filter::{AssetSortBy, AssetSortDirection, AssetSorting};
 use crate::rpc::options::Options;
 use crate::rpc::response::TokenAccountList;
@@ -116,12 +116,14 @@ pub fn build_transaction_signatures_response(
     }
 }
 
-pub fn create_sorting(sorting: AssetSorting) -> (sea_orm::query::Order, Option<asset::Column>) {
+pub fn create_sorting(
+    sorting: AssetSorting,
+) -> (sea_orm::query::Order, Option<extensions::asset::Column>) {
     let sort_column = match sorting.sort_by {
-        AssetSortBy::Id => Some(asset::Column::Id),
-        AssetSortBy::Created => Some(asset::Column::CreatedAt),
-        AssetSortBy::Updated => Some(asset::Column::SlotUpdated),
-        AssetSortBy::RecentAction => Some(asset::Column::SlotUpdated),
+        AssetSortBy::Id => Some(extensions::asset::Column::Id),
+        AssetSortBy::Created => Some(extensions::asset::Column::CreatedAt),
+        AssetSortBy::Updated => Some(extensions::asset::Column::SlotUpdated),
+        AssetSortBy::RecentAction => Some(extensions::asset::Column::SlotUpdated),
         AssetSortBy::None => None,
     };
     let sort_direction = match sorting.sort_direction.unwrap_or_default() {

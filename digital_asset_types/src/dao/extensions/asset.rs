@@ -424,50 +424,40 @@ impl Row {
 }
 
 pub trait AssetSelectStatementExt {
-    fn sort_by<C>(self, sort_by: Option<C>, sort_direction: &Order) -> Self
-    where
-        C: ColumnTrait;
+    fn sort_by(self, sort_by: Option<Column>, sort_direction: &Order) -> Self;
 
-    fn page_by<C>(
+    fn page_by(
         self,
         pagination: &Pagination,
         limit: u64,
         sort_direction: &Order,
-        column: C,
-    ) -> Self
-    where
-        C: ColumnTrait;
+        column: Column,
+    ) -> Self;
 }
 
 impl AssetSelectStatementExt for SelectStatement {
-    fn sort_by<C>(mut self, sort_by: Option<C>, sort_direction: &Order) -> Self
-    where
-        C: ColumnTrait,
-    {
+    fn sort_by(mut self, sort_by: Option<Column>, sort_direction: &Order) -> Self {
         if let Some(col) = sort_by {
             self.order_by(col, sort_direction.clone()).to_owned()
         } else {
-            self.order_by(asset::Column::Id, Order::Desc).to_owned()
+            self.order_by(Column::Id, Order::Desc).to_owned()
         }
     }
 
-    fn page_by<C>(
+    fn page_by(
         mut self,
         pagination: &Pagination,
         limit: u64,
         sort_direction: &Order,
-        column: C,
-    ) -> Self
-    where
-        C: ColumnTrait,
-    {
+        column: Column,
+    ) -> Self {
         match pagination {
             Pagination::Keyset { before, after } => {
                 if let Some(b) = before {
-                    self = self.and_where(column.lt(b.clone())).to_owned();
+                    self = self.and_where(Expr::col(column).lt(b.clone())).to_owned();
                 }
                 if let Some(a) = after {
-                    self = self.and_where(column.gt(a.clone())).to_owned();
+                    self = self.and_where(Expr::col(column).gt(a.clone())).to_owned();
                 }
             }
             Pagination::Page { page } => {
@@ -478,9 +468,13 @@ impl AssetSelectStatementExt for SelectStatement {
             Pagination::Cursor(cursor) => {
                 if *cursor != Cursor::default() {
                     if sort_direction == &Order::Asc {
-                        self = self.and_where(column.gt(cursor.id.clone())).to_owned();
+                        self = self
+                            .and_where(Expr::col(column).gt(cursor.id.clone()))
+                            .to_owned();
                     } else {
-                        self = self.and_where(column.lt(cursor.id.clone())).to_owned();
+                        self = self
+                            .and_where(Expr::col(column).lt(cursor.id.clone()))
+                            .to_owned();
                     }
                 }
             }
