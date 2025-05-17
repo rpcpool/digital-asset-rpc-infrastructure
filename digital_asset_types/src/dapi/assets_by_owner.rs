@@ -17,7 +17,7 @@ pub async fn get_assets_by_owner(
 ) -> Result<AssetList, DbErr> {
     let pagination = create_pagination(page_options)?;
     let (sort_direction, sort_column) = create_sorting(sort_by);
-    let assets = scopes::asset::get_assets_by_owner(
+    let assets = scopes::asset::get_by_owner(
         db,
         owner_address,
         sort_column,
