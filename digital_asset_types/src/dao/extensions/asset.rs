@@ -453,9 +453,15 @@ pub trait AssetSelectStatementExt {
 
 impl AssetSelectStatementExt for SelectStatement {
     fn sort_by(mut self, col: Column, direction: &Order) -> Self {
-        self.order_by_expr(Expr::tbl(Entity, col).into(), direction.clone())
-            .order_by_expr(Expr::tbl(Entity, Column::Id).into(), Order::Asc)
-            .to_owned()
+        match col {
+            Column::Id => self
+                .order_by_expr(Expr::tbl(Entity, col).into(), direction.clone())
+                .to_owned(),
+            _ => self
+                .order_by_expr(Expr::tbl(Entity, col).into(), direction.clone())
+                .order_by_expr(Expr::tbl(Entity, Column::Id).into(), Order::Desc)
+                .to_owned(),
+        }
     }
 
     fn page_by(

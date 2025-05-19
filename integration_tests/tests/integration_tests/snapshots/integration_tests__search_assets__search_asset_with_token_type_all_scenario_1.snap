@@ -1,5 +1,5 @@
 ---
-source: integration_tests/tests/integration_tests/regular_nft_tests.rs
+source: integration_tests/tests/integration_tests/search_assets.rs
 expression: response
 ---
 {
@@ -9,110 +9,21 @@ expression: response
   "items": [
     {
       "interface": "ProgrammableNFT",
-      "id": "J1S9H3QjnRtBbbuD4HjPV6RpRhwuk4zKbxsnCHuTgh9w",
+      "id": "8t77ShMViat27Sjphvi1FVPaGrhFcttPAkEnLCFp49Bo",
       "content": {
         "$schema": "https://schema.metaplex.com/nft1.0.json",
-        "json_uri": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.json",
-        "files": [
-          {
-            "uri": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png",
-            "mime": "image/png"
-          }
-        ],
+        "json_uri": "https://cdn.hellomoon.io/public/silicons/metadata/1466.json",
+        "files": [],
         "metadata": {
-          "attributes": [],
-          "description": "Fock it.",
-          "name": "Mad Lads",
-          "symbol": "MAD",
+          "name": "SILICON #1466",
+          "symbol": "SILI",
           "token_standard": "ProgrammableNonFungible"
         },
-        "links": {
-          "image": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png",
-          "external_url": "https://madlads.com"
-        }
+        "links": {}
       },
       "authorities": [
         {
-          "address": "2RtGg6fsFiiF1EQzHqbd66AhW7R5bWeQGpTbv2UMkCdW",
-          "scopes": [
-            "full"
-          ]
-        }
-      ],
-      "compression": {
-        "eligible": false,
-        "compressed": false,
-        "data_hash": "",
-        "creator_hash": "",
-        "asset_hash": "",
-        "tree": "",
-        "seq": 0,
-        "leaf_id": 0
-      },
-      "grouping": [],
-      "royalty": {
-        "royalty_model": "creators",
-        "target": null,
-        "percent": 0.05,
-        "basis_points": 500,
-        "primary_sale_happened": false,
-        "locked": false
-      },
-      "creators": [
-        {
-          "address": "2RtGg6fsFiiF1EQzHqbd66AhW7R5bWeQGpTbv2UMkCdW",
-          "share": 100,
-          "verified": true
-        }
-      ],
-      "ownership": {
-        "frozen": false,
-        "delegated": false,
-        "delegate": null,
-        "ownership_model": "single"
-      },
-      "supply": {
-        "print_max_supply": 0,
-        "print_current_supply": 0,
-        "edition_nonce": 253
-      },
-      "mutable": true,
-      "burnt": false,
-      "token_info": {
-        "supply": 1,
-        "decimals": 0,
-        "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "mint_authority": "2G5CotQ6Q87yhZxKUWkwLY6Foi12Q3VFQ6KN4nTLbPSz",
-        "freeze_authority": "2G5CotQ6Q87yhZxKUWkwLY6Foi12Q3VFQ6KN4nTLbPSz"
-      }
-    },
-    {
-      "interface": "ProgrammableNFT",
-      "id": "AH6wj7T8Ke5nbukjtcobjjs1CDWUcQxndtnLkKAdrSrM",
-      "content": {
-        "$schema": "https://schema.metaplex.com/nft1.0.json",
-        "json_uri": "https://madlads.s3.us-west-2.amazonaws.com/json/1983.json",
-        "files": [
-          {
-            "uri": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png",
-            "mime": "image/png"
-          }
-        ],
-        "metadata": {
-          "attributes": [],
-          "description": "Fock it.",
-          "name": "Mad Lads #1983",
-          "symbol": "MAD",
-          "token_standard": "ProgrammableNonFungible"
-        },
-        "links": {
-          "external_url": "https://madlads.com",
-          "image": "https://madlads-collection.s3.us-west-2.amazonaws.com/_collection.png"
-        }
-      },
-      "authorities": [
-        {
-          "address": "2RtGg6fsFiiF1EQzHqbd66AhW7R5bWeQGpTbv2UMkCdW",
+          "address": "A2QW89tFNDkkdvJv671tdknAyA21u6hvS7HTUyeMWnf3",
           "scopes": [
             "full"
           ]
@@ -131,35 +42,117 @@ expression: response
       "grouping": [
         {
           "group_key": "collection",
-          "group_value": "J1S9H3QjnRtBbbuD4HjPV6RpRhwuk4zKbxsnCHuTgh9w"
+          "group_value": "HS1oygRKNBG1nMqjSmaBXSQqQ7apWr14gUU4pW3aDMCP"
         }
       ],
       "royalty": {
         "royalty_model": "creators",
         "target": null,
-        "percent": 0.042,
-        "basis_points": 420,
+        "percent": 0.05,
+        "basis_points": 500,
         "primary_sale_happened": true,
         "locked": false
       },
       "creators": [
         {
-          "address": "5XvhfmRjwXkGp3jHGmaKpqeerNYjkuZZBYLVQYdeVcRv",
+          "address": "8X2e7Lf3wmA9RPHpPH73kmTqqHHyZE9BcED6Y6TWaZCx",
           "share": 0,
           "verified": true
         },
         {
-          "address": "2RtGg6fsFiiF1EQzHqbd66AhW7R5bWeQGpTbv2UMkCdW",
+          "address": "5bTgyaCCRNCem3DZXxdRREyesduc6adqwks8rRWGXx8D",
           "share": 100,
-          "verified": true
+          "verified": false
         }
       ],
       "ownership": {
         "frozen": true,
         "delegated": true,
-        "delegate": "BPB5idZgbA1DG4XEmnKs62AADRZFf3jY7Kr9mpMGyKPi",
+        "delegate": "D98f1ebFe6kfZTcztLo1iPeKAwogbWHAgXzgSpdRDiu7",
         "ownership_model": "single",
-        "owner": "FzVHkut1XLbGz5W56mUJoRwDkRFmyjTB6HCyatEDhDXL"
+        "owner": "2oerfxddTpK5hWAmCMYB6fr9WvNrjEH54CHCWK8sAq7g"
+      },
+      "supply": {
+        "print_max_supply": 0,
+        "print_current_supply": 0,
+        "edition_nonce": 252
+      },
+      "mutable": true,
+      "burnt": false,
+      "token_info": {
+        "supply": 1,
+        "decimals": 0,
+        "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "mint_authority": "9id1ZxjMiKEAzaEEwwPsjYQ9UinEbyr2UXDv5BfFxcKW",
+        "freeze_authority": "9id1ZxjMiKEAzaEEwwPsjYQ9UinEbyr2UXDv5BfFxcKW",
+        "balance": 1,
+        "associated_token_address": "HboN9TsoMSKJAp388G752pSUscb8iZwgdH459KSJxbZT"
+      }
+    },
+    {
+      "interface": "ProgrammableNFT",
+      "id": "42AYryUGNmJMe9ycBXZekkYvdTehgbtECHs7SLu5JJTB",
+      "content": {
+        "$schema": "https://schema.metaplex.com/nft1.0.json",
+        "json_uri": "https://cdn.hellomoon.io/public/silicons/metadata/2835.json",
+        "files": [],
+        "metadata": {
+          "name": "SILICON #2835",
+          "symbol": "SILI",
+          "token_standard": "ProgrammableNonFungible"
+        },
+        "links": {}
+      },
+      "authorities": [
+        {
+          "address": "A2QW89tFNDkkdvJv671tdknAyA21u6hvS7HTUyeMWnf3",
+          "scopes": [
+            "full"
+          ]
+        }
+      ],
+      "compression": {
+        "eligible": false,
+        "compressed": false,
+        "data_hash": "",
+        "creator_hash": "",
+        "asset_hash": "",
+        "tree": "",
+        "seq": 0,
+        "leaf_id": 0
+      },
+      "grouping": [
+        {
+          "group_key": "collection",
+          "group_value": "HS1oygRKNBG1nMqjSmaBXSQqQ7apWr14gUU4pW3aDMCP"
+        }
+      ],
+      "royalty": {
+        "royalty_model": "creators",
+        "target": null,
+        "percent": 0.05,
+        "basis_points": 500,
+        "primary_sale_happened": true,
+        "locked": false
+      },
+      "creators": [
+        {
+          "address": "8X2e7Lf3wmA9RPHpPH73kmTqqHHyZE9BcED6Y6TWaZCx",
+          "share": 0,
+          "verified": true
+        },
+        {
+          "address": "5bTgyaCCRNCem3DZXxdRREyesduc6adqwks8rRWGXx8D",
+          "share": 100,
+          "verified": false
+        }
+      ],
+      "ownership": {
+        "frozen": true,
+        "delegated": true,
+        "delegate": "D98f1ebFe6kfZTcztLo1iPeKAwogbWHAgXzgSpdRDiu7",
+        "ownership_model": "single",
+        "owner": "2oerfxddTpK5hWAmCMYB6fr9WvNrjEH54CHCWK8sAq7g"
       },
       "supply": {
         "print_max_supply": 0,
@@ -172,10 +165,10 @@ expression: response
         "supply": 1,
         "decimals": 0,
         "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "mint_authority": "FAzbjKo66M3tKhkKqegmWFaYr93FB74B1ChEBdFyKcip",
-        "freeze_authority": "FAzbjKo66M3tKhkKqegmWFaYr93FB74B1ChEBdFyKcip",
+        "mint_authority": "EaFuF8KsiimmNVbMhAepSxiifKSBTM9dkjLzN2249Nd6",
+        "freeze_authority": "EaFuF8KsiimmNVbMhAepSxiifKSBTM9dkjLzN2249Nd6",
         "balance": 1,
-        "associated_token_address": "3crBqZZsHhoLphM55MG4KRW6SbNzFEBFnehw7PW7ZRKt"
+        "associated_token_address": "7oSzJpyztTuK124EyPAw2nbF4Vaj2P9MU9vww1QN1k8p"
       }
     }
   ]
