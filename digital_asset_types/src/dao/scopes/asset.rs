@@ -12,9 +12,11 @@ use crate::{
 use indexmap::IndexMap;
 use sea_orm::{
     prelude::Decimal,
-    sea_query::{Alias, Condition, Expr, PostgresQueryBuilder, Query, UnionType},
-    ColumnTrait, ConnectionTrait, DbErr, EntityTrait, FromQueryResult, JoinType, Order,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationDef, RelationTrait, Statement,
+    sea_query::{
+        Condition, ConditionType, Expr, PostgresQueryBuilder, Query, SimpleExpr, UnionType,
+    },
+    ActiveEnum, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, FromQueryResult, JoinType, Order,
+    QueryFilter, QueryOrder, QuerySelect, Statement,
 };
 
 use std::{collections::HashMap, hash::RandomState};
@@ -436,145 +438,1089 @@ where
             .from_as(asset::Entity, extensions::asset::Entity)
             .to_owned();
 
+        extensions::asset::Row::select()
+            .expr_as(
+                Expr::val::<Option<Decimal>>(None),
+                extensions::asset::Column::MintSupply,
+            )
+            .expr_as(
+                Expr::val::<Option<i32>>(None),
+                extensions::asset::Column::MintDecimals,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintTokenProgram,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintAuthority,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintFreezeAuthority,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintCloseAuthority,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintExtensionData,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::TokenAccountPubkey,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::TokenOwner,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::TokenAccountDelegate,
+            )
+            .expr_as(
+                Expr::val::<Option<i64>>(None),
+                extensions::asset::Column::TokenAccountAmount,
+            )
+            .expr_as(
+                Expr::val::<Option<bool>>(None),
+                extensions::asset::Column::TokenAccountFrozen,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::TokenAccountCloseAuthority,
+            )
+            .expr_as(
+                Expr::val::<Option<i64>>(None),
+                extensions::asset::Column::TokenAccountDelegatedAmount,
+            )
+            .from_as(asset::Entity, extensions::asset::Entity)
+            .and_where(
+                Expr::tbl(extensions::asset::Entity, asset::Column::Owner).eq(owner.to_vec()),
+            )
+            .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Supply).gt(0))
+            .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::SupplyMint).is_null())
+            .union(UnionType::All, token_asset_stmt)
+            .to_owned()
+    } else {
+        extensions::asset::Row::select()
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::Supply)),
+                extensions::asset::Column::MintSupply,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::Decimals)),
+                extensions::asset::Column::MintDecimals,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::TokenProgram)),
+                extensions::asset::Column::MintTokenProgram,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::MintAuthority)),
+                extensions::asset::Column::MintAuthority,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::FreezeAuthority)),
+                extensions::asset::Column::MintFreezeAuthority,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::CloseAuthority)),
+                extensions::asset::Column::MintCloseAuthority,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::ExtensionData)),
+                extensions::asset::Column::MintExtensionData,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Pubkey)),
+                extensions::asset::Column::TokenAccountPubkey,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Owner)),
+                extensions::asset::Column::TokenOwner,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Delegate)),
+                extensions::asset::Column::TokenAccountDelegate,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Amount)),
+                extensions::asset::Column::TokenAccountAmount,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Frozen)),
+                extensions::asset::Column::TokenAccountFrozen,
+            )
+            .expr_as(
+                Expr::col((
+                    token_accounts::Entity,
+                    token_accounts::Column::CloseAuthority,
+                )),
+                extensions::asset::Column::TokenAccountCloseAuthority,
+            )
+            .expr_as(
+                Expr::col((
+                    token_accounts::Entity,
+                    token_accounts::Column::DelegatedAmount,
+                )),
+                extensions::asset::Column::TokenAccountDelegatedAmount,
+            )
+            .join(
+                JoinType::LeftJoin,
+                tokens::Entity,
+                Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                    .equals(tokens::Entity, tokens::Column::Mint),
+            )
+            .join(
+                JoinType::LeftJoin,
+                token_accounts::Entity,
+                Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                    .equals(token_accounts::Entity, token_accounts::Column::Mint)
+                    .and(
+                        Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
+                            .equals(token_accounts::Entity, token_accounts::Column::Owner),
+                    )
+                    .and(token_accounts::Column::Amount.gt(0)),
+            )
+            .from_as(asset::Entity, extensions::asset::Entity)
+            .and_where(
+                Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
+                    .eq(Expr::val(OwnerType::Single).as_enum(asset::Column::OwnerType)),
+            )
+            .and_where(
+                Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
+                    .eq(Expr::val(owner.to_vec())),
+            )
+            .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Supply).gt(0))
+            .and_where(
+                Expr::tbl(extensions::asset::Entity, asset::Column::Burnt).eq(Expr::val(false)),
+            )
+            .to_owned()
+    };
+
     let mut stmt = Query::select()
-        .column((asset::Entity, asset::Column::Id))
-        .column((asset::Entity, asset::Column::AltId))
-        .expr(
-            Expr::col((asset::Entity, asset::Column::SpecificationVersion))
-                .as_enum(Alias::new("TEXT")),
-        )
-        .expr(
-            Expr::col((asset::Entity, asset::Column::SpecificationAssetClass))
-                .as_enum(Alias::new("TEXT")),
-        )
-        .column((asset::Entity, asset::Column::Owner))
-        .expr(Expr::col((asset::Entity, asset::Column::OwnerType)).as_enum(Alias::new("TEXT")))
-        .column((asset::Entity, asset::Column::Delegate))
-        .column((asset::Entity, asset::Column::Frozen))
-        .column((asset::Entity, asset::Column::Supply))
-        .column((asset::Entity, asset::Column::SupplyMint))
-        .column((asset::Entity, asset::Column::Compressed))
-        .column((asset::Entity, asset::Column::Compressible))
-        .column((asset::Entity, asset::Column::Seq))
-        .column((asset::Entity, asset::Column::TreeId))
-        .column((asset::Entity, asset::Column::Leaf))
-        .column((asset::Entity, asset::Column::Nonce))
-        .expr(
-            Expr::col((asset::Entity, asset::Column::RoyaltyTargetType))
-                .as_enum(Alias::new("TEXT")),
-        )
-        .column((asset::Entity, asset::Column::RoyaltyTarget))
-        .column((asset::Entity, asset::Column::RoyaltyAmount))
-        .column((asset::Entity, asset::Column::AssetData))
-        .column((asset::Entity, asset::Column::CreatedAt))
-        .column((asset::Entity, asset::Column::Burnt))
-        .column((asset::Entity, asset::Column::SlotUpdated))
-        .column((asset::Entity, asset::Column::SlotUpdatedMetadataAccount))
-        .column((asset::Entity, asset::Column::SlotUpdatedMintAccount))
-        .column((asset::Entity, asset::Column::SlotUpdatedTokenAccount))
-        .column((asset::Entity, asset::Column::SlotUpdatedCnftTransaction))
-        .column((asset::Entity, asset::Column::DataHash))
-        .column((asset::Entity, asset::Column::CreatorHash))
-        .column((asset::Entity, asset::Column::OwnerDelegateSeq))
-        .column((asset::Entity, asset::Column::LeafSeq))
-        .column((asset::Entity, asset::Column::BaseInfoSeq))
-        .column((asset::Entity, asset::Column::MintExtensions))
-        .column((asset::Entity, asset::Column::MplCorePlugins))
-        .column((asset::Entity, asset::Column::MplCoreUnknownPlugins))
-        .column((asset::Entity, asset::Column::MplCoreCollectionNumMinted))
-        .column((asset::Entity, asset::Column::MplCoreCollectionCurrentSize))
-        .column((asset::Entity, asset::Column::MplCorePluginsJsonVersion))
-        .column((asset::Entity, asset::Column::MplCoreExternalPlugins))
-        .column((asset::Entity, asset::Column::MplCoreUnknownExternalPlugins))
-        .column((asset::Entity, asset::Column::CollectionHash))
-        .column((asset::Entity, asset::Column::AssetDataHash))
-        .column((asset::Entity, asset::Column::BubblegumFlags))
-        .column((asset::Entity, asset::Column::NonTransferable))
-        .from(asset::Entity)
-        .and_where(asset::Column::Owner.eq(owner.to_vec()))
-        .and_where(asset::Column::Supply.gt(0))
+        .columns([
+            (extensions::asset::Entity, extensions::asset::Column::Id),
+            (extensions::asset::Entity, extensions::asset::Column::AltId),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::SpecificationVersion,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::SpecificationAssetClass,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::AssetOwner,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::OwnerType,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::AssetDelegate,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::AssetFrozen,
+            ),
+            (extensions::asset::Entity, extensions::asset::Column::Supply),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::SupplyMint,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::Compressed,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::Compressible,
+            ),
+            (extensions::asset::Entity, extensions::asset::Column::Seq),
+            (extensions::asset::Entity, extensions::asset::Column::TreeId),
+            (extensions::asset::Entity, extensions::asset::Column::Leaf),
+            (extensions::asset::Entity, extensions::asset::Column::Nonce),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::RoyaltyTargetType,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::RoyaltyTarget,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::RoyaltyAmount,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::CreatedAt,
+            ),
+            (extensions::asset::Entity, extensions::asset::Column::Burnt),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::SlotUpdated,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::DataHash,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::CreatorHash,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintExtensions,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCorePlugins,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCoreUnknownPlugins,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCoreCollectionNumMinted,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCoreCollectionCurrentSize,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCorePluginsJsonVersion,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCoreExternalPlugins,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCoreUnknownExternalPlugins,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::CollectionHash,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::AssetDataHash,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::BubblegumFlags,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::NonTransferable,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::ChainDataMutability,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::ChainData,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MetadataUrl,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MetadataMutability,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::Metadata,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::RawName,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::RawSymbol,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintSupply,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintDecimals,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintTokenProgram,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintAuthority,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintFreezeAuthority,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintCloseAuthority,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintExtensionData,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenAccountPubkey,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenOwner,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenAccountDelegate,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenAccountAmount,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenAccountFrozen,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenAccountCloseAuthority,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenAccountDelegatedAmount,
+            ),
+        ])
+        .from_subquery(subquery, extensions::asset::Entity)
         .to_owned();
 
-    if options.show_fungible {
-        stmt = stmt.union(UnionType::All, token_owner_query).to_owned()
-    }
-
-    if let Some(col) = sort_by {
-        stmt = stmt
-            .order_by(col, sort_direction.clone())
-            .order_by(asset::Column::Id, sort_direction.clone())
-            .to_owned();
-    }
-
-    match pagination {
-        Pagination::Keyset { before, after } => {
-            if let Some(b) = before {
-                stmt = stmt.and_where(asset::Column::Id.lt(b.clone())).to_owned();
-            }
-            if let Some(a) = after {
-                stmt = stmt.and_where(asset::Column::Id.gt(a.clone())).to_owned();
-            }
-        }
-        Pagination::Page { page } => {
-            if *page > 0 {
-                stmt = stmt.offset((page - 1) * limit).to_owned();
-            }
-        }
-        Pagination::Cursor(cursor) => {
-            if *cursor != Cursor::default() {
-                if sort_direction == sea_orm::Order::Asc {
-                    stmt = stmt
-                        .and_where(asset::Column::Id.gt(cursor.id.clone()))
-                        .to_owned();
-                } else {
-                    stmt = stmt
-                        .and_where(asset::Column::Id.lt(cursor.id.clone()))
-                        .to_owned();
-                }
-            }
-        }
-    }
-    stmt = stmt.limit(limit).to_owned();
+    stmt = stmt
+        .sort_by(sort_by, &sort_direction)
+        .page_by(
+            pagination,
+            limit,
+            &sort_direction,
+            extensions::asset::Column::Id,
+        )
+        .to_owned();
 
     let (sql, values) = stmt.build(PostgresQueryBuilder);
 
     let statment = Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres, &sql, values);
 
-    let assets = asset::Model::find_by_statement(statment).all(conn).await?;
+    let assets = extensions::asset::Row::find_by_statement(statment)
+        .all(conn)
+        .await?;
 
-    get_related_for_assets(conn, assets, Some(owner), options, None).await
+    get_related_for_assets(conn, assets, options, None).await
 }
 
-pub async fn get_assets(
-    conn: &impl ConnectionTrait,
-    asset_ids: Vec<Vec<u8>>,
+pub async fn search_assets<D>(
+    conn: &D,
+    query: &SearchAssetsQuery,
+    sort_by: extensions::asset::Column,
+    sort_direction: Order,
     pagination: &Pagination,
     limit: u64,
     options: &Options,
-) -> Result<Vec<FullAsset>, DbErr> {
-    let cond = Condition::all()
-        .add(asset::Column::Id.is_in(asset_ids))
-        .add(asset::Column::Supply.gt(0));
+) -> Result<Vec<FullAsset>, DbErr>
+where
+    D: ConnectionTrait + Send + Sync,
+{
+    let asset_stmt = if let Some(owner) = &query.owner_address {
+        let token_asset_stmt = extensions::asset::Row::select()
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::Supply)),
+                extensions::asset::Column::MintSupply,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::Decimals)),
+                extensions::asset::Column::MintDecimals,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::TokenProgram)),
+                extensions::asset::Column::MintTokenProgram,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::MintAuthority)),
+                extensions::asset::Column::MintAuthority,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::FreezeAuthority)),
+                extensions::asset::Column::MintFreezeAuthority,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::CloseAuthority)),
+                extensions::asset::Column::MintCloseAuthority,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::ExtensionData)),
+                extensions::asset::Column::MintExtensionData,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Pubkey)),
+                extensions::asset::Column::TokenAccountPubkey,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Owner)),
+                extensions::asset::Column::TokenOwner,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Delegate)),
+                extensions::asset::Column::TokenAccountDelegate,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Amount)),
+                extensions::asset::Column::TokenAccountAmount,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Frozen)),
+                extensions::asset::Column::TokenAccountFrozen,
+            )
+            .expr_as(
+                Expr::col((
+                    token_accounts::Entity,
+                    token_accounts::Column::CloseAuthority,
+                )),
+                extensions::asset::Column::TokenAccountCloseAuthority,
+            )
+            .expr_as(
+                Expr::col((
+                    token_accounts::Entity,
+                    token_accounts::Column::DelegatedAmount,
+                )),
+                extensions::asset::Column::TokenAccountDelegatedAmount,
+            )
+            .from_as(asset::Entity, extensions::asset::Entity)
+            .join(
+                JoinType::LeftJoin,
+                tokens::Entity,
+                Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                    .equals(tokens::Entity, tokens::Column::Mint),
+            )
+            .join(
+                JoinType::InnerJoin,
+                token_accounts::Entity,
+                Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                    .equals(token_accounts::Entity, token_accounts::Column::Mint)
+                    .and(token_accounts::Column::Owner.eq(owner.to_vec()))
+                    .and(token_accounts::Column::Amount.gt(0)),
+            )
+            .to_owned();
 
-    get_assets_by_condition(
-        conn,
-        cond,
-        vec![],
-        None,
-        None,
-        Order::Asc,
-        pagination,
-        limit,
-        options,
-    )
-    .await
+        extensions::asset::Row::select()
+            .expr_as(
+                Expr::val::<Option<Decimal>>(None),
+                extensions::asset::Column::MintSupply,
+            )
+            .expr_as(
+                Expr::val::<Option<i32>>(None),
+                extensions::asset::Column::MintDecimals,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintTokenProgram,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintAuthority,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintFreezeAuthority,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintCloseAuthority,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintExtensionData,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::TokenAccountPubkey,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::TokenOwner,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::TokenAccountDelegate,
+            )
+            .expr_as(
+                Expr::val::<Option<i64>>(None),
+                extensions::asset::Column::TokenAccountAmount,
+            )
+            .expr_as(
+                Expr::val::<Option<bool>>(None),
+                extensions::asset::Column::TokenAccountFrozen,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::TokenAccountCloseAuthority,
+            )
+            .expr_as(
+                Expr::val::<Option<i64>>(None),
+                extensions::asset::Column::TokenAccountDelegatedAmount,
+            )
+            .from_as(asset::Entity, extensions::asset::Entity)
+            .and_where(
+                Expr::tbl(extensions::asset::Entity, asset::Column::Owner).eq(owner.to_vec()),
+            )
+            .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Supply).gt(0))
+            .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::SupplyMint).is_null())
+            .union(UnionType::All, token_asset_stmt)
+            .to_owned()
+    } else {
+        extensions::asset::Row::select()
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::Supply)),
+                extensions::asset::Column::MintSupply,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::Decimals)),
+                extensions::asset::Column::MintDecimals,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::TokenProgram)),
+                extensions::asset::Column::MintTokenProgram,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::MintAuthority)),
+                extensions::asset::Column::MintAuthority,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::FreezeAuthority)),
+                extensions::asset::Column::MintFreezeAuthority,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::CloseAuthority)),
+                extensions::asset::Column::MintCloseAuthority,
+            )
+            .expr_as(
+                Expr::col((tokens::Entity, tokens::Column::ExtensionData)),
+                extensions::asset::Column::MintExtensionData,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Pubkey)),
+                extensions::asset::Column::TokenAccountPubkey,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Owner)),
+                extensions::asset::Column::TokenOwner,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Delegate)),
+                extensions::asset::Column::TokenAccountDelegate,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Amount)),
+                extensions::asset::Column::TokenAccountAmount,
+            )
+            .expr_as(
+                Expr::col((token_accounts::Entity, token_accounts::Column::Frozen)),
+                extensions::asset::Column::TokenAccountFrozen,
+            )
+            .expr_as(
+                Expr::col((
+                    token_accounts::Entity,
+                    token_accounts::Column::CloseAuthority,
+                )),
+                extensions::asset::Column::TokenAccountCloseAuthority,
+            )
+            .expr_as(
+                Expr::col((
+                    token_accounts::Entity,
+                    token_accounts::Column::DelegatedAmount,
+                )),
+                extensions::asset::Column::TokenAccountDelegatedAmount,
+            )
+            .join(
+                JoinType::LeftJoin,
+                tokens::Entity,
+                Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                    .equals(tokens::Entity, tokens::Column::Mint),
+            )
+            .join(
+                JoinType::LeftJoin,
+                token_accounts::Entity,
+                Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                    .equals(token_accounts::Entity, token_accounts::Column::Mint)
+                    .and(
+                        Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
+                            .equals(token_accounts::Entity, token_accounts::Column::Owner),
+                    )
+                    .and(token_accounts::Column::Amount.gt(0)),
+            )
+            .from_as(asset::Entity, extensions::asset::Entity)
+            .to_owned()
+    };
+
+    let mut stmt = Query::select()
+        .columns([
+            (extensions::asset::Entity, extensions::asset::Column::Id),
+            (extensions::asset::Entity, extensions::asset::Column::AltId),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::SpecificationVersion,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::SpecificationAssetClass,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::AssetOwner,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::OwnerType,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::AssetDelegate,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::AssetFrozen,
+            ),
+            (extensions::asset::Entity, extensions::asset::Column::Supply),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::SupplyMint,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::Compressed,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::Compressible,
+            ),
+            (extensions::asset::Entity, extensions::asset::Column::Seq),
+            (extensions::asset::Entity, extensions::asset::Column::TreeId),
+            (extensions::asset::Entity, extensions::asset::Column::Leaf),
+            (extensions::asset::Entity, extensions::asset::Column::Nonce),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::RoyaltyTargetType,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::RoyaltyTarget,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::RoyaltyAmount,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::CreatedAt,
+            ),
+            (extensions::asset::Entity, extensions::asset::Column::Burnt),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::SlotUpdated,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::DataHash,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::CreatorHash,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintExtensions,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCorePlugins,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCoreUnknownPlugins,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCoreCollectionNumMinted,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCoreCollectionCurrentSize,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCorePluginsJsonVersion,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCoreExternalPlugins,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MplCoreUnknownExternalPlugins,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::CollectionHash,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::AssetDataHash,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::BubblegumFlags,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::NonTransferable,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::ChainDataMutability,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::ChainData,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MetadataUrl,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MetadataMutability,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::Metadata,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::RawName,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::RawSymbol,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintSupply,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintDecimals,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintTokenProgram,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintAuthority,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintFreezeAuthority,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintCloseAuthority,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::MintExtensionData,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenAccountPubkey,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenOwner,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenAccountDelegate,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenAccountAmount,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenAccountFrozen,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenAccountCloseAuthority,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::TokenAccountDelegatedAmount,
+            ),
+        ])
+        .from_subquery(asset_stmt, extensions::asset::Entity)
+        .to_owned();
+
+    let mut conditions = match &query.condition_type {
+        None | Some(ConditionType::All) => Condition::all(),
+        Some(ConditionType::Any) => Condition::any(),
+    };
+
+    conditions =
+        conditions
+            .add_option(query.specification_version.as_ref().map(|x| {
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::SpecificationVersion,
+                )
+                .eq(x.to_owned())
+            }))
+            .add_option(query.specification_asset_class.as_ref().map(|x| {
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::SpecificationAssetClass,
+                )
+                .eq(x.to_owned())
+            }))
+            .add_option(query.token_type.as_ref().map(|token_type| {
+                match token_type {
+                    TokenTypeClass::Fungible => Expr::tbl(
+                        extensions::asset::Entity,
+                        extensions::asset::Column::OwnerType,
+                    )
+                    .eq(OwnerType::Token),
+                    TokenTypeClass::NonFungible | TokenTypeClass::Nft => Expr::tbl(
+                        extensions::asset::Entity,
+                        extensions::asset::Column::OwnerType,
+                    )
+                    .eq(OwnerType::Single),
+                    TokenTypeClass::Compressed => {
+                        Expr::tbl(extensions::asset::Entity, extensions::asset::Column::TreeId)
+                            .is_not_null()
+                    }
+                    TokenTypeClass::All => Expr::tbl(
+                        extensions::asset::Entity,
+                        extensions::asset::Column::OwnerType,
+                    )
+                    .is_not_null(),
+                }
+            }))
+            .add_option(query.delegate.to_owned().map(|x| {
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::AssetDelegate,
+                )
+                .eq(x)
+            }))
+            .add_option(query.frozen.map(|x| {
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::AssetFrozen,
+                )
+                .eq(x)
+            }))
+            .add_option(query.supply_mint.to_owned().map(|x| {
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::SupplyMint,
+                )
+                .eq(x)
+            }))
+            .add_option(query.compressed.map(|x| {
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::Compressed,
+                )
+                .eq(x)
+            }))
+            .add_option(query.compressible.map(|x| {
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::Compressible,
+                )
+                .eq(x)
+            }))
+            .add_option(query.royalty_target_type.to_owned().map(|x| {
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::RoyaltyTargetType,
+                )
+                .eq(x)
+            }))
+            .add_option(query.royalty_target.to_owned().map(|x| {
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::RoyaltyTarget,
+                )
+                .eq(x)
+            }))
+            .add_option(query.royalty_amount.map(|x| {
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::RoyaltyAmount,
+                )
+                .eq(x)
+            }))
+            .add_option(query.burnt.map(|x| {
+                Expr::tbl(extensions::asset::Entity, extensions::asset::Column::Burnt).eq(x)
+            }));
+
+    if let Some(s) = query.supply {
+        conditions = conditions
+            .add(Expr::tbl(extensions::asset::Entity, extensions::asset::Column::Supply).eq(s));
+    } else {
+        // By default, we ignore malformed tokens by ignoring tokens with supply=0
+        // unless they are burnt.
+        //
+        // cNFTs keep supply=1 after they are burnt.
+        // Regular NFTs go to supply=0 after they are burnt.
+        conditions = conditions.add(
+            Expr::tbl(extensions::asset::Entity, extensions::asset::Column::Supply)
+                .ne(0)
+                .or(
+                    Expr::tbl(extensions::asset::Entity, extensions::asset::Column::Burnt).eq(true),
+                ),
+        )
+    };
+
+    if let Some(o) = &query.owner_type {
+        conditions = conditions.add(
+            Expr::tbl(
+                extensions::asset::Entity,
+                extensions::asset::Column::OwnerType,
+            )
+            .eq(o.to_owned()),
+        );
+    }
+
+    if let Some(creator) = &query.creator_address {
+        stmt = stmt
+            .join(
+                JoinType::InnerJoin,
+                asset_creators::Entity,
+                Expr::tbl(extensions::asset::Entity, extensions::asset::Column::Id)
+                    .equals(asset_creators::Entity, asset_creators::Column::AssetId)
+                    .and(asset_creators::Column::Creator.eq(creator.to_owned())),
+            )
+            .to_owned();
+    }
+
+    if let Some(verified) = query.creator_verified {
+        stmt = stmt
+            .join(
+                JoinType::InnerJoin,
+                asset_creators::Entity,
+                Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                    .equals(asset_creators::Entity, asset_creators::Column::AssetId)
+                    .and(asset_creators::Column::Verified.eq(verified)),
+            )
+            .to_owned();
+    }
+
+    if let Some(a) = query.authority_address.as_ref() {
+        stmt = stmt
+            .join(
+                JoinType::InnerJoin,
+                asset_authority::Entity,
+                Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                    .equals(asset_authority::Entity, asset_authority::Column::AssetId)
+                    .and(asset_authority::Column::Authority.eq(a.to_owned())),
+            )
+            .to_owned();
+    }
+
+    if let Some((group_key, group_value)) = &query.grouping {
+        stmt = stmt
+            .join(
+                JoinType::InnerJoin,
+                asset_grouping::Entity,
+                Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                    .equals(asset_grouping::Entity, asset_grouping::Column::AssetId)
+                    .and(
+                        asset_grouping::Column::GroupKey
+                            .eq(group_key.to_owned())
+                            .and(asset_grouping::Column::GroupValue.eq(group_value.to_owned())),
+                    ),
+            )
+            .to_owned();
+    }
+
+    if let Some(ju) = query.json_uri.as_ref() {
+        let cond = Condition::all().add(
+            Expr::tbl(
+                extensions::asset::Entity,
+                extensions::asset::Column::MetadataUrl,
+            )
+            .eq(ju.to_owned()),
+        );
+        conditions = conditions.add(cond);
+    }
+
+    if let Some(n) = query.name.as_ref() {
+        let name_as_str = std::str::from_utf8(n).map_err(|_| {
+            DbErr::Custom("Could not convert raw name bytes into string for comparison".to_owned())
+        })?;
+
+        let name_expr = SimpleExpr::Custom(format!(
+            "extension_assets.chain_data->>'name' LIKE '%{}%'",
+            name_as_str
+        ));
+
+        conditions = conditions.add(name_expr);
+    }
+
+    stmt = match query.negate {
+        None | Some(false) => stmt.cond_where(conditions).to_owned(),
+        Some(true) => stmt.cond_where(conditions.not()).to_owned(),
+    };
+
+    stmt = stmt
+        .sort_by(sort_by, &sort_direction)
+        .page_by(
+            pagination,
+            limit,
+            &sort_direction,
+            extensions::asset::Column::Id,
+        )
+        .to_owned();
+
+    let (sql, values) = stmt.build(PostgresQueryBuilder);
+
+    let statment = Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres, &sql, values);
+
+    let assets = extensions::asset::Row::find_by_statement(statment)
+        .all(conn)
+        .await?;
+
+    get_related_for_assets(conn, assets, options, None).await
 }
 
-pub async fn get_by_authority(
-    conn: &impl ConnectionTrait,
-    authority: Vec<u8>,
-    sort_by: Option<asset::Column>,
-    sort_direction: Order,
+pub async fn get_assets<D>(
+    conn: &D,
+    asset_ids: Vec<Vec<u8>>,
     pagination: &Pagination,
     limit: u64,
     options: &Options,

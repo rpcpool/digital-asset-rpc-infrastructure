@@ -332,3 +332,29 @@ async fn test_search_asset_with_token_type_fungible() {
     let response = setup.das_api.search_assets(request).await.unwrap();
     insta::assert_json_snapshot!(name, response);
 }
+
+#[tokio::test]
+#[serial]
+#[named]
+async fn test_search_assets_by_name() {
+    let name = trim_test_name(function_name!());
+    let setup = TestSetup::new(name.clone()).await;
+
+    let seed: SeedEvent = seed_nft("2PfAwPb2hdgsf7xCKyU2kAWUGKnkxYZLfg5SMf4YP1h2");
+
+    apply_migrations_and_delete_data(setup.db.clone()).await;
+    index_seed_events(&setup, vec![&seed]).await;
+
+    let request = r#"        
+    {
+        "name": "Claynosaurz: Call of Saga #1121",
+        "ownerAddress": "C2ch7QUCrYZRkhVVzTXojkdjhdJhaY77i4VQdoPS64HX",
+        "page": 1,
+        "limit": 2
+    }
+    "#;
+
+    let request: api::SearchAssets = serde_json::from_str(request).unwrap();
+    let response = setup.das_api.search_assets(request).await.unwrap();
+    insta::assert_json_snapshot!(name, response);
+}

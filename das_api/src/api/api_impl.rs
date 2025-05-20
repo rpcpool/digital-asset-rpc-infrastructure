@@ -411,8 +411,6 @@ impl ApiContract for DasApi {
             token_type,
         } = payload;
 
-        println!("grouping :{:?}", grouping);
-
         // Deserialize search assets query
         let spec: Option<(SpecificationVersions, SpecificationAssetClass)> =
             interface.clone().map(|x| x.into());
@@ -467,7 +465,6 @@ impl ApiContract for DasApi {
             token_type,
         };
 
-        println!("query:{:?}", saq);
         let options = options.unwrap_or_default();
         let sort_by = sort_by.unwrap_or_default();
         let page_options =
