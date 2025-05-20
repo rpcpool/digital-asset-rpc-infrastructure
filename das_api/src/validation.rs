@@ -1,5 +1,5 @@
 use crate::error::DasApiError;
-use digital_asset_types::dao::scopes::asset::{SPL_TOKEN, SPL_TOKEN_2022};
+use digital_asset_types::dao::scopes::token::{SPL_TOKEN, SPL_TOKEN_2022};
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
 

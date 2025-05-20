@@ -1,42 +1,12 @@
 ---
 source: integration_tests/tests/integration_tests/token_accounts_tests.rs
 expression: response
-snapshot_kind: text
 ---
 {
   "context": {
     "slot": 0
   },
   "value": [
-    {
-      "pubkey": "3Pv9H5UzU8T9BwgutXrcn2wLohS1JUZuk3x8paiRyzui",
-      "account": {
-        "data": {
-          "program": "spl-token",
-          "parsed": {
-            "info": {
-              "isNative": false,
-              "mint": "F3D8Priw3BRecH36BuMubQHrTUn1QxmupLHEmmbZ4LXW",
-              "owner": "CeviT1DTQLuicEB7yLeFkkAGmam5GnJssbGb7CML4Tgx",
-              "state": "initialized",
-              "tokenAmount": {
-                "amount": "10000",
-                "decimals": 2,
-                "uiAmount": 100.0,
-                "uiAmountString": "100"
-              }
-            },
-            "type": "account"
-          },
-          "space": 0
-        },
-        "executable": false,
-        "lamports": 0,
-        "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "rentEpoch": 0,
-        "space": 0
-      }
-    },
     {
       "pubkey": "jKLTJu7nE1zLmC2J2xjVVBm4G7vJcKGCGQX36Jrsba2",
       "account": {
@@ -53,6 +23,35 @@ snapshot_kind: text
                 "decimals": 10,
                 "uiAmount": 86.4999999999,
                 "uiAmountString": "86.4999999999"
+              }
+            },
+            "type": "account"
+          },
+          "space": 0
+        },
+        "executable": false,
+        "lamports": 0,
+        "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "rentEpoch": 0,
+        "space": 0
+      }
+    },
+    {
+      "pubkey": "3Pv9H5UzU8T9BwgutXrcn2wLohS1JUZuk3x8paiRyzui",
+      "account": {
+        "data": {
+          "program": "spl-token",
+          "parsed": {
+            "info": {
+              "isNative": false,
+              "mint": "F3D8Priw3BRecH36BuMubQHrTUn1QxmupLHEmmbZ4LXW",
+              "owner": "CeviT1DTQLuicEB7yLeFkkAGmam5GnJssbGb7CML4Tgx",
+              "state": "initialized",
+              "tokenAmount": {
+                "amount": "10000",
+                "decimals": 2,
+                "uiAmount": 100.0,
+                "uiAmountString": "100"
               }
             },
             "type": "account"

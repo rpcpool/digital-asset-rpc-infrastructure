@@ -567,7 +567,16 @@ pub struct SolanaRpcContext {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, Default)]
 #[serde(default)]
-pub struct SolanaRpcResponseAndContext<T: Default> {
+pub struct SolanaRpcResponse<T: Default> {
     pub context: SolanaRpcContext,
     pub value: T,
+}
+
+impl<T: Default> SolanaRpcResponse<T> {
+    pub const fn new(value: T, slot: u64) -> Self {
+        Self {
+            value,
+            context: SolanaRpcContext { slot },
+        }
+    }
 }

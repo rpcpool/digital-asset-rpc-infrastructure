@@ -1,12 +1,11 @@
 use crate::error::DasApiError;
 use crate::validation::{validate_opt_pubkey, validate_search_with_name};
-use digital_asset_types::dao::scopes::asset::get_token_accounts_by_owner;
 use digital_asset_types::{
     dao::{
         scopes::{
             grouping::get_grouping,
             nft_edition::get_nft_editions,
-            token::{get_token_largest_accounts, get_token_supply},
+            token::{get_token_accounts_by_owner, get_token_largest_accounts, get_token_supply},
         },
         sea_orm_active_enums::{
             OwnerType, RoyaltyTargetType, SpecificationAssetClass, SpecificationVersions,
@@ -21,12 +20,13 @@ use digital_asset_types::{
     rpc::{
         filter::{AssetSortBy, SearchConditionType},
         response::{GetGroupingResponse, TokenAccountList},
-        OwnershipModel, RoyaltyModel, SolanaRpcResponseAndContext,
+        OwnershipModel, RoyaltyModel, SolanaRpcResponse,
     },
 };
 use open_rpc_derive::document_rpc;
 use open_rpc_schema::document::OpenrpcDocument;
 use sea_orm::{sea_query::ConditionType, ConnectionTrait, DbBackend, Statement};
+use sqlx::{Pool, Postgres};
 use {
     crate::api::*,
     crate::config::Config,
@@ -40,7 +40,7 @@ use {
 use digital_asset_types::rpc::RpcTokenAccountBalanceWithAddress;
 
 pub struct DasApi {
-    pub db_connection: DatabaseConnection,
+    pool: Pool<Postgres>,
 }
 
 impl DasApi {
@@ -50,10 +50,11 @@ impl DasApi {
             .connect(&config.database_url)
             .await?;
 
-        let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
-        Ok(DasApi {
-            db_connection: conn,
-        })
+        Ok(DasApi { pool })
+    }
+
+    pub fn get_connection(&self) -> DatabaseConnection {
+        SqlxPostgresConnector::from_sqlx_postgres_pool(self.pool.clone())
     }
 
     fn get_cursor(&self, cursor: &Option<String>) -> Result<Cursor, DasApiError> {
@@ -158,7 +159,7 @@ pub fn not_found(asset_id: &String) -> DbErr {
 #[async_trait]
 impl ApiContract for DasApi {
     async fn check_health(self: &DasApi) -> Result<(), DasApiError> {
-        self.db_connection
+        self.get_connection()
             .execute(Statement::from_string(
                 DbBackend::Postgres,
                 "SELECT 1".to_string(),
@@ -173,7 +174,7 @@ impl ApiContract for DasApi {
     ) -> Result<AssetProof, DasApiError> {
         let id = validate_pubkey(payload.id.clone())?;
         let id_bytes = id.to_bytes().to_vec();
-        get_proof_for_asset(&self.db_connection, id_bytes)
+        get_proof_for_asset(&self.get_connection(), id_bytes)
             .await
             .and_then(|p| {
                 if p.proof.is_empty() {
@@ -200,7 +201,7 @@ impl ApiContract for DasApi {
             .map(|id| validate_pubkey(id.clone()).map(|id| id.to_bytes().to_vec()))
             .collect::<Result<Vec<Vec<u8>>, _>>()?;
 
-        let proofs = get_asset_proofs(&self.db_connection, id_bytes).await?;
+        let proofs = get_asset_proofs(&self.get_connection(), id_bytes).await?;
 
         let result: HashMap<String, Option<AssetProof>> = ids
             .iter()
@@ -213,7 +214,7 @@ impl ApiContract for DasApi {
         let GetAsset { id, options } = payload;
         let id_bytes = validate_pubkey(id.clone())?.to_bytes().to_vec();
         let options = options.unwrap_or_default();
-        get_asset(&self.db_connection, id_bytes, &options)
+        get_asset(&self.get_connection(), id_bytes, &options)
             .await
             .map_err(Into::into)
     }
@@ -239,7 +240,13 @@ impl ApiContract for DasApi {
 
         let options = options.unwrap_or_default();
 
-        let assets = get_assets(&self.db_connection, id_bytes, batch_size as u64, &options).await?;
+        let assets = get_assets(
+            &self.get_connection(),
+            id_bytes,
+            batch_size as u64,
+            &options,
+        )
+        .await?;
 
         let result: Vec<Option<Asset>> = ids.iter().map(|id| assets.get(id).cloned()).collect();
         Ok(result)
@@ -268,7 +275,7 @@ impl ApiContract for DasApi {
         let page_options =
             self.validate_pagination(limit, page, &before, &after, &cursor, Some(sort_by))?;
         get_assets_by_owner(
-            &self.db_connection,
+            &self.get_connection(),
             owner_address_bytes,
             sort_by,
             &page_options,
@@ -301,7 +308,7 @@ impl ApiContract for DasApi {
         let page_options =
             self.validate_pagination(limit, page, &before, &after, &cursor, Some(sort_by))?;
         get_assets_by_group(
-            &self.db_connection,
+            &self.get_connection(),
             group_key,
             group_value,
             sort_by,
@@ -336,7 +343,7 @@ impl ApiContract for DasApi {
         let only_verified = only_verified.unwrap_or_default();
         let options = options.unwrap_or_default();
         get_assets_by_creator(
-            &self.db_connection,
+            &self.get_connection(),
             creator_address_bytes,
             only_verified,
             sort_by,
@@ -369,7 +376,7 @@ impl ApiContract for DasApi {
         let page_options =
             self.validate_pagination(limit, page, &before, &after, &cursor, Some(sort_by))?;
         get_assets_by_authority(
-            &self.db_connection,
+            &self.get_connection(),
             authority_address_bytes,
             sort_by,
             &page_options,
@@ -470,9 +477,15 @@ impl ApiContract for DasApi {
         let page_options =
             self.validate_pagination(limit, page, &before, &after, &cursor, Some(sort_by))?;
         // Execute query
-        search_assets(&self.db_connection, saq, sort_by, &page_options, &options)
-            .await
-            .map_err(Into::into)
+        search_assets(
+            &self.get_connection(),
+            saq,
+            sort_by,
+            &page_options,
+            &options,
+        )
+        .await
+        .map_err(Into::into)
     }
 
     async fn get_asset_signatures(
@@ -504,7 +517,7 @@ impl ApiContract for DasApi {
         let page_options = self.validate_pagination(limit, page, &before, &after, &cursor, None)?;
 
         get_asset_signatures(
-            &self.db_connection,
+            &self.get_connection(),
             id,
             tree,
             leaf_index,
@@ -523,7 +536,12 @@ impl ApiContract for DasApi {
             group_key,
             group_value,
         } = payload;
-        let gs = get_grouping(&self.db_connection, group_key.clone(), group_value.clone()).await?;
+        let gs = get_grouping(
+            &self.get_connection(),
+            group_key.clone(),
+            group_value.clone(),
+        )
+        .await?;
         Ok(GetGroupingResponse {
             group_key,
             group_name: group_value,
@@ -550,7 +568,7 @@ impl ApiContract for DasApi {
         let options = options.unwrap_or_default();
         let page_options = self.validate_pagination(limit, page, &before, &after, &cursor, None)?;
         get_token_accounts(
-            &self.db_connection,
+            &self.get_connection(),
             owner_address,
             mint_address,
             &page_options,
@@ -579,7 +597,7 @@ impl ApiContract for DasApi {
         let pagination = page_options.try_into()?;
 
         get_nft_editions(
-            &self.db_connection,
+            &self.get_connection(),
             mint_address,
             &pagination,
             page_options.limit,
@@ -591,12 +609,11 @@ impl ApiContract for DasApi {
     async fn get_token_largest_accounts(
         self: &DasApi,
         payload: GetTokenLargestAccounts,
-    ) -> Result<SolanaRpcResponseAndContext<Vec<RpcTokenAccountBalanceWithAddress>>, DasApiError>
-    {
+    ) -> Result<SolanaRpcResponse<Vec<RpcTokenAccountBalanceWithAddress>>, DasApiError> {
         let GetTokenLargestAccounts(mint_address, _d) = payload;
         let mint_address = validate_pubkey(mint_address.clone())?;
 
-        get_token_largest_accounts(&self.db_connection, mint_address.to_bytes().to_vec())
+        get_token_largest_accounts(&self.get_connection(), mint_address.to_bytes().to_vec())
             .await
             .map_err(Into::into)
     }
@@ -604,11 +621,11 @@ impl ApiContract for DasApi {
     async fn get_token_supply(
         self: &DasApi,
         payload: GetTokenSupply,
-    ) -> Result<SolanaRpcResponseAndContext<RpcTokenSupply>, DasApiError> {
+    ) -> Result<SolanaRpcResponse<RpcTokenSupply>, DasApiError> {
         let GetTokenSupply(mint_address, _d) = payload;
         let mint_address = validate_pubkey(mint_address.clone())?;
 
-        get_token_supply(&self.db_connection, mint_address.to_bytes().to_vec())
+        get_token_supply(&self.get_connection(), mint_address.to_bytes().to_vec())
             .await
             .map_err(Into::into)
     }
@@ -616,15 +633,16 @@ impl ApiContract for DasApi {
     async fn get_token_accounts_by_owner(
         self: &DasApi,
         payload: GetTokenAccountsByOwner,
-    ) -> Result<SolanaRpcResponseAndContext<Vec<RpcData<RpcTokenInfo>>>, DasApiError> {
+    ) -> Result<SolanaRpcResponse<Vec<RpcData<RpcTokenInfo>>>, DasApiError> {
         let GetTokenAccountsByOwner(owner, params, _config) = payload;
         let owner_address = validate_pubkey(owner.clone())?;
-        let (mint_address, program_id) = GetTokenAccountOptionalParams::validate(&params)?;
+        let ValidatedTokenAccountParams { mint, program_id } =
+            ValidatedTokenAccountParams::try_from(&params)?;
 
         get_token_accounts_by_owner(
-            &self.db_connection,
+            &self.get_connection(),
             owner_address.to_bytes().to_vec(),
-            mint_address,
+            mint,
             program_id,
         )
         .await
