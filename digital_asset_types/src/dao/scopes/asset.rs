@@ -173,7 +173,7 @@ where
         stmt = stmt
             .and_where(
                 Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
-                    .eq(Expr::val(OwnerType::Single).as_enum(asset::Column::OwnerType)),
+                    .eq(OwnerType::Single.as_enum()),
             )
             .to_owned();
     }
@@ -318,7 +318,7 @@ where
         stmt = stmt
             .and_where(
                 Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
-                    .eq(Expr::val(OwnerType::Single).as_enum(asset::Column::OwnerType)),
+                    .eq(OwnerType::Single.as_enum()),
             )
             .to_owned();
     }
@@ -586,12 +586,12 @@ where
             )
             .from_as(asset::Entity, extensions::asset::Entity)
             .and_where(
-                Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
-                    .eq(Expr::val(OwnerType::Single).as_enum(asset::Column::OwnerType)),
-            )
-            .and_where(
                 Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
                     .eq(Expr::val(owner.to_vec())),
+            )
+            .and_where(
+                Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
+                    .eq(OwnerType::Single.as_enum()),
             )
             .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Supply).gt(0))
             .and_where(
@@ -1620,7 +1620,7 @@ where
                     extensions::asset::Entity,
                     extensions::asset::Column::OwnerType,
                 )
-                .eq(Expr::val(OwnerType::Single).as_enum(asset::Column::OwnerType)),
+                .eq(OwnerType::Single.as_enum()),
             )
             .to_owned();
     }
