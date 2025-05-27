@@ -1,6 +1,8 @@
 use crate::error::DasApiError;
 use crate::validation::{validate_opt_pubkey, validate_search_with_name};
-use digital_asset_types::dao::scopes::token::get_token_accounts_by_delegate;
+use digital_asset_types::dao::scopes::token::{
+    get_token_account_balance, get_token_accounts_by_delegate,
+};
 use digital_asset_types::{
     dao::{
         scopes::{
@@ -664,6 +666,21 @@ impl ApiContract for DasApi {
             delegate_address.to_bytes().to_vec(),
             mint,
             program_id,
+        )
+        .await
+        .map_err(Into::into)
+    }
+
+    async fn get_token_account_balance(
+        self: &DasApi,
+        payload: GetTokenAccountBalance,
+    ) -> Result<SolanaRpcResponse<UiTokenAmount>, DasApiError> {
+        let GetTokenAccountBalance(mint_address, _d) = payload;
+        let token_acc_address = validate_pubkey(mint_address.clone())?;
+
+        get_token_account_balance(
+            &self.get_connection(),
+            token_acc_address.to_bytes().to_vec(),
         )
         .await
         .map_err(Into::into)

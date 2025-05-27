@@ -278,6 +278,32 @@ pub async fn get_token_accounts_by_delegate(
     Ok(SolanaRpcResponse::new(value, slot))
 }
 
+pub async fn get_token_account_balance(
+    conn: &impl ConnectionTrait,
+    token_acc_address: Vec<u8>,
+) -> Result<SolanaRpcResponse<UiTokenAmount>, DbErr> {
+    let (ta, decimals) = token_accounts::Entity::find()
+        .find_also_related(tokens::Entity)
+        .filter(token_accounts::Column::Pubkey.eq(token_acc_address))
+        .one(conn)
+        .await?
+        .and_then(|(ta, maybe_mint)| maybe_mint.map(|m| (ta, m.decimals)))
+        .ok_or_else(|| DbErr::RecordNotFound("Token or Mint Account Not Found".to_string()))?;
+
+    let ui_amount = ui_amount(ta.amount, decimals);
+
+    let value = UiTokenAmount {
+        amount: ta.amount.to_string(),
+        decimals: decimals as u8,
+        ui_amount: Some(ui_amount),
+        ui_amount_string: ui_amount.to_string(),
+    };
+
+    let slot = get_latest_slot(conn).await?;
+
+    Ok(SolanaRpcResponse::new(value, slot))
+}
+
 pub fn get_token_program_name(token_program: &Vec<u8>) -> String {
     match bs58::encode(token_program).into_string().as_str() {
         SPL_TOKEN => "spl-token".to_string(),
@@ -295,4 +321,10 @@ pub fn is_native_token(mint: &Vec<u8>) -> bool {
     let mint = bs58::encode(mint).into_string();
 
     mint.eq(WRAPPED_SOL)
+}
+
+fn ui_amount(amount: i64, decimals: i32) -> f64 {
+    amount
+        .to_f64()
+        .map_or(0f64, |s| s.div(10u64.pow(decimals as u32) as f64))
 }
