@@ -492,12 +492,12 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
         let encode_to_string = |data: Vec<u8>| bs58::encode(data).into_string();
 
         TokenInfo {
-            supply: supply.to_u64(),
-            decimals: asset.mint_decimals.map(|d| d as u8),
+            supply: supply.to_i64(),
+            decimals: asset.mint_decimals.map(|d| d),
             mint_authority: asset.mint_authority.map(encode_to_string),
             freeze_authority: asset.mint_freeze_authority.map(encode_to_string),
             token_program: asset.mint_token_program.map(encode_to_string),
-            balance: asset.token_account_amount.map(|a| a as u64),
+            balance: asset.token_account_amount,
             associated_token_address: asset.token_account_pubkey.map(encode_to_string),
         }
     });
