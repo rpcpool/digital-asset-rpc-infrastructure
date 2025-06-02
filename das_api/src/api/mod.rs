@@ -203,6 +203,9 @@ pub struct GetTokenAccounts {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GetSlot(#[serde(default)] pub Option<CommitmentConfig>);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct GetTokenLargestAccounts(pub String, #[serde(default)] pub Option<CommitmentConfig>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -279,6 +282,8 @@ pub struct GetTokenAccountsByOwner(
 #[async_trait]
 pub trait ApiContract: Send + Sync + 'static {
     async fn check_health(&self) -> Result<(), DasApiError>;
+    #[rpc(name = "getSlot", summary = "Get highest slot")]
+    async fn get_slot(&self, payload: Option<GetSlot>) -> Result<u64, DasApiError>;
     #[rpc(
         name = "getAssetProof",
         params = "named",

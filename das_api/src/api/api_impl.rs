@@ -1,5 +1,6 @@
 use crate::error::DasApiError;
 use crate::validation::{validate_opt_pubkey, validate_search_with_name};
+use digital_asset_types::dao::scopes::slot::get_latest_slot;
 use digital_asset_types::{
     dao::{
         scopes::{
@@ -166,6 +167,12 @@ impl ApiContract for DasApi {
             ))
             .await?;
         Ok(())
+    }
+
+    async fn get_slot(self: &DasApi, _payload: Option<GetSlot>) -> Result<u64, DasApiError> {
+        let slot = get_latest_slot(&self.get_connection()).await?;
+
+        Ok(slot)
     }
 
     async fn get_asset_proof(
