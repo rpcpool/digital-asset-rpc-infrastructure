@@ -159,14 +159,14 @@ pub fn not_found(asset_id: &String) -> DbErr {
 #[document_rpc]
 #[async_trait]
 impl ApiContract for DasApi {
-    async fn check_health(self: &DasApi) -> Result<(), DasApiError> {
+    async fn check_health(self: &DasApi) -> Result<String, DasApiError> {
         self.get_connection()
             .execute(Statement::from_string(
                 DbBackend::Postgres,
                 "SELECT 1".to_string(),
             ))
             .await?;
-        Ok(())
+        Ok("ok".to_string())
     }
 
     async fn get_slot(self: &DasApi, _payload: Option<GetSlot>) -> Result<u64, DasApiError> {
