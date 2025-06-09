@@ -223,7 +223,6 @@ pub async fn get_token_accounts_by_delegate(
 
     let value = ta_with_mint_decimals
         .into_iter()
-        .filter(|(ta, _)| ta.delegate.is_some())
         .map(
             |(ta, decimals)| -> Result<RpcData<RpcTokenInfoWithDelegate>, DbErr> {
                 let ui_token_amount: f64 =

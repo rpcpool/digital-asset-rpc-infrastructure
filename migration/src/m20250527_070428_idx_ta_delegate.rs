@@ -14,8 +14,8 @@ impl MigrationTrait for Migration {
         conn.execute(Statement::from_string(
             DatabaseBackend::Postgres,
             r#"
-                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ta_delegate
-                ON token_accounts (delegate);
+               CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ta_delegate
+               ON token_accounts USING hash (delegate);
                 "#
             .to_owned(),
         ))
