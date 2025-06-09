@@ -5,7 +5,7 @@ distributor:
   receivers:
     otlp:
       protocols:
-        http:
+        grpc:
           endpoint: 0.0.0.0:4318
 
 storage:

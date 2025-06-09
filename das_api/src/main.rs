@@ -4,7 +4,9 @@ mod config;
 mod error;
 mod validation;
 
+use crate::config::{DEFAULT_OTLP_COLLECTOR_PORT, DEFAULT_SERVER_PORT};
 use std::{sync::OnceLock, time::Instant};
+
 use {
     crate::api::DasApi,
     crate::builder::RpcApiBuilder,
@@ -28,6 +30,7 @@ use jsonrpsee::{
 };
 use log::{debug, warn};
 use opentelemetry::trace::TracerProvider as _;
+use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
 use tower_http::cors::{Any, CorsLayer};
 
@@ -69,13 +72,23 @@ fn get_resource() -> Resource {
         .clone()
 }
 
-fn init_tracer_with_logger() {
+fn init_tracer_with_logger(config: &Config) {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new("das_api=info,digital_asset_types=info,sqlx::query=warn")
     });
 
     let exporter = opentelemetry_otlp::SpanExporter::builder()
-        .with_http()
+        .with_tonic()
+        .with_endpoint(format!(
+            "{}:{}",
+            config
+                .otlp_collector_host
+                .as_ref()
+                .map_or("http://0.0.0.0", |v| v),
+            config
+                .otlp_collector_port
+                .unwrap_or(DEFAULT_OTLP_COLLECTOR_PORT)
+        ))
         .build()
         .unwrap();
 
@@ -165,10 +178,14 @@ impl Logger for MetricMiddleware {
 
 #[tokio::main]
 async fn main() -> Result<(), DasApiError> {
-    init_tracer_with_logger();
-
     let config = load_config()?;
-    let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));
+
+    init_tracer_with_logger(&config);
+
+    let addr = SocketAddr::from((
+        [0, 0, 0, 0],
+        config.server_port.unwrap_or(DEFAULT_SERVER_PORT),
+    ));
     let cors = CorsLayer::new()
         .allow_methods([Method::POST, Method::GET])
         .allow_origin(Any)
