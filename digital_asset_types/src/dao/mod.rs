@@ -27,6 +27,29 @@ pub struct PageOptions {
     pub cursor: Option<Cursor>,
 }
 
+impl TryFrom<&PageOptions> for Pagination {
+    type Error = DbErr;
+
+    fn try_from(page_options: &PageOptions) -> Result<Self, Self::Error> {
+        if let Some(cursor) = &page_options.cursor {
+            Ok(Pagination::Cursor(cursor.clone()))
+        } else {
+            match (
+                page_options.before.as_ref(),
+                page_options.after.as_ref(),
+                page_options.page,
+            ) {
+                (_, _, None) => Ok(Pagination::Keyset {
+                    before: page_options.before.clone(),
+                    after: page_options.after.clone(),
+                }),
+                (None, None, Some(p)) => Ok(Pagination::Page { page: p }),
+                _ => Err(DbErr::Custom("Invalid Pagination".to_string())),
+            }
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct Cursor {
     pub id: Option<Vec<u8>>,

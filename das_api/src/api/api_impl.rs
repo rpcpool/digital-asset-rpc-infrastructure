@@ -228,7 +228,7 @@ impl ApiContract for DasApi {
     async fn get_asset(self: &DasApi, payload: GetAsset) -> Result<Asset, DasApiError> {
         let GetAsset { id, options } = payload;
         let id_bytes = validate_pubkey(id.clone())?.to_bytes().to_vec();
-        get_asset(&self.db_connection, id_bytes, &options.into())
+        get_asset(&self.get_connection(), id_bytes, &options.into())
             .await
             .map_err(Into::into)
     }
@@ -253,7 +253,7 @@ impl ApiContract for DasApi {
             .collect::<Result<Vec<Vec<u8>>, _>>()?;
 
         let assets = get_assets(
-            &self.db_connection,
+            &self.get_connection(),
             id_bytes,
             batch_size as u64,
             &options.into(),
@@ -485,7 +485,7 @@ impl ApiContract for DasApi {
         let page_options =
             self.validate_pagination(limit, page, &before, &after, &cursor, Some(sort_by))?;
         search_assets(
-            &self.db_connection,
+            &self.get_connection(),
             saq,
             sort_by,
             &page_options,
@@ -600,15 +600,10 @@ impl ApiContract for DasApi {
 
         let page_options = self.validate_pagination(limit, page, &before, &after, &cursor, None)?;
         let mint_address = validate_pubkey(mint.clone())?;
-        let pagination = create_pagination(&page_options)?;
-        get_nft_editions(
-            &self.get_connection(),
-            mint_address,
-            &pagination,
-            page_options.limit,
-        )
-        .await
-        .map_err(Into::into)
+
+        get_nft_editions(&self.get_connection(), mint_address, &page_options)
+            .await
+            .map_err(Into::into)
     }
 
     async fn get_token_largest_accounts(

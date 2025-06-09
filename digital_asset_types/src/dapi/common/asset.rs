@@ -1,7 +1,6 @@
 use crate::dao::extensions;
 use crate::dao::token_accounts;
 use crate::dao::FullAsset;
-use crate::dao::PageOptions;
 use crate::dao::Pagination;
 use crate::dao::{asset_authority, asset_creators, asset_data, asset_grouping};
 use crate::rpc::filter::{AssetSortBy, AssetSortDirection, AssetSorting};
@@ -148,29 +147,6 @@ impl AssetSorting {
             self.sort_by.into(),
             self.sort_direction.unwrap_or_default().into(),
         )
-    }
-}
-
-impl TryFrom<&PageOptions> for Pagination {
-    type Error = DbErr;
-
-    fn try_from(page_options: &PageOptions) -> Result<Self, Self::Error> {
-        if let Some(cursor) = &page_options.cursor {
-            Ok(Pagination::Cursor(cursor.clone()))
-        } else {
-            match (
-                page_options.before.as_ref(),
-                page_options.after.as_ref(),
-                page_options.page,
-            ) {
-                (_, _, None) => Ok(Pagination::Keyset {
-                    before: page_options.before.clone(),
-                    after: page_options.after.clone(),
-                }),
-                (None, None, Some(p)) => Ok(Pagination::Page { page: p }),
-                _ => Err(DbErr::Custom("Invalid Pagination".to_string())),
-            }
-        }
     }
 }
 
@@ -408,6 +384,7 @@ pub fn get_interface(asset: &extensions::asset::Row) -> Result<Interface, DbErr>
 }
 
 //TODO -> impl custom error type
+#[allow(deprecated)]
 pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbErr> {
     let FullAsset {
         asset,
@@ -469,6 +446,7 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
                         serde_json::from_value(d).map_err(|e| {
                             DbErr::Custom(format!("Failed to deserialize inscription data: {}", e))
                         })?;
+
                     Ok(TokenInscriptionInfo {
                         authority: deserialized_data.authority,
                         root: deserialized_data.root,
@@ -492,8 +470,8 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
         let encode_to_string = |data: Vec<u8>| bs58::encode(data).into_string();
 
         TokenInfo {
-            supply: supply.to_i64(),
-            decimals: asset.mint_decimals.map(|d| d),
+            supply: Some(supply.try_into().unwrap_or(0)),
+            decimals: asset.mint_decimals,
             mint_authority: asset.mint_authority.map(encode_to_string),
             freeze_authority: asset.mint_freeze_authority.map(encode_to_string),
             token_program: asset.mint_token_program.map(encode_to_string),

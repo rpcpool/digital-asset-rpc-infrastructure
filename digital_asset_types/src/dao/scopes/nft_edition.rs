@@ -2,7 +2,7 @@ use crate::{
     dao::{
         asset_v1_account_attachments::{self, Column},
         sea_orm_active_enums::V1AccountAttachments,
-        Cursor, Pagination,
+        Cursor, PageOptions, Pagination,
     },
     rpc::response::{NftEdition, NftEditions},
 };
@@ -99,9 +99,10 @@ fn attachment_to_nft_edition(
 pub async fn get_nft_editions(
     conn: &impl ConnectionTrait,
     mint_address: Pubkey,
-    pagination: &Pagination,
-    limit: u64,
+    page_options: &PageOptions,
 ) -> Result<NftEditions, DbErr> {
+    let pagination = page_options.try_into()?;
+
     let master_edition_pubkey = MasterEdition::find_pda(&mint_address).0;
 
     // to fetch nft editions associated with a mint we need to fetch the master edition first
@@ -135,9 +136,12 @@ pub async fn get_nft_editions(
             ))),
     );
 
-    stmt =
-        stmt.sort_by(Column::Id, &Order::Asc)
-            .page_by(pagination, limit, &Order::Asc, Column::Id);
+    stmt = stmt.sort_by(Column::Id, &Order::Asc).page_by(
+        &pagination,
+        page_options.limit,
+        &Order::Asc,
+        Column::Id,
+    );
 
     let nft_editions = stmt
         .all(conn)
@@ -146,7 +150,7 @@ pub async fn get_nft_editions(
         .map(attachment_to_nft_edition)
         .collect::<Result<Vec<NftEdition>, _>>()?;
 
-    let (page, before, after, cursor) = match pagination {
+    let (page, before, after, cursor) = match &pagination {
         Pagination::Keyset { before, after } => {
             let bef = before.clone().and_then(|x| String::from_utf8(x).ok());
             let aft = after.clone().and_then(|x| String::from_utf8(x).ok());
@@ -169,7 +173,7 @@ pub async fn get_nft_editions(
         supply: master_edition_data.supply,
         max_supply: master_edition_data.max_supply,
         editions: nft_editions,
-        limit: limit as u32,
+        limit: page_options.limit as u32,
         page,
         before,
         after,
