@@ -54,6 +54,7 @@ mod m20250422_102715_add_slot_metas_table;
 mod m20250430_065207_idx_asset_grouping_verified_with_not_null_value;
 mod m20250501_110559_add_indexes_to_asset_grouping;
 mod m20250502_111210_add_indexes_to_token_accounts;
+mod m20250526_123057_idx_asset_supply_burnt_owner_type;
 mod m20250527_070428_idx_ta_delegate;
 
 pub mod model;
@@ -119,6 +120,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250501_110559_add_indexes_to_asset_grouping::Migration),
             Box::new(m20250502_111210_add_indexes_to_token_accounts::Migration),
             Box::new(m20250527_070428_idx_ta_delegate::Migration),
+            Box::new(m20250526_123057_idx_asset_supply_burnt_owner_type::Migration),
         ]
     }
 }
