@@ -2,9 +2,10 @@ pub mod api;
 mod builder;
 mod config;
 mod error;
+mod metrics;
 mod validation;
 
-use crate::config::{DEFAULT_OTLP_COLLECTOR_PORT, DEFAULT_SERVER_PORT};
+use crate::{config::DEFAULT_SERVER_PORT, metrics::run_server};
 use std::{sync::OnceLock, time::Instant};
 
 use {
@@ -12,7 +13,6 @@ use {
     crate::builder::RpcApiBuilder,
     crate::config::load_config,
     crate::config::Config,
-    crate::error::DasApiError,
     cadence::{BufferedUdpMetricSink, QueuingMetricSink, StatsdClient},
     cadence_macros::set_global_default,
     std::net::SocketAddr,
@@ -65,6 +65,10 @@ fn setup_metrics(config: &Config) {
     }
 }
 
+fn setup_prometheus_metrics(config: &Config) -> anyhow::Result<()> {
+    run_server(config.get_prom_metrics_collector_endpoint())
+}
+
 fn get_resource() -> Resource {
     static RESOURCE: OnceLock<Resource> = OnceLock::new();
     RESOURCE
@@ -79,16 +83,7 @@ fn init_tracer_with_logger(config: &Config) {
 
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
-        .with_endpoint(format!(
-            "{}:{}",
-            config
-                .otlp_collector_host
-                .as_ref()
-                .map_or("http://0.0.0.0", |v| v),
-            config
-                .otlp_collector_port
-                .unwrap_or(DEFAULT_OTLP_COLLECTOR_PORT)
-        ))
+        .with_endpoint(config.get_otlp_collector_endpoint())
         .build()
         .unwrap();
 
@@ -177,10 +172,12 @@ impl Logger for MetricMiddleware {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), DasApiError> {
+async fn main() -> anyhow::Result<()> {
     let config = load_config()?;
 
     init_tracer_with_logger(&config);
+
+    setup_prometheus_metrics(&config)?;
 
     let addr = SocketAddr::from((
         [0, 0, 0, 0],
