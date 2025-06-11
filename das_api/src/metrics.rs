@@ -17,23 +17,27 @@ use tracing::{error, info};
 lazy_static::lazy_static! {
     static ref REGISTRY: Registry = Registry::new();
 
-    static ref API_CALL_STATUS_COUNT:IntCounterVec = IntCounterVec::new(
-        Opts::new("api_call_status_count", "Total number of API calls, grouped by method and status"),
+    static ref DAS_API_REQUESTS_TOTAL:IntCounterVec = IntCounterVec::new(
+        Opts::new("das_api_requests_total", "Total number of DAS API calls, labelled by method and status"),
         &["method", "status"]
     ).unwrap();
 
-    pub static ref API_LATENCY_IN_MS: HistogramVec = HistogramVec::new(
-        HistogramOpts::new("api_latency_in_milliseconds", "API request latency in milliseconds")
-            .buckets(vec![
-                1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0,
-                1000.0, 2500.0, 5000.0, 10000.0, 30000.0, 60000.0
-            ]),
-        &["method"]
-    ).unwrap();
+    pub static ref DAS_API_REQUEST_DURATION_SECONDS: HistogramVec = HistogramVec::new(
+        HistogramOpts::new(
+            "das_api_request_duration_seconds",
+            "API request latency in seconds, labeled by method."
+        )
+        .buckets(vec![
+            0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500,
+            1.000, 2.500, 5.000, 10.000, 30.000, 60.000
+        ]),
+        &["method"],
+    )
+    .unwrap();
 
-    pub static ref API_ERRORS: IntCounterVec = IntCounterVec::new(
-        Opts::new("api_errors_total", "Number of API errors grouped by method and status code"),
-        &["method", "code"]
+    pub static ref DAS_API_ERRORS_TOTAL: IntCounterVec = IntCounterVec::new(
+        Opts::new("das_api_errors_total", "Number of API errors labelled by method and error code"),
+        &["method", "err_code"]
     ).unwrap();
 }
 
@@ -48,8 +52,9 @@ pub fn run_server(address: SocketAddr) -> anyhow::Result<()> {
                     .expect("collector can't be registered");
             };
         }
-        register!(API_CALL_STATUS_COUNT);
-        register!(API_LATENCY_IN_MS);
+        register!(DAS_API_REQUESTS_TOTAL);
+        register!(DAS_API_REQUEST_DURATION_SECONDS);
+        register!(DAS_API_ERRORS_TOTAL);
     });
 
     let make_service = make_service_fn(move |_: &AddrStream| async move {
@@ -94,7 +99,7 @@ fn not_found_handler() -> Response<Body> {
         .unwrap()
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[repr(u8)]
 pub enum DasApiMethod {
     CheckHealth,
@@ -118,7 +123,7 @@ pub enum DasApiMethod {
 }
 
 impl DasApiMethod {
-    fn as_str(&self) -> &str {
+    pub const fn as_str(&self) -> &str {
         match self {
             DasApiMethod::CheckHealth => "checkHealth",
             DasApiMethod::GetSlot => "getSlot",
@@ -142,16 +147,22 @@ impl DasApiMethod {
     }
 }
 
-pub fn inc_api_status_count(method: &DasApiMethod, status: &str) {
-    API_CALL_STATUS_COUNT
+pub fn inc_das_api_status_total(method: &DasApiMethod, status: &str) {
+    DAS_API_REQUESTS_TOTAL
         .with_label_values(&[method.as_str(), status])
         .inc();
 }
 
-pub fn record_api_latency(method: &DasApiMethod, time_elapsed_ms: f64) {
-    API_LATENCY_IN_MS
+pub fn record_das_api_latency(method: &DasApiMethod, time_elapsed: f64) {
+    DAS_API_REQUEST_DURATION_SECONDS
         .with_label_values(&[method.as_str()])
-        .observe(time_elapsed_ms);
+        .observe(time_elapsed);
+}
+
+pub fn inc_das_api_errors_total(method: &DasApiMethod, err: &DasApiError) {
+    DAS_API_ERRORS_TOTAL
+        .with_label_values(&[method.as_str(), err.to_error_code()])
+        .inc();
 }
 
 pub trait MetricsRecorderExt: Sized {
@@ -163,7 +174,7 @@ pub struct MetricsRecorder<Fut> {
     method: DasApiMethod,
     #[pin]
     future: Fut,
-    start: Option<Instant>,
+    start: Instant,
 }
 
 impl<Fut, T> MetricsRecorderExt for Fut
@@ -174,7 +185,7 @@ where
         MetricsRecorder {
             method,
             future: self,
-            start: None,
+            start: Instant::now(),
         }
     }
 }
@@ -186,24 +197,19 @@ where
     type Output = Result<T, DasApiError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let method = self.method;
+        let method = self.method.clone();
         let this = self.project();
-
-        if this.start.is_none() {
-            *this.start = Some(Instant::now());
-        }
 
         match this.future.poll(cx) {
             Poll::Ready(result) => {
-                let elapsed_ms = this.start.unwrap().elapsed().as_secs_f64() * 1000.0;
-                println!("secs :{}", elapsed_ms / 1000.0);
-                record_api_latency(&method, elapsed_ms);
+                let elapsed = this.start.elapsed().as_secs_f64();
+                record_das_api_latency(&method, elapsed);
 
                 match &result {
-                    Ok(_) => inc_api_status_count(&method, "success"),
-                    Err(_err) => {
-                        //TODO: handle error codes
-                        inc_api_status_count(&method, "error")
+                    Ok(_) => inc_das_api_status_total(&method, "success"),
+                    Err(err) => {
+                        inc_das_api_status_total(&method, "error");
+                        inc_das_api_errors_total(&method, err);
                     }
                 };
                 Poll::Ready(result)
