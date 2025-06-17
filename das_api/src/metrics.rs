@@ -34,11 +34,6 @@ lazy_static::lazy_static! {
         &["method"],
     )
     .unwrap();
-
-    pub static ref DAS_API_ERRORS_TOTAL: IntCounterVec = IntCounterVec::new(
-        Opts::new("das_api_errors_total", "Number of API errors labelled by method and error code"),
-        &["method", "err_code"]
-    ).unwrap();
 }
 
 pub fn run_server(address: SocketAddr) -> anyhow::Result<()> {
@@ -54,7 +49,6 @@ pub fn run_server(address: SocketAddr) -> anyhow::Result<()> {
         }
         register!(DAS_API_REQUESTS_TOTAL);
         register!(DAS_API_REQUEST_DURATION_SECONDS);
-        register!(DAS_API_ERRORS_TOTAL);
     });
 
     let make_service = make_service_fn(move |_: &AddrStream| async move {
@@ -147,9 +141,23 @@ impl DasApiMethod {
     }
 }
 
-pub fn inc_das_api_status_total(method: &DasApiMethod, status: &str) {
+pub enum ApiRequestStatus<'a> {
+    Ok,
+    Error(&'a DasApiError),
+}
+
+impl<'a> ApiRequestStatus<'a> {
+    pub const fn as_str(&self) -> &str {
+        match self {
+            ApiRequestStatus::Ok => "OK",
+            ApiRequestStatus::Error(e) => e.to_error_code(),
+        }
+    }
+}
+
+pub fn inc_das_api_status_total(method: &DasApiMethod, status: ApiRequestStatus) {
     DAS_API_REQUESTS_TOTAL
-        .with_label_values(&[method.as_str(), status])
+        .with_label_values(&[method.as_str(), status.as_str()])
         .inc();
 }
 
@@ -157,12 +165,6 @@ pub fn record_das_api_latency(method: &DasApiMethod, time_elapsed: f64) {
     DAS_API_REQUEST_DURATION_SECONDS
         .with_label_values(&[method.as_str()])
         .observe(time_elapsed);
-}
-
-pub fn inc_das_api_errors_total(method: &DasApiMethod, err: &DasApiError) {
-    DAS_API_ERRORS_TOTAL
-        .with_label_values(&[method.as_str(), err.to_error_code()])
-        .inc();
 }
 
 pub trait MetricsRecorderExt: Sized {
@@ -206,10 +208,9 @@ where
                 record_das_api_latency(&method, elapsed);
 
                 match &result {
-                    Ok(_) => inc_das_api_status_total(&method, "success"),
+                    Ok(_) => inc_das_api_status_total(&method, ApiRequestStatus::Ok),
                     Err(err) => {
-                        inc_das_api_status_total(&method, "error");
-                        inc_das_api_errors_total(&method, err);
+                        inc_das_api_status_total(&method, ApiRequestStatus::Error(err));
                     }
                 };
                 Poll::Ready(result)
