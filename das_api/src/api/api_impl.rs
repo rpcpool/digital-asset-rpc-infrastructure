@@ -47,7 +47,7 @@ pub struct DasApi {
 
 impl DasApi {
     pub async fn from_config(config: Config) -> Result<Self, DasApiError> {
-        let pool = connect_db(&config.into()).await?;
+        let pool: Pool<Postgres> = connect_db(&config.into()).await?;
 
         Ok(DasApi { pool })
     }

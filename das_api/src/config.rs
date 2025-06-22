@@ -16,6 +16,7 @@ pub struct Config {
     pub database_max_lifetime: Option<u64>,
     pub database_acquire_timeout: Option<u64>,
     pub database_idle_timeout: Option<u64>,
+    pub database_test_before_acquire: Option<bool>,
     pub max_request_connections: Option<u32>,
     pub otlp_collector_host: Option<String>,
     pub otlp_collector_port: Option<u16>,
@@ -44,6 +45,7 @@ impl From<Config> for PoolArgs {
             database_max_lifetime: value
                 .database_max_lifetime
                 .unwrap_or_else(PoolArgs::default_database_max_lifetime),
+            database_test_before_acquire: value.database_test_before_acquire.unwrap_or(true),
         }
     }
 }
