@@ -93,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     let api = DasApi::from_config(config).await?;
     let rpc = RpcApiBuilder::build(Box::new(api))?;
-    println!("Server Started");
+    println!("Server Started at {}", addr);
     let server_handle = server.start(rpc)?;
 
     match tokio::signal::ctrl_c().await {

@@ -1907,7 +1907,7 @@ pub async fn get_by_id<D>(
 where
     D: ConnectionTrait + Send + Sync,
 {
-    let stmt = extensions::asset::Row::select()
+    let mut stmt = extensions::asset::Row::select()
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::Supply)),
             extensions::asset::Column::MintSupply,
@@ -1991,6 +1991,18 @@ where
         .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Id).eq(asset_id.clone()))
         .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Supply).gt(0))
         .to_owned();
+
+    if !options.show_fungible {
+        stmt = stmt
+            .and_where(
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::OwnerType,
+                )
+                .eq(OwnerType::Single.as_enum()),
+            )
+            .to_owned();
+    }
 
     let (sql, values) = stmt.build(PostgresQueryBuilder);
 
