@@ -1,7 +1,6 @@
 use crate::dao::extensions;
 use crate::dao::token_accounts;
 use crate::dao::FullAsset;
-use crate::dao::PageOptions;
 use crate::dao::Pagination;
 use crate::dao::{asset_authority, asset_creators, asset_data, asset_grouping};
 use crate::rpc::filter::{AssetSortBy, AssetSortDirection, AssetSorting};
@@ -17,10 +16,10 @@ use crate::rpc::{
     Uses,
 };
 use blockbuster::programs::token_inscriptions::InscriptionData;
+use indexmap::IndexMap;
 use jsonpath_lib::JsonPathError;
 use log::warn;
 use mime_guess::Mime;
-use num_traits::ToPrimitive;
 
 use sea_orm::DbErr;
 use serde_json::Value;
@@ -151,29 +150,6 @@ impl AssetSorting {
     }
 }
 
-impl TryFrom<&PageOptions> for Pagination {
-    type Error = DbErr;
-
-    fn try_from(page_options: &PageOptions) -> Result<Self, Self::Error> {
-        if let Some(cursor) = &page_options.cursor {
-            Ok(Pagination::Cursor(cursor.clone()))
-        } else {
-            match (
-                page_options.before.as_ref(),
-                page_options.after.as_ref(),
-                page_options.page,
-            ) {
-                (_, _, None) => Ok(Pagination::Keyset {
-                    before: page_options.before.clone(),
-                    after: page_options.after.clone(),
-                }),
-                (None, None, Some(p)) => Ok(Pagination::Page { page: p }),
-                _ => Err(DbErr::Custom("Invalid Pagination".to_string())),
-            }
-        }
-    }
-}
-
 pub fn track_top_level_file(
     file_map: &mut HashMap<String, File>,
     top_level_file: Option<&serde_json::Value>,
@@ -240,7 +216,7 @@ pub fn v1_content_from_json(asset_data: &extensions::asset::Row) -> Result<Conte
     if let Some(token_standard) = token_standard {
         meta.set_item("token_standard", token_standard.clone());
     }
-    let mut links = HashMap::new();
+    let mut links = IndexMap::new();
     let link_fields = vec!["image", "animation_url", "external_url"];
     for f in link_fields {
         let l = safe_select(selector, format!("$.{}", f).as_str());
@@ -410,6 +386,7 @@ pub fn get_interface(asset: &extensions::asset::Row) -> Result<Interface, DbErr>
 }
 
 //TODO -> impl custom error type
+#[allow(deprecated)]
 pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbErr> {
     let FullAsset {
         asset,
@@ -463,7 +440,7 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
     let mpl_core_info = match interface {
         Interface::MplCoreAsset | Interface::MplCoreCollection => Some(MplCoreInfo {
             num_minted: asset.mpl_core_collection_num_minted,
-            current_size: asset.mpl_core_collection_current_size,
+            current_size: asset.mpl_core_collection_current_size.map(|s| s as u32),
             plugins_json_version: asset.mpl_core_plugins_json_version,
         }),
         _ => None,
@@ -477,12 +454,15 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
                         serde_json::from_value(d).map_err(|e| {
                             DbErr::Custom(format!("Failed to deserialize inscription data: {}", e))
                         })?;
+
                     Ok(TokenInscriptionInfo {
                         authority: deserialized_data.authority,
                         root: deserialized_data.root,
-                        content: deserialized_data.content,
+                        content: deserialized_data.content.clone(),
+                        content_type: deserialized_data.content,
                         encoding: deserialized_data.encoding,
-                        inscription_data: deserialized_data.inscription_data,
+                        inscription_data: deserialized_data.inscription_data.clone(),
+                        inscription_data_account: deserialized_data.inscription_data,
                         order: deserialized_data.order,
                         size: deserialized_data.size,
                         validation_hash: deserialized_data.validation_hash,
@@ -498,12 +478,12 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
         let encode_to_string = |data: Vec<u8>| bs58::encode(data).into_string();
 
         TokenInfo {
-            supply: supply.to_u64(),
-            decimals: asset.mint_decimals.map(|d| d as u8),
+            supply: Some(supply.try_into().unwrap_or(0)),
+            decimals: asset.mint_decimals,
             mint_authority: asset.mint_authority.map(encode_to_string),
             freeze_authority: asset.mint_freeze_authority.map(encode_to_string),
             token_program: asset.mint_token_program.map(encode_to_string),
-            balance: asset.token_account_amount.map(|a| a as u64),
+            balance: asset.token_account_amount,
             associated_token_address: asset.token_account_pubkey.map(encode_to_string),
         }
     });

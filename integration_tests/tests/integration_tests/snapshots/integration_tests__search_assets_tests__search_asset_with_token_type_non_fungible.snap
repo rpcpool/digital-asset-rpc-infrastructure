@@ -80,6 +80,7 @@ expression: response
       "mutable": true,
       "burnt": false,
       "token_info": {
+        "balance": 1,
         "supply": 1,
         "decimals": 0,
         "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -162,6 +163,7 @@ expression: response
       "mutable": true,
       "burnt": false,
       "token_info": {
+        "balance": 1,
         "supply": 1,
         "decimals": 0,
         "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",

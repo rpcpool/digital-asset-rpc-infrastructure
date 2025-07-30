@@ -2,7 +2,7 @@
 mod full_asset;
 mod generated;
 pub mod scopes;
-use crate::rpc::{filter::TokenTypeClass, Interface};
+use crate::rpc::{filter::TokenType, Interface};
 
 use self::sea_orm_active_enums::{
     OwnerType, RoyaltyTargetType, SpecificationAssetClass, SpecificationVersions,
@@ -25,6 +25,29 @@ pub struct PageOptions {
     pub before: Option<Vec<u8>>,
     pub after: Option<Vec<u8>>,
     pub cursor: Option<Cursor>,
+}
+
+impl TryFrom<&PageOptions> for Pagination {
+    type Error = DbErr;
+
+    fn try_from(page_options: &PageOptions) -> Result<Self, Self::Error> {
+        if let Some(cursor) = &page_options.cursor {
+            Ok(Pagination::Cursor(cursor.clone()))
+        } else {
+            match (
+                page_options.before.as_ref(),
+                page_options.after.as_ref(),
+                page_options.page,
+            ) {
+                (_, _, None) => Ok(Pagination::Keyset {
+                    before: page_options.before.clone(),
+                    after: page_options.after.clone(),
+                }),
+                (None, None, Some(p)) => Ok(Pagination::Page { page: p }),
+                _ => Err(DbErr::Custom("Invalid Pagination".to_string())),
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
@@ -70,7 +93,7 @@ pub struct SearchAssetsQuery {
     pub burnt: Option<bool>,
     pub json_uri: Option<String>,
     pub name: Option<Vec<u8>>,
-    pub token_type: Option<TokenTypeClass>,
+    pub token_type: Option<TokenType>,
 }
 
 impl SearchAssetsQuery {

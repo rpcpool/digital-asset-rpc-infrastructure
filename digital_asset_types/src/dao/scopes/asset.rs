@@ -7,7 +7,7 @@ use crate::{
         sea_orm_active_enums::V1AccountAttachments,
         token_accounts, tokens, FullAsset, Pagination, SearchAssetsQuery,
     },
-    rpc::{filter::TokenTypeClass, options::Options},
+    rpc::{filter::TokenType, options::Options},
 };
 use indexmap::IndexMap;
 use sea_orm::{
@@ -1270,21 +1270,21 @@ where
             }))
             .add_option(query.token_type.as_ref().map(|token_type| {
                 match token_type {
-                    TokenTypeClass::Fungible => Expr::tbl(
+                    TokenType::Fungible => Expr::tbl(
                         extensions::asset::Entity,
                         extensions::asset::Column::OwnerType,
                     )
                     .eq(OwnerType::Token),
-                    TokenTypeClass::NonFungible | TokenTypeClass::Nft => Expr::tbl(
+                    TokenType::NonFungible | TokenType::RegularNFT => Expr::tbl(
                         extensions::asset::Entity,
                         extensions::asset::Column::OwnerType,
                     )
                     .eq(OwnerType::Single),
-                    TokenTypeClass::Compressed => {
+                    TokenType::CompressedNFT => {
                         Expr::tbl(extensions::asset::Entity, extensions::asset::Column::TreeId)
                             .is_not_null()
                     }
-                    TokenTypeClass::All => Expr::tbl(
+                    TokenType::All => Expr::tbl(
                         extensions::asset::Entity,
                         extensions::asset::Column::OwnerType,
                     )
