@@ -32,7 +32,7 @@ impl From<WorkerArgs> for Worker {
         }
     }
 }
-
+#[allow(clippy::large_enum_variant)]
 #[derive(thiserror::Error, Debug)]
 pub enum WorkerError {
     #[error("send error: {0}")]
