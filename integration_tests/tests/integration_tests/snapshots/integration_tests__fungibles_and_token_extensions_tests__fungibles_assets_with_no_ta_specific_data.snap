@@ -1,0 +1,129 @@
+---
+source: integration_tests/tests/integration_tests/fungibles_and_token_extensions_tests.rs
+expression: response
+---
+[
+  {
+    "interface": "Custom",
+    "id": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "content": {
+      "$schema": "https://schema.metaplex.com/nft1.0.json",
+      "json_uri": "",
+      "files": [],
+      "metadata": {
+        "name": "USD Coin",
+        "symbol": "USDC"
+      },
+      "links": {}
+    },
+    "authorities": [
+      {
+        "address": "2wmVCSfPxGPjrnMMn7rchp4uaeoTqN39mXFC2zhPdri9",
+        "scopes": [
+          "full"
+        ]
+      }
+    ],
+    "compression": {
+      "eligible": false,
+      "compressed": false,
+      "data_hash": "",
+      "creator_hash": "",
+      "asset_hash": "",
+      "tree": "",
+      "seq": 0,
+      "leaf_id": 0
+    },
+    "grouping": [],
+    "royalty": {
+      "royalty_model": "creators",
+      "target": null,
+      "percent": 0.0,
+      "basis_points": 0,
+      "primary_sale_happened": false,
+      "locked": false
+    },
+    "creators": [],
+    "ownership": {
+      "frozen": false,
+      "delegated": false,
+      "delegate": null,
+      "ownership_model": "token"
+    },
+    "supply": {
+      "print_max_supply": 0,
+      "print_current_supply": 0,
+      "edition_nonce": 252
+    },
+    "mutable": true,
+    "burnt": false,
+    "token_info": {
+      "supply": 9630514218034576,
+      "decimals": 6,
+      "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "mint_authority": "BJE5MMbqXjVwjAF7oxwPYXnTXDyspzZyt4vwenNw5ruG",
+      "freeze_authority": "7dGbd2QZcCKcTndnHcTL8q7SMVXAkp688NTQYwrRCrar"
+    }
+  },
+  {
+    "interface": "Custom",
+    "id": "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs",
+    "content": {
+      "$schema": "https://schema.metaplex.com/nft1.0.json",
+      "json_uri": "",
+      "files": [],
+      "metadata": {
+        "name": "Wrapped Ether (Wormhole)",
+        "symbol": "WETH"
+      },
+      "links": {}
+    },
+    "authorities": [
+      {
+        "address": "BCD75RNBHrJJpW4dXVagL5mPjzRLnVZq4YirJdjEYMV7",
+        "scopes": [
+          "full"
+        ]
+      }
+    ],
+    "compression": {
+      "eligible": false,
+      "compressed": false,
+      "data_hash": "",
+      "creator_hash": "",
+      "asset_hash": "",
+      "tree": "",
+      "seq": 0,
+      "leaf_id": 0
+    },
+    "grouping": [],
+    "royalty": {
+      "royalty_model": "creators",
+      "target": null,
+      "percent": 0.0,
+      "basis_points": 0,
+      "primary_sale_happened": false,
+      "locked": false
+    },
+    "creators": [],
+    "ownership": {
+      "frozen": false,
+      "delegated": false,
+      "delegate": null,
+      "ownership_model": "token"
+    },
+    "supply": {
+      "print_max_supply": 0,
+      "print_current_supply": 0,
+      "edition_nonce": 252
+    },
+    "mutable": true,
+    "burnt": false,
+    "token_info": {
+      "supply": 6198363335521,
+      "decimals": 8,
+      "token_program": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "mint_authority": "BCD75RNBHrJJpW4dXVagL5mPjzRLnVZq4YirJdjEYMV7"
+    }
+  }
+]

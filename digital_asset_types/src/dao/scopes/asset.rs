@@ -119,13 +119,17 @@ where
         .join(
             JoinType::LeftJoin,
             token_accounts::Entity,
-            Expr::tbl(extensions::asset::Entity, asset::Column::Id)
-                .equals(token_accounts::Entity, token_accounts::Column::Mint)
+            Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
+                .eq(OwnerType::Single.as_enum())
                 .and(
-                    Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
-                        .equals(token_accounts::Entity, token_accounts::Column::Owner),
-                )
-                .and(token_accounts::Column::Amount.gt(0)),
+                    Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                        .equals(token_accounts::Entity, token_accounts::Column::Mint)
+                        .and(
+                            Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
+                                .equals(token_accounts::Entity, token_accounts::Column::Owner),
+                        )
+                        .and(token_accounts::Column::Amount.gt(0)),
+                ),
         )
         .from_as(asset::Entity, extensions::asset::Entity)
         .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Supply).gt(0))
@@ -265,13 +269,17 @@ where
         .join(
             JoinType::LeftJoin,
             token_accounts::Entity,
-            Expr::tbl(extensions::asset::Entity, asset::Column::Id)
-                .equals(token_accounts::Entity, token_accounts::Column::Mint)
+            Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
+                .eq(OwnerType::Single.as_enum())
                 .and(
-                    Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
-                        .equals(token_accounts::Entity, token_accounts::Column::Owner),
-                )
-                .and(token_accounts::Column::Amount.gt(0)),
+                    Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                        .equals(token_accounts::Entity, token_accounts::Column::Mint)
+                        .and(
+                            Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
+                                .equals(token_accounts::Entity, token_accounts::Column::Owner),
+                        )
+                        .and(token_accounts::Column::Amount.gt(0)),
+                ),
         )
         .from_as(asset::Entity, extensions::asset::Entity)
         .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Supply).gt(0))
@@ -387,10 +395,9 @@ where
                 JoinType::InnerJoin,
                 token_accounts::Entity,
                 token_accounts::Column::Owner.eq(owner.to_vec()).and(
-                    token_accounts::Column::Amount.gt(0).and(
-                        Expr::tbl(extensions::asset::Entity, asset::Column::Id)
-                            .equals(token_accounts::Entity, token_accounts::Column::Mint),
-                    ),
+                    Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                        .equals(token_accounts::Entity, token_accounts::Column::Mint)
+                        .and(token_accounts::Column::Amount.gt(0)),
                 ),
             )
             .join(
@@ -1025,13 +1032,17 @@ where
             .join(
                 JoinType::LeftJoin,
                 token_accounts::Entity,
-                Expr::tbl(extensions::asset::Entity, asset::Column::Id)
-                    .equals(token_accounts::Entity, token_accounts::Column::Mint)
+                Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
+                    .eq(OwnerType::Single.as_enum())
                     .and(
-                        Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
-                            .equals(token_accounts::Entity, token_accounts::Column::Owner),
-                    )
-                    .and(token_accounts::Column::Amount.gt(0)),
+                        Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                            .equals(token_accounts::Entity, token_accounts::Column::Mint)
+                            .and(
+                                Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
+                                    .equals(token_accounts::Entity, token_accounts::Column::Owner),
+                            )
+                            .and(token_accounts::Column::Amount.gt(0)),
+                    ),
             )
             .from_as(asset::Entity, extensions::asset::Entity)
             .to_owned()
@@ -1566,13 +1577,17 @@ where
         .join(
             JoinType::LeftJoin,
             token_accounts::Entity,
-            Expr::tbl(extensions::asset::Entity, asset::Column::Id)
-                .equals(token_accounts::Entity, token_accounts::Column::Mint)
+            Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
+                .eq(OwnerType::Single.as_enum())
                 .and(
-                    Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
-                        .equals(token_accounts::Entity, token_accounts::Column::Owner),
-                )
-                .and(token_accounts::Column::Amount.gt(0)),
+                    Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                        .equals(token_accounts::Entity, token_accounts::Column::Mint)
+                        .and(
+                            Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
+                                .equals(token_accounts::Entity, token_accounts::Column::Owner),
+                        )
+                        .and(token_accounts::Column::Amount.gt(0)),
+                ),
         )
         .from_as(asset::Entity, extensions::asset::Entity)
         .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Id).is_in(asset_ids))
@@ -1707,13 +1722,17 @@ where
         .join(
             JoinType::LeftJoin,
             token_accounts::Entity,
-            Expr::tbl(extensions::asset::Entity, asset::Column::Id)
-                .equals(token_accounts::Entity, token_accounts::Column::Mint)
+            Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
+                .eq(OwnerType::Single.as_enum())
                 .and(
-                    Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
-                        .equals(token_accounts::Entity, token_accounts::Column::Owner),
-                )
-                .and(token_accounts::Column::Amount.gt(0)),
+                    Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                        .equals(token_accounts::Entity, token_accounts::Column::Mint)
+                        .and(
+                            Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
+                                .equals(token_accounts::Entity, token_accounts::Column::Owner),
+                        )
+                        .and(token_accounts::Column::Amount.gt(0)),
+                ),
         )
         .from_as(asset::Entity, extensions::asset::Entity)
         .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Supply).gt(0))
@@ -1979,13 +1998,17 @@ where
         .join(
             JoinType::LeftJoin,
             token_accounts::Entity,
-            Expr::tbl(extensions::asset::Entity, asset::Column::Id)
-                .equals(token_accounts::Entity, token_accounts::Column::Mint)
+            Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
+                .eq(OwnerType::Single.as_enum())
                 .and(
-                    Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
-                        .equals(token_accounts::Entity, token_accounts::Column::Owner),
-                )
-                .and(token_accounts::Column::Amount.gt(0)),
+                    Expr::tbl(extensions::asset::Entity, asset::Column::Id)
+                        .equals(token_accounts::Entity, token_accounts::Column::Mint)
+                        .and(
+                            Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
+                                .equals(token_accounts::Entity, token_accounts::Column::Owner),
+                        )
+                        .and(token_accounts::Column::Amount.gt(0)),
+                ),
         )
         .from_as(asset::Entity, extensions::asset::Entity)
         .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Id).eq(asset_id.clone()))
@@ -1993,6 +2016,8 @@ where
         .to_owned();
 
     let (sql, values) = stmt.build(PostgresQueryBuilder);
+
+    //TODO we have showFungible flag that we need to handle here like getAssets
 
     let statment = Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres, &sql, values);
 
