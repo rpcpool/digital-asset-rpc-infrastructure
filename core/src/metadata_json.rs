@@ -247,7 +247,7 @@ fn spawn_task(
                 // Success - no logging needed
             }
             Ok(Err(e)) => {
-                error!("Asset {} failed: {}", asset_data_id, e);
+                error!("# Asset {} failed: {}", asset_data_id, e);
             }
             Err(_timeout) => {
                 error!("Asset {} timed out after 1 second", asset_data_id);
@@ -375,12 +375,32 @@ impl DownloadMetadata {
         download_metadata_info: &DownloadMetadataInfo,
         config: Arc<DownloadMetadataJsonRetryConfig>,
     ) -> Result<(), MetadataJsonTaskError> {
-        perform_metadata_json_task(
-            self.client.clone(),
-            self.pool.clone(),
-            download_metadata_info,
-            config,
+        // perform_metadata_json_task(
+        //     self.client.clone(),
+        //     self.pool.clone(),
+        //     download_metadata_info,
+        //     config,
+        // )
+        // .await
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(1000), // 1 second total timeout
+            perform_metadata_json_task(
+                self.client.clone(),
+                self.pool.clone(),
+                download_metadata_info,
+                config,
+            ),
         )
-        .await
+        .await;
+
+        match result {
+            Ok(Ok(())) => Ok(()),
+            Ok(e) => e,
+            Err(_timeout) => {
+                error!("Asset timed out after 1 second");
+                Ok(())
+            }
+        }
     }
 }
