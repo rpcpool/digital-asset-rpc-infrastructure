@@ -236,10 +236,22 @@ fn spawn_task(
         let asset_data_id =
             bs58::encode(download_metadata_info.asset_data_id.clone()).into_string();
 
-        if let Err(e) =
-            perform_metadata_json_task(client, pool, &download_metadata_info, config).await
-        {
-            error!("Asset {} failed: {}", asset_data_id, e);
+        let result = tokio::time::timeout(
+            Duration::from_millis(1000), // 1 second total timeout
+            perform_metadata_json_task(client, pool, &download_metadata_info, config),
+        )
+        .await;
+
+        match result {
+            Ok(Ok(())) => {
+                // Success - no logging needed
+            }
+            Ok(Err(e)) => {
+                error!("Asset {} failed: {}", asset_data_id, e);
+            }
+            Err(_timeout) => {
+                error!("Asset {} timed out after 1 second", asset_data_id);
+            }
         }
 
         debug!(
