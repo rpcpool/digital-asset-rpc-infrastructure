@@ -11,8 +11,8 @@ use {
         SinkExt,
     },
     redis::streams::StreamMaxlen,
-    solana_sdk::system_program::ID as system_program_id,
-    std::{collections::HashMap, sync::Arc, time::Duration},
+    solana_sdk::{pubkey::Pubkey, system_program::ID as system_program_id},
+    std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration},
     tokio::{
         sync::{oneshot, Mutex},
         time::sleep,
@@ -251,6 +251,8 @@ impl SubscriptionTask {
                                             }
                                             grpc_tasks_total_inc(&label, &stream_config.name);
 
+                                            increment_metrics_for_update(&msg);
+
                                             tasks.push(tokio::spawn({
                                                 let pipe = Arc::clone(&pipes[current_pipe_index]);
                                                 let label = label.clone();
@@ -399,4 +401,21 @@ impl SubscriptionTaskStop {
 
         Ok(())
     }
+}
+
+fn increment_metrics_for_update(update: &SubscribeUpdate) {
+    if let Some(UpdateOneof::Account(account)) = &update.update_oneof {
+        if let Some(acc) = &account.account {
+            let token_program_id =
+                Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
+
+            if acc.owner == token_program_id.to_bytes().to_vec() {
+                crate::prom::TOKEN_GRPC_UPDATES_COUNT.inc();
+            }
+
+            crate::prom::ACCOUNT_GRPC_UPDATES_COUNT.inc();
+        }
+    }
+
+    crate::prom::TOTAL_GRPC_UPDATES_COUNT.inc();
 }
