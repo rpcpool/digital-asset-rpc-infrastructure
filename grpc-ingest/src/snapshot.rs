@@ -120,6 +120,7 @@ pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
 
     let db_connection = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
 
+    // TODO: This is asumming all data from the snapshot is for the same slot.
     let slot = account_snapshots::Entity::find()
         .one(&db_connection)
         .await?
@@ -457,6 +458,8 @@ impl ProgramTransformerRunnerBuilder {
                             while join_set.len() >= max_workers {
                                 join_set.join_next().await;
                             }
+
+                            crate::prom::PROGRAM_TRANSFORMER_ACCOUNT_INFO_COUNT.inc();
 
                             let program_transformer = Arc::clone(&program_transformer);
 

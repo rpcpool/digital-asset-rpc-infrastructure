@@ -547,6 +547,9 @@ impl<H: MessageHandler> IngestStream<H> {
                             let ack_tx = ack_tx.clone();
                             let config = Arc::clone(&config);
 
+                            // each `StreamId` represents an `AccountInfo`
+                            crate::prom::REDIS_READED_UPDATES_COUNT.inc();
+
                             ingest_tasks_total_inc(&config.name, &config.consumer);
 
                             tasks.spawn(async move {

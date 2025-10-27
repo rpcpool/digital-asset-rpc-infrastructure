@@ -11,7 +11,8 @@ use {
     hyper_util::{rt::TokioIo, server::conn::auto},
     program_transformers::{error::ProgramTransformerError, AccountInfo},
     prometheus::{
-        HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder,
+        Counter, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry,
+        TextEncoder,
     },
     std::{convert::Infallible, net::SocketAddr, sync::Once},
     tokio::{net::TcpListener, sync::mpsc::error::SendError},
@@ -116,6 +117,14 @@ lazy_static::lazy_static! {
         &[]
     ).unwrap();
 
+    pub static ref PROGRAM_TRANSFORMER_ACCOUNT_INFO_COUNT: Counter = Counter::with_opts(
+        Opts::new("program_transformer_account_info_count", "Number of account info processed by the program transformer")
+    ).unwrap();
+
+    pub static ref REDIS_READED_UPDATES_COUNT: Counter = Counter::with_opts(
+        Opts::new("redis_readed_updates_count", "Number of updates readed from Redis")
+    ).unwrap();
+
 }
 
 fn metrics_handler() -> Result<Response<Full<Bytes>>, Infallible> {
@@ -179,6 +188,8 @@ pub fn run_metrics_server(address: SocketAddr) -> anyhow::Result<()> {
         register!(BUBBLEGUM_TREE_CORRUPT_PROOFS);
         register!(DOWNLOAD_METADATA_PUBLISH_TIME);
         register!(CURRENT_INGESTER_SLOT);
+        register!(PROGRAM_TRANSFORMER_ACCOUNT_INFO_COUNT);
+        register!(REDIS_READED_UPDATES_COUNT);
 
         VERSION_INFO_METRIC
             .with_label_values(&[
