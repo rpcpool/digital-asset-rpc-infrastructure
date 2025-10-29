@@ -80,7 +80,12 @@ pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
         .start()
         .await?;
 
-    grpc::run(config.clone().into()).await?;
+    match grpc::run(config.clone().into()).await {
+        Ok(()) => error!("GRPC ended OK"),
+        Err(e) => {
+            error!("Failed to run grpc: {}", e);
+        }
+    }
 
     let mut shutdown = create_shutdown()?;
     let mut connection = connection.clone();
@@ -298,12 +303,13 @@ impl AccountSnapshotWriterBuilder {
                             let error_sender = error_sender.clone();
 
                             join_set.spawn(async move {
-                                if (account_snapshots::Entity::insert_many(accounts)
+                                if let Err(db_err) = account_snapshots::Entity::insert_many(accounts)
                                     .exec(&conn)
-                                    .await).is_err()
+                                    .await
                                 {
-                                    if let Err(e) = error_sender.send(()).await {
-                                        error!("Failed to send batch write error: {}", e);
+                                    error!("Failed to insert accounts: db_err: {}", db_err);
+                                    if let Err(send_err) = error_sender.send(()).await {
+                                        error!("Failed to send batch write send_err: {} - db_err: {}", send_err, db_err);
                                     }
                                 }
                             });
@@ -329,14 +335,15 @@ impl AccountSnapshotWriterBuilder {
                             }
 
 
-                            if (account_snapshots::Entity::insert_many(accounts)
-                                .exec(&conn)
-                                .await).is_err()
-                            {
-                                if let Err(e) = error_sender.send(()).await {
-                                    error!("Failed to send batch write error: {}", e);
+                            if let Err(db_err) = account_snapshots::Entity::insert_many(accounts)
+                                    .exec(&conn)
+                                    .await
+                                {
+                                    error!("Failed to insert accounts: db_err: {}", db_err);
+                                    if let Err(send_err) = error_sender.send(()).await {
+                                        error!("Failed to send batch write send_err(shutdown): {} - db_err: {}", send_err, db_err);
+                                    }
                                 }
-                            }
 
                             if let Err(e) = program_transformer_runner_sender.send(batch).await {
                                 error!("Failed program transformer sender: {}", e)
