@@ -156,6 +156,8 @@ pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
         )
         .build(PostgresQueryBuilder);
 
+    let start_time = tokio::time::Instant::now();
+
     let token_accounts_deleted = db_connection
         .execute(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
@@ -166,8 +168,10 @@ pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
         .rows_affected();
 
     info!(
-        "action=delete_token_accounts count={}",
-        token_accounts_deleted
+        target: "snapshot_cleanup_closed_accounts",
+        "action=delete_token_accounts count={} - elapsed={}s",
+        token_accounts_deleted,
+        start_time.elapsed().as_secs_f64()
     );
 
     // Delete mints that are not in the snapshot (but not newer)
@@ -212,12 +216,23 @@ pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
         .await?
         .rows_affected();
 
-    info!("action=delete_tokens count={}", tokens_deleted);
+    info!(
+        target: "snapshot_cleanup_closed_accounts",
+        "action=delete_tokens count={} - elapsed={}s",
+        tokens_deleted,
+        start_time.elapsed().as_secs_f64()
+    );
 
     // Delete all account snapshots
     account_snapshots::Entity::delete_many()
         .exec(&db_connection)
         .await?;
+
+    info!(
+        target: "snapshot_cleanup_closed_accounts",
+        "action=delete_account_snapshots - elapsed={}s",
+        start_time.elapsed().as_secs_f64()
+    );
 
     Ok(())
 }
@@ -683,6 +698,13 @@ pub async fn download_snapshot_file(
 }
 
 pub fn unpack_compressed_snapshot<P: Into<PathBuf>>(path: P, slot: u64) -> Vec<AccountFileData> {
+    let start_time = tokio::time::Instant::now();
+    tracing::debug!(
+        target: "snapshot_download_progress",
+        "Starting Unpacking compressed snapshot slot: {:?}",
+        slot
+    );
+
     let path_buf: PathBuf = path.into();
 
     let temp_dir = PathBuf::from(format!("/tmp/snapshot_{}/uncompressed_snapshot", slot));
@@ -695,6 +717,13 @@ pub fn unpack_compressed_snapshot<P: Into<PathBuf>>(path: P, slot: u64) -> Vec<A
     archive
         .unpack(temp_dir.clone())
         .expect("Failed to unpack archive");
+
+    tracing::debug!(
+        target: "snapshot_download_progress",
+        "Uncompressed finished snapshot slot: {:?} - elapsed={}s",
+        slot,
+        start_time.elapsed().as_secs_f64()
+    );
 
     let version_path = temp_dir.join("version");
     let _version = std::fs::read_to_string(version_path)
@@ -808,6 +837,13 @@ pub fn unpack_compressed_snapshot<P: Into<PathBuf>>(path: P, slot: u64) -> Vec<A
             write_version: id,
         });
     }
+
+    tracing::debug!(
+        target: "snapshot_download_progress",
+        "Deserialized and unpacked snapshot slot: {:?} - elapsed={}s",
+        slot,
+        start_time.elapsed().as_secs_f64()
+    );
 
     account_file_data
 }
