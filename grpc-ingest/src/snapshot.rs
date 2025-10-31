@@ -500,7 +500,7 @@ impl ProgramTransformerRunnerBuilder {
                             join_set.spawn(async move {
                                 let result = program_transformer.handle_account_update(&account_info).await;
                                 if let Err(e) = result {
-                                    error!("Failed program_transformer.handle_account_update: {:?}", e);
+                                    eprintln!("Failed program_transformer.handle_account_update: {:?}", e);
                                     crate::prom::PROGRAM_TRANSFORMER_ACCOUNT_ERROR_COUNT.inc();
                                 }
                             });
@@ -597,7 +597,7 @@ pub async fn download_and_process_snapshot(
         download_and_process_snapshot_file(
             config,
             full_snapshot_file_name,
-            slot,
+            base_slot,
             account_snapshot_writer_sender,
         )
         .await;
@@ -631,6 +631,7 @@ pub async fn download_snapshot_file(
 
     let total_size = response.content_length().expect("Content length not found");
     tracing::info!(
+        target: "snapshot_download_progress",
         "Downloading file {} of size: {} MB",
         snapshot_file_name,
         total_size / 1024 / 1024
@@ -672,6 +673,7 @@ pub async fn download_snapshot_file(
     file.flush().await?;
 
     tracing::info!(
+        target: "snapshot_download_progress",
         "File {} downloaded successfully in {} secs",
         snapshot_file_name,
         start_time.elapsed().as_secs_f64()
