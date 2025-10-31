@@ -320,6 +320,12 @@ impl AccountSnapshotWriterBuilder {
                                     .exec(&conn)
                                     .await
                                 {
+                                    if db_err.to_string().contains("None of the records are being inserted") {
+                                        // Expected behavior - all records already exist (this is not a Postgres error but SeaORM does return it as an error)
+                                        tracing::debug!("All account snapshots already exist (expected during snapshot processing)");
+                                        return;
+                                    }
+
                                     error!("Failed to insert accounts: db_err: {}", db_err);
                                     if let Err(send_err) = error_sender.send(()).await {
                                         error!("Failed to send batch write send_err: {} - db_err: {}", send_err, db_err);
