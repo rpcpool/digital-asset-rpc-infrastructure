@@ -23,8 +23,9 @@ program_transform:
 snapshot_write:
   # Max amount of AccountSnapshotWriter sending batches of AccountInfo to `program_transform`
   max_workers: 10
-  # Channel capacity for the AccountSnapshotWriter.
-  channel_capacity: 500
+  # Channel capacity for the AccountSnapshotWriter (number of `AccountInfo`).
+  # Senders read from the snapshot AccountsFile's
+  channel_capacity: 10000
   batch_size: 500
 
 # download metadata configuration for the ingester

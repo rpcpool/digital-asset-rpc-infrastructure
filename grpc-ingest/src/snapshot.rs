@@ -32,7 +32,6 @@ use {
     das_core::create_download_metadata_notifier,
     program_transformers::ProgramTransformer,
     std::sync::Arc,
-    tokio::time::{sleep, Duration},
 };
 
 const DEFAULT_PROGRAM_TRANSFORMER_MAX_WORKERS: usize = 20;
@@ -78,59 +77,37 @@ pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
         .take_error_receiver()
         .expect("Error receiver already taken");
 
-    let (slot, mut incremental_snapshot_join_handle, mut full_snapshot_join_handle) =
+    let (slot, incremental_snapshot_join_handle, full_snapshot_join_handle) =
         download_and_process_snapshot(config, account_snapshot_writer_sender).await?;
 
     let mut shutdown = create_shutdown()?;
-    let mut incremental_completed = false;
-    let mut full_completed = false;
 
-    loop {
-        tokio::select! {
-            _ = shutdown.next() => {
-                warn!(
-                    action = "shutdown_signal_received",
-                    message = "Shutdown signal received, stopping ingest streams",
-                );
+    tokio::select! {
+        _ = shutdown.next() => {
+            warn!(
+                action = "shutdown_signal_received",
+                message = "Shutdown signal received, stopping ingest streams",
+            );
 
-                return Ok(());
-            }
+            return Ok(());
+        }
 
-            result = &mut incremental_snapshot_join_handle => {
-                match result {
-                    Ok(_) => {
-                        incremental_completed = true;
-                    }
-                    Err(e) => {
-                        return Err(e.into());
-                    }
-                }
-
-                if incremental_completed && full_completed {
-                    break;
+        result = async {
+            tokio::try_join!(
+                incremental_snapshot_join_handle,
+                full_snapshot_join_handle
+            )
+        } => {
+            match result {
+                Ok(_) => (),
+                Err(e) => {
+                    return Err(e.into());
                 }
             }
+        }
 
-            result = &mut full_snapshot_join_handle => {
-                match result {
-                    Ok(_) => {
-                        full_completed = true;
-                    }
-                    Err(e) => {
-                        return Err(e.into());
-                    }
-                }
-
-                if incremental_completed && full_completed {
-                    break;
-                }
-            }
-
-            _ = account_snapshot_writer_error_receiver.recv() => {
-                return Err(anyhow!("Failed to write a snapshot batch"))
-            }
-
-            _ = sleep(Duration::from_millis(100)) => {}
+        _ = account_snapshot_writer_error_receiver.recv() => {
+            return Err(anyhow!("Failed to write a snapshot batch"))
         }
     }
 
