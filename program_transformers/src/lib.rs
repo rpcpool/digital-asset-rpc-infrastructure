@@ -22,11 +22,10 @@ use {
         },
     },
     das_core::{DownloadMetadataInfo, DownloadMetadataNotifier},
-    digital_asset_types::dao::{account_snapshots, asset, slot_metas, token_accounts, tokens},
+    digital_asset_types::dao::{asset, slot_metas, token_accounts, tokens},
     sea_orm::{
-        entity::EntityTrait, query::Select, sea_query::Expr, ActiveValue, ColumnTrait,
-        ConnectionTrait, DatabaseConnection, DbErr, QueryFilter, Set, SqlxPostgresConnector,
-        TransactionTrait,
+        entity::EntityTrait, query::Select, sea_query::Expr, ColumnTrait, ConnectionTrait,
+        DatabaseConnection, DbErr, QueryFilter, Set, SqlxPostgresConnector, TransactionTrait,
     },
     serde::Deserialize,
     serde_json::{Map, Value},
@@ -56,16 +55,6 @@ pub struct AccountInfo {
     pub pubkey: Pubkey,
     pub owner: Pubkey,
     pub data: Vec<u8>,
-}
-
-impl AccountInfo {
-    pub fn into_account_snapshot(&self) -> account_snapshots::ActiveModel {
-        account_snapshots::ActiveModel {
-            pubkey: ActiveValue::Set(self.pubkey.to_bytes().to_vec()),
-            slot: ActiveValue::Set(self.slot as i64),
-            owner: ActiveValue::Set(self.owner.to_bytes().to_vec()),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

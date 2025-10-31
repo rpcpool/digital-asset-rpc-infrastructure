@@ -121,22 +121,13 @@ lazy_static::lazy_static! {
         Opts::new("program_transformer_account_info_count", "Number of account info processed by the program transformer")
     ).unwrap();
 
-    pub static ref REDIS_READED_UPDATES_COUNT: Counter = Counter::with_opts(
-        Opts::new("redis_readed_updates_count", "Number of updates readed from Redis")
+    pub static ref PROCESSED_SNAPSHOT_UPDATES_COUNT: Counter = Counter::with_opts(
+        Opts::new("processed_snapshot_updates_count", "Number of updates processed from snapshot files")
     ).unwrap();
 
-    pub static ref TOTAL_GRPC_UPDATES_COUNT: Counter = Counter::with_opts(
-        Opts::new("total_grpc_updates_count", "Number of updates received from GRPC")
+    pub static ref PROGRAM_TRANSFORMER_ACCOUNT_ERROR_COUNT: Counter = Counter::with_opts(
+        Opts::new("program_transformer_account_error_count", "Number of errors processing accounts by the program transformer")
     ).unwrap();
-
-    pub static ref TOKEN_GRPC_UPDATES_COUNT: Counter = Counter::with_opts(
-        Opts::new("token_grpc_updates_count", "Number of token updates received from GRPC")
-    ).unwrap();
-
-    pub static ref ACCOUNT_GRPC_UPDATES_COUNT: Counter = Counter::with_opts(
-        Opts::new("account_grpc_updates_count", "Number of account updates received from GRPC")
-    ).unwrap();
-
 }
 
 fn metrics_handler() -> Result<Response<Full<Bytes>>, Infallible> {
@@ -201,10 +192,8 @@ pub fn run_metrics_server(address: SocketAddr) -> anyhow::Result<()> {
         register!(DOWNLOAD_METADATA_PUBLISH_TIME);
         register!(CURRENT_INGESTER_SLOT);
         register!(PROGRAM_TRANSFORMER_ACCOUNT_INFO_COUNT);
-        register!(REDIS_READED_UPDATES_COUNT);
-        register!(TOTAL_GRPC_UPDATES_COUNT);
-        register!(TOKEN_GRPC_UPDATES_COUNT);
-        register!(ACCOUNT_GRPC_UPDATES_COUNT);
+        register!(PROCESSED_SNAPSHOT_UPDATES_COUNT);
+        register!(PROGRAM_TRANSFORMER_ACCOUNT_ERROR_COUNT);
 
         VERSION_INFO_METRIC
             .with_label_values(&[

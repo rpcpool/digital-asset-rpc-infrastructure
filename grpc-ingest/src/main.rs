@@ -6,9 +6,11 @@ use {
     anyhow::Context,
     clap::{Parser, Subcommand},
     config::ConfigMonitor,
-    std::net::SocketAddr,
+    std::{env, net::SocketAddr},
+    tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter},
 };
 
+mod accountsdb_helpers;
 mod config;
 mod grpc;
 mod ingest;
@@ -54,7 +56,14 @@ enum ArgsAction {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::init();
+    let env_filter = EnvFilter::builder()
+        .parse(env::var(EnvFilter::DEFAULT_ENV).unwrap_or_else(|_| "error".to_owned()))
+        .unwrap();
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt::layer())
+        .init();
 
     let args = Args::parse();
 

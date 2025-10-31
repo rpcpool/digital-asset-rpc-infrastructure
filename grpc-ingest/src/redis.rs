@@ -22,7 +22,7 @@ use {
     solana_sdk::{pubkey::Pubkey, signature::Signature},
     std::{collections::HashMap, marker::PhantomData, sync::Arc},
     tokio::{
-        sync::mpsc::{error::SendError, Sender},
+        sync::mpsc::error::SendError,
         task::JoinSet,
         time::{sleep, Duration},
     },
@@ -285,36 +285,6 @@ impl Clone for AccountHandle {
         Self(Arc::clone(&self.0))
     }
 }
-pub struct SnapshotHandle(Sender<AccountInfo>);
-
-impl SnapshotHandle {
-    pub const fn new(sender: Sender<AccountInfo>) -> Self {
-        Self(sender)
-    }
-}
-
-impl MessageHandler for SnapshotHandle {
-    fn handle(
-        &self,
-        input: HashMap<String, RedisValue>,
-    ) -> BoxFuture<'static, Result<(), IngestMessageError>> {
-        let sender = self.0.clone();
-
-        Box::pin(async move {
-            let account_info = AccountInfo::try_parse_msg(input)?;
-
-            sender.send(account_info).await?;
-
-            Ok(())
-        })
-    }
-}
-
-impl Clone for SnapshotHandle {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
 
 pub struct TransactionHandle(Arc<ProgramTransformer>);
 
@@ -548,8 +518,6 @@ impl<H: MessageHandler> IngestStream<H> {
                             let config = Arc::clone(&config);
 
                             // each `StreamId` represents an `AccountInfo`
-                            crate::prom::REDIS_READED_UPDATES_COUNT.inc();
-
                             ingest_tasks_total_inc(&config.name, &config.consumer);
 
                             tasks.spawn(async move {

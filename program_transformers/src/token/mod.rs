@@ -23,6 +23,89 @@ use {
 
 static WSOL_PUBKEY: pubkey::Pubkey = pubkey!("So11111111111111111111111111111111111111112");
 
+/// # SQL queries:
+/// ## Token account query:
+///
+/// ```sql
+/// INSERT INTO token_accounts (
+///     pubkey,
+///     mint,
+///     delegated_amount,
+///     delegate,
+///     amount,
+///     frozen,
+///     token_program,
+///     owner,
+///     slot_updated,
+///     close_authority,
+///     extensions
+/// ) VALUES (
+///     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+/// )
+/// ON CONFLICT (pubkey)
+/// DO UPDATE SET
+///     mint = EXCLUDED.mint,
+///     delegated_amount = EXCLUDED.delegated_amount,
+///     delegate = EXCLUDED.delegate,
+///     amount = EXCLUDED.amount,
+///     frozen = EXCLUDED.frozen,
+///     token_program = EXCLUDED.token_program,
+///     owner = EXCLUDED.owner,
+///     slot_updated = EXCLUDED.slot_updated
+/// WHERE (
+///     -- Update only if any of these fields have changed OR slot condition is met
+///     (
+///         EXCLUDED.mint != token_accounts.mint OR
+///         EXCLUDED.delegated_amount != token_accounts.delegated_amount OR
+///         EXCLUDED.delegate != token_accounts.delegate OR
+///         EXCLUDED.amount != token_accounts.amount OR
+///         EXCLUDED.frozen != token_accounts.frozen OR
+///         EXCLUDED.token_program != token_accounts.token_program OR
+///         EXCLUDED.owner != token_accounts.owner
+///     )
+///     AND
+///     -- Only update if the existing slot is less than or equal to the new slot
+///     token_accounts.slot_updated <= $slot_value
+/// );
+/// ```
+///
+/// ---------------
+///
+/// ## Mint account query:
+/// ```sql
+/// INSERT INTO tokens (
+///     mint,
+///     supply,
+///     token_program,
+///     mint_authority,
+///     slot_updated,
+///     decimals,
+///     freeze_authority
+/// ) VALUES (
+///     $1, $2, $3, $4, $5, $6, $7
+/// )
+/// ON CONFLICT (mint)
+/// DO UPDATE SET
+///     supply = EXCLUDED.supply,
+///     token_program = EXCLUDED.token_program,
+///     mint_authority = EXCLUDED.mint_authority,
+///     slot_updated = EXCLUDED.slot_updated,
+///     decimals = EXCLUDED.decimals,
+///     freeze_authority = EXCLUDED.freeze_authority
+/// WHERE (
+///     -- Update only if any of these fields have changed
+///     (
+///         EXCLUDED.supply != tokens.supply OR
+///         EXCLUDED.token_program != tokens.token_program OR
+///         EXCLUDED.mint_authority != tokens.mint_authority OR
+///         EXCLUDED.decimals != tokens.decimals OR
+///         EXCLUDED.freeze_authority != tokens.freeze_authority
+///     )
+///     AND
+///     -- Only update if the existing slot is less than or equal to the new slot
+///     tokens.slot_updated <= $slot_value
+/// );
+/// ```
 pub async fn handle_token_program_account<'a, 'b>(
     account_info: &AccountInfo,
     parsing_result: &'a TokenProgramEntity,
