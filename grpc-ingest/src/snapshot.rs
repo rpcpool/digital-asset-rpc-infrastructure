@@ -941,5 +941,5 @@ async fn download_and_process_snapshot_file(
         }
     }
 
-    tracing::debug!("Total accounts: {}", total_accounts);
+    tracing::debug!(target: "snapshot_download_progress", "Total accounts: {}", total_accounts);
 }

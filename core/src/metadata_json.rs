@@ -243,9 +243,7 @@ fn spawn_task(
         .await;
 
         match result {
-            Ok(Ok(())) => {
-                // Success - no logging needed
-            }
+            Ok(Ok(())) => (),
             Ok(Err(e)) => {
                 error!("# Asset {} failed: {}", asset_data_id, e);
             }
@@ -375,14 +373,6 @@ impl DownloadMetadata {
         download_metadata_info: &DownloadMetadataInfo,
         config: Arc<DownloadMetadataJsonRetryConfig>,
     ) -> Result<(), MetadataJsonTaskError> {
-        // perform_metadata_json_task(
-        //     self.client.clone(),
-        //     self.pool.clone(),
-        //     download_metadata_info,
-        //     config,
-        // )
-        // .await
-
         let result = tokio::time::timeout(
             Duration::from_millis(1000), // 1 second total timeout
             perform_metadata_json_task(
