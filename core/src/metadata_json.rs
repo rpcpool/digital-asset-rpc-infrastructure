@@ -243,9 +243,13 @@ fn spawn_task(
         .await;
 
         match result {
-            Ok(Ok(())) => (),
+            Ok(Ok(())) => {
+                crate::metrics::METADATA_JSON_DOWNLOAD_SUCCESS_COUNT.inc();
+            }
             Ok(Err(e)) => {
-                error!("# Asset {} failed: {}", asset_data_id, e);
+                eprintln!("# Asset {} failed: {}", asset_data_id, e);
+
+                crate::metrics::METADATA_JSON_DOWNLOAD_ERROR_COUNT.inc();
             }
             Err(_timeout) => {
                 error!("Asset {} timed out after 1 second", asset_data_id);

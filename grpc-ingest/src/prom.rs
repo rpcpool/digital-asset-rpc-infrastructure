@@ -1,15 +1,13 @@
 use {
     crate::{redis::RedisStreamMessageError, version::VERSION as VERSION_INFO},
     das_bubblegum::ProofReport,
-    das_core::MetadataJsonTaskError,
+    das_core::{METADATA_JSON_DOWNLOAD_ERROR_COUNT, METADATA_JSON_DOWNLOAD_SUCCESS_COUNT, MetadataJsonTaskError},
     http_body_util::Full,
     hyper::{
-        body::{Bytes, Incoming},
-        service::service_fn,
-        Request, Response,
+        Request, Response, body::{Bytes, Incoming}, service::service_fn
     },
     hyper_util::{rt::TokioIo, server::conn::auto},
-    program_transformers::{error::ProgramTransformerError, AccountInfo},
+    program_transformers::{AccountInfo, error::ProgramTransformerError},
     prometheus::{
         Counter, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry,
         TextEncoder,
@@ -194,6 +192,8 @@ pub fn run_metrics_server(address: SocketAddr) -> anyhow::Result<()> {
         register!(PROGRAM_TRANSFORMER_ACCOUNT_INFO_COUNT);
         register!(PROCESSED_SNAPSHOT_UPDATES_COUNT);
         register!(PROGRAM_TRANSFORMER_ACCOUNT_ERROR_COUNT);
+        register!(METADATA_JSON_DOWNLOAD_ERROR_COUNT);
+        register!(METADATA_JSON_DOWNLOAD_SUCCESS_COUNT);
 
         VERSION_INFO_METRIC
             .with_label_values(&[

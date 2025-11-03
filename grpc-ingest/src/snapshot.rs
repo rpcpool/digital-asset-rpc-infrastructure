@@ -5,13 +5,10 @@ use crate::{
 use anyhow::anyhow;
 use bincode::Options;
 use das_core::{DownloadMetadataJsonRetryConfig, MetadataJsonDownloadWorker};
-use digital_asset_types::dao::{account_snapshots, token_accounts, tokens};
+use digital_asset_types::dao::account_snapshots;
 use futures::stream::StreamExt;
 use program_transformers::AccountInfo;
-use sea_orm::{
-    sea_query::{Expr, OnConflict, PostgresQueryBuilder, Query},
-    ActiveValue, EntityTrait, JoinType, SqlxPostgresConnector,
-};
+use sea_orm::{sea_query::OnConflict, ActiveValue, EntityTrait, SqlxPostgresConnector, Value};
 use sea_orm::{ConnectionTrait, Statement};
 use solana_accounts_db::accounts_file::AccountsFile;
 use solana_sdk::{account::ReadableAccount, pubkey::Pubkey};
@@ -39,6 +36,10 @@ const DEFAULT_PROGRAM_TRANSFORMER_BUFFER_CAPACITY: usize = 10_000;
 
 pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
     let pool = pg_create_pool(config.postgres.clone()).await?;
+
+    if config.programs_to_process.is_empty() {
+        panic!("programs_to_process is empty");
+    }
 
     let (download_metadata_sender, download_metadata_worker) = MetadataJsonDownloadWorker::build()
         .pool(pool.clone())
@@ -78,7 +79,7 @@ pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
         .expect("Error receiver already taken");
 
     let (slot, incremental_snapshot_join_handle, full_snapshot_join_handle) =
-        download_and_process_snapshot(config, account_snapshot_writer_sender).await?;
+        download_and_process_snapshot(config.clone(), account_snapshot_writer_sender).await?;
 
     let mut shutdown = create_shutdown()?;
 
@@ -119,50 +120,46 @@ pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
 
     let db_connection = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
 
-    // Delete token accounts that are not in the snapshot (but not newer)
-    // DELETE FROM token_accounts
-    // WHERE pubkey IN (
-    //     SELECT token_accounts.pubkey
-    //     FROM token_accounts
-    //     LEFT JOIN account_snapshots
-    //         ON account_snapshots.pubkey = token_accounts.pubkey
-    //     WHERE account_snapshots.pubkey IS NULL
-    //         AND token_accounts.slot_updated <= $slot
-    // );
-    let (sql, values) = Query::delete()
-        .from_table(token_accounts::Entity)
-        .and_where(
-            Expr::col(token_accounts::Column::Pubkey).in_subquery(
-                Query::select()
-                    .columns([(token_accounts::Entity, token_accounts::Column::Pubkey)])
-                    .from(token_accounts::Entity)
-                    .join(
-                        JoinType::LeftJoin,
-                        account_snapshots::Entity,
-                        Expr::tbl(account_snapshots::Entity, account_snapshots::Column::Pubkey).eq(
-                            Expr::tbl(token_accounts::Entity, token_accounts::Column::Pubkey),
-                        ),
-                    )
-                    .and_where(
-                        Expr::tbl(account_snapshots::Entity, account_snapshots::Column::Pubkey)
-                            .is_null(),
-                    )
-                    .and_where(
-                        Expr::tbl(token_accounts::Entity, token_accounts::Column::SlotUpdated)
-                            .lte(slot),
-                    )
-                    .to_owned(),
-            ),
-        )
-        .build(PostgresQueryBuilder);
-
+    // Delete token accounts that are not in the snapshot (but not newer) for the selected subset of programs
     let start_time = tokio::time::Instant::now();
+
+    let mut values = vec![Value::BigInt(Some(slot as i64))];
+
+    values.extend(
+        config
+            .programs_to_process
+            .iter()
+            .map(|p| Pubkey::from_str(p).expect("Invalid program pubkey"))
+            .map(|p| Value::Bytes(Some(Box::new(p.to_bytes().to_vec())))),
+    );
+
+    // Array not support on this version of SeaORM so we manually build the sql placeholders
+    let token_programs_processed_placeholders = (0..config.programs_to_process.len())
+        .map(|i| format!("${}", i + 2)) // $1 is slot
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let sql = format!(
+        r#"
+DELETE FROM token_accounts
+WHERE pubkey IN (
+    SELECT token_accounts.pubkey
+    FROM token_accounts
+    LEFT JOIN account_snapshots
+        ON account_snapshots.pubkey = token_accounts.pubkey
+    WHERE account_snapshots.pubkey IS NULL
+        AND token_accounts.slot_updated <= $1
+        AND token_accounts.token_program IN({token_programs_processed_placeholders})
+);
+        "#,
+        token_programs_processed_placeholders = token_programs_processed_placeholders
+    );
 
     let token_accounts_deleted = db_connection
         .execute(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             &sql,
-            values,
+            values.clone(),
         ))
         .await?
         .rows_affected();
@@ -175,37 +172,21 @@ pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
     );
 
     // Delete mints that are not in the snapshot (but not newer)
-    // DELETE FROM tokens
-    // WHERE mint IN (
-    //     SELECT tokens.mint
-    //     FROM tokens
-    //     LEFT JOIN account_snapshots
-    //         ON account_snapshots.pubkey = tokens.mint
-    //     WHERE account_snapshots.pubkey IS NULL
-    //         AND tokens.slot_updated <= $slot
-    // );
-    let (sql, values) = Query::delete()
-        .from_table(tokens::Entity)
-        .and_where(
-            Expr::col(tokens::Column::Mint).in_subquery(
-                Query::select()
-                    .columns([(tokens::Entity, tokens::Column::Mint)])
-                    .from(tokens::Entity)
-                    .join(
-                        JoinType::LeftJoin,
-                        account_snapshots::Entity,
-                        Expr::tbl(account_snapshots::Entity, account_snapshots::Column::Pubkey)
-                            .eq(Expr::tbl(tokens::Entity, tokens::Column::Mint)),
-                    )
-                    .and_where(
-                        Expr::tbl(account_snapshots::Entity, account_snapshots::Column::Pubkey)
-                            .is_null(),
-                    )
-                    .and_where(Expr::tbl(tokens::Entity, tokens::Column::SlotUpdated).lte(slot))
-                    .to_owned(),
-            ),
-        )
-        .build(PostgresQueryBuilder);
+    let sql = format!(
+        r#"
+DELETE FROM tokens
+WHERE mint IN (
+    SELECT tokens.mint
+    FROM tokens
+    LEFT JOIN account_snapshots
+        ON account_snapshots.pubkey = tokens.mint
+    WHERE account_snapshots.pubkey IS NULL
+        AND tokens.slot_updated <= $1
+        AND token_accounts.token_program IN({token_programs_processed_placeholders})
+);
+        "#,
+        token_programs_processed_placeholders = token_programs_processed_placeholders
+    );
 
     let tokens_deleted = db_connection
         .execute(Statement::from_sql_and_values(
