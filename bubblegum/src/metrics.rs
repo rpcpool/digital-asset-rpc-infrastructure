@@ -10,4 +10,16 @@ lazy_static::lazy_static! {
     pub static ref BUBBLEGUM_TREE_GAP_COUNT: Counter = Counter::new(
         "bubblegum_tree_gap_count", "Total number of tree gaps",
     ).unwrap();
+
+    pub static ref BUBBLEGUM_RPC_GET_TRANSACTION_COUNT: Counter = Counter::new(
+        "bubblegum_rpc_get_transaction_count", "Total number of RPC get transaction calls",
+    ).unwrap();
+
+    pub static ref BUBBLEGUM_RPC_GET_SIGNATURES_FOR_ADDRESS_COUNT: Counter = Counter::new(
+        "bubblegum_rpc_get_signatures_for_address_count", "Total number of RPC get signatures for address calls",
+    ).unwrap();
+
+    pub static ref BUBBLEGUM_RPC_GET_SIGNATURES_FOR_ADDRESS_TOTAL_COUNT: Counter = Counter::new(
+        "bubblegum_rpc_get_signatures_for_address_total_count", "Total number of RPC get signatures for address total calls",
+    ).unwrap();
 }

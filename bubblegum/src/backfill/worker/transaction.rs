@@ -184,6 +184,8 @@ async fn queue_transaction<'a>(
 ) -> Result<(), ErrorKind> {
     let transaction = client.get_transaction(&signature).await?;
 
+    crate::metrics::BUBBLEGUM_RPC_GET_TRANSACTION_COUNT.inc();
+
     sender
         .send(FetchedEncodedTransactionWithStatusMeta(transaction).try_into()?)
         .await

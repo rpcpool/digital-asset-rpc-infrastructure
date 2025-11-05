@@ -176,6 +176,10 @@ impl TreeGapFill {
                 .await?;
             let sig_count = sigs.len();
 
+            crate::metrics::BUBBLEGUM_RPC_GET_SIGNATURES_FOR_ADDRESS_COUNT.inc();
+            crate::metrics::BUBBLEGUM_RPC_GET_SIGNATURES_FOR_ADDRESS_TOTAL_COUNT
+                .inc_by(sig_count as f64);
+
             let successful_transactions = sigs
                 .iter()
                 .filter(|transaction| transaction.err.is_none())
