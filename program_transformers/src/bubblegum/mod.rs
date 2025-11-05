@@ -97,7 +97,7 @@ where
                     Ok(_) => (),
                     Err(e) => {
                         crate::metrics::BUBBLEGUM_DOWNLOAD_METADATA_NOTIFIER_ERROR_COUNT.inc();
-                        eprintln!("Error downloading metadata: {:?}", e);
+                        tracing::error!(target: "eprintln", "Error downloading metadata: {:?}", e);
                     }
                 };
             }
@@ -132,7 +132,7 @@ where
                     Ok(_) => (),
                     Err(e) => {
                         crate::metrics::BUBBLEGUM_DOWNLOAD_METADATA_NOTIFIER_ERROR_COUNT.inc();
-                        eprintln!("Error downloading metadata: {:?}", e);
+                        tracing::error!(target: "eprintln", "Error downloading metadata: {:?}", e);
                     }
                 };
             }

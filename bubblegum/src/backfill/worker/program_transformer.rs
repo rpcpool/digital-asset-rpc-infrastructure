@@ -50,7 +50,7 @@ impl ProgramTransformerWorkerArgs {
                         .handle_transaction(&transaction)
                         .await
                     {
-                        eprintln!(
+                        tracing::error!(target: "eprintln",
                             "Failed to handle bubblegum instruction for txn {:?}: {:?}",
                             transaction.signature, err
                         );
