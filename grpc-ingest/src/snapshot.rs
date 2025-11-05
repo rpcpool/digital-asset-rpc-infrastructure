@@ -34,6 +34,13 @@ use {
 const DEFAULT_PROGRAM_TRANSFORMER_MAX_WORKERS: usize = 20;
 const DEFAULT_PROGRAM_TRANSFORMER_BUFFER_CAPACITY: usize = 10_000;
 
+/// Runs snapshot repair using the latest full and incremental snapshot tar files.
+/// Only accounts owned by programs listed in `programs_to_process` are processed.
+/// After ingestion, cleans up "closed" accounts: any `token_accounts`/`tokens` rows
+/// with `slot_updated <= snapshot_slot` (to don't delete accounts newer than the snapshot) that
+/// are missing from `account_snapshots` are deleted. The cleanup filter by `token_program IN
+/// programs_to_process` only affects Token (Tokenkeg)  and Token-2022; other programs won’t
+/// delete anything.
 pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
     let pool = pg_create_pool(config.postgres.clone()).await?;
 

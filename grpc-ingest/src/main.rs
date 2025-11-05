@@ -49,16 +49,18 @@ enum ArgsAction {
     #[command(name = "monitor")]
     /// Monitor correctness of Bubblegum proofs
     Monitor,
-    /// Continual snapshot repair
+    /// Reprocess snapshot data using .tar files.
+    /// For more details see the [`snapshot::run`] docs.
     #[command(name = "snapshot")]
     Snapshot,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let env_filter = EnvFilter::builder()
-        .parse(env::var(EnvFilter::DEFAULT_ENV).unwrap_or_else(|_| "error".to_owned()))
-        .unwrap();
+    let env_filter = EnvFilter::builder().parse(
+        env::var(EnvFilter::DEFAULT_ENV)
+            .unwrap_or_else(|_| "failed to parse env filter".to_owned()),
+    )?;
 
     tracing_subscriber::registry()
         .with(env_filter)
