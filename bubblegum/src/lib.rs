@@ -63,6 +63,8 @@ pub async fn start_backfill(context: BubblegumContext, args: BackfillArgs) -> Re
         TreeResponse::all(&context.solana_rpc).await?
     };
 
+    tracing::info!(target: "backfill_tree_count", "Processing {} amount of trees", trees.len());
+
     let mut crawl_handles = FuturesUnordered::new();
 
     let download_config = Arc::new(DownloadMetadataJsonRetryConfig::default());

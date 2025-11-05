@@ -99,5 +99,10 @@ pub async fn run(config: Args) -> Result<()> {
         text
     );
 
+    let text = prometheus::TextEncoder::new()
+        .encode_to_string(&das_bubblegum::metrics::BUBBLEGUM_TREE_GAP_COUNT.collect())
+        .unwrap_or_else(|e| format!("encode error: {e}"));
+    tracing::info!("Backfill completed. BUBBLEGUM_TREE_GAP_COUNT:\n{}", text);
+
     Ok(())
 }

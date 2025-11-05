@@ -1,11 +1,9 @@
 use {
-    das_bubblegum::metrics::BUBBLEGUM_PROGRAM_TRANSFORMER_ERROR_COUNT,
+    das_bubblegum::metrics::{BUBBLEGUM_PROGRAM_TRANSFORMER_ERROR_COUNT, BUBBLEGUM_TREE_GAP_COUNT},
     das_core::{METADATA_JSON_DOWNLOAD_ERROR_COUNT, METADATA_JSON_DOWNLOAD_SUCCESS_COUNT},
     http_body_util::Full,
     hyper::{
-        body::{Bytes, Incoming},
-        service::service_fn,
-        Request, Response,
+        Request, Response, body::{Bytes, Incoming}, service::service_fn
     },
     hyper_util::{rt::TokioIo, server::conn::auto},
     program_transformers::metrics::{
@@ -71,6 +69,7 @@ pub fn run_metrics_server(address: String) -> anyhow::Result<()> {
         register!(BUBBLEGUM_PROGRAM_TRANSFORMER_ERROR_COUNT);
         register!(BUBBLEGUM_PROGRAM_TRANSFORMER_SUCCESS_COUNT);
         register!(BUBBLEGUM_DOWNLOAD_METADATA_NOTIFIER_ERROR_COUNT);
+        register!(BUBBLEGUM_TREE_GAP_COUNT);
     });
 
     tokio::spawn(async move {
