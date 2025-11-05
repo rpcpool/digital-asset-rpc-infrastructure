@@ -3,14 +3,21 @@ mod bubblegum;
 mod metadata;
 mod purge;
 
+use std::env;
+
 use account::{subcommand as account_subcommand, AccountCommand};
 use anyhow::Result;
 use bubblegum::{subcommand as bubblegum_subcommand, BubblegumCommand};
 use clap::{Parser, Subcommand};
+use das_ops::metrics;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[derive(Debug, Parser)]
 #[clap(author, version)]
 struct Args {
+    #[arg(long, env = "PROMETHEUS_ADDR", default_value = "0.0.0.0:9464")]
+    prometheus_addr: String,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -29,9 +36,19 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let env_filter = EnvFilter::builder().parse(
+        env::var(EnvFilter::DEFAULT_ENV)
+            .unwrap_or_else(|_| "failed to parse env filter".to_owned()),
+    )?;
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt::layer())
+        .init();
+
     let args = Args::parse();
 
-    env_logger::init();
+    metrics::run_metrics_server(args.prometheus_addr)?;
 
     match args.command {
         Command::Bubblegum(subcommand) => bubblegum_subcommand(subcommand).await?,

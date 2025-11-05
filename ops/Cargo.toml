@@ -44,3 +44,9 @@ tracing = { workspace = true }
 mpl-token-metadata = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
+prometheus = { workspace = true }
+lazy_static = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+http-body-util = { workspace = true }
+tracing-subscriber = { workspace = true }

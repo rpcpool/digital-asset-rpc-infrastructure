@@ -1,5 +1,6 @@
 mod backfill;
 mod error;
+pub mod metrics;
 mod tree;
 
 use das_core::{DownloadMetadataJsonRetryConfig, MetadataJsonDownloadWorker};
@@ -86,12 +87,12 @@ pub async fn start_backfill(context: BubblegumContext, args: BackfillArgs) -> Re
     let (program_transformer_worker, transaction_info_sender) = args
         .tree_worker
         .program_transformer_worker
-        .start(context.clone(), download_metadata_worker_sender)?;
+        .start(context.clone(), download_metadata_worker_sender);
 
     let (signature_worker, signature_sender) = args
         .tree_worker
         .signature_worker
-        .start(context.clone(), transaction_info_sender)?;
+        .start(context.clone(), transaction_info_sender);
 
     for tree in trees {
         if crawl_handles.len() >= args.tree_crawler_count {
@@ -180,10 +181,10 @@ pub async fn start_bubblegum_replay(
             .run();
 
     let (program_transformer_worker, transaction_info_sender) = program_transformer_worker_args
-        .start(program_transformer_context, download_metadata_worker_sender)?;
+        .start(program_transformer_context, download_metadata_worker_sender);
 
     let (signature_worker, signature_sender) =
-        signature_worker_args.start(signature_context, transaction_info_sender)?;
+        signature_worker_args.start(signature_context, transaction_info_sender);
 
     for audit in cl_audits {
         let signature = Signature::try_from(audit.tx.as_ref())?;

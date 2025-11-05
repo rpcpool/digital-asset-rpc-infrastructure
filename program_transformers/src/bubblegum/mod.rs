@@ -1,8 +1,5 @@
 use {
-    crate::{
-        error::{ProgramTransformerError, ProgramTransformerResult},
-        DownloadMetadataNotifier,
-    },
+    crate::{error::ProgramTransformerResult, DownloadMetadataNotifier},
     blockbuster::{
         instruction::InstructionBundle,
         programs::bubblegum::{
@@ -31,7 +28,7 @@ pub async fn handle_bubblegum_instruction<'c, T>(
     bundle: &'c InstructionBundle<'c>,
     txn: &T,
     download_metadata_notifier: &DownloadMetadataNotifier,
-) -> ProgramTransformerResult<()>
+) -> ProgramTransformerResult<String>
 where
     T: ConnectionTrait + TransactionTrait,
 {
@@ -96,9 +93,13 @@ where
         }
         InstructionName::MintV1 | InstructionName::MintToCollectionV1 | InstructionName::MintV2 => {
             if let Some(info) = mint::mint(parsing_result, bundle, txn, ix_str).await? {
-                download_metadata_notifier(info)
-                    .await
-                    .map_err(ProgramTransformerError::DownloadMetadataNotify)?;
+                match download_metadata_notifier(info).await {
+                    Ok(_) => (),
+                    Err(e) => {
+                        crate::metrics::BUBBLEGUM_DOWNLOAD_METADATA_NOTIFIER_ERROR_COUNT.inc();
+                        eprintln!("Error downloading metadata: {:?}", e);
+                    }
+                };
             }
         }
         InstructionName::Redeem => {
@@ -127,15 +128,20 @@ where
             if let Some(info) =
                 update_metadata::update_metadata(parsing_result, bundle, txn, ix_str).await?
             {
-                download_metadata_notifier(info)
-                    .await
-                    .map_err(ProgramTransformerError::DownloadMetadataNotify)?;
+                match download_metadata_notifier(info).await {
+                    Ok(_) => (),
+                    Err(e) => {
+                        crate::metrics::BUBBLEGUM_DOWNLOAD_METADATA_NOTIFIER_ERROR_COUNT.inc();
+                        eprintln!("Error downloading metadata: {:?}", e);
+                    }
+                };
             }
         }
         InstructionName::UpdateAssetDataV2 => debug!("Bubblegum: Not Implemented Instruction"),
         _ => debug!("Bubblegum: Not Implemented Instruction"),
     }
-    Ok(())
+
+    Ok(ix_str.to_string())
 }
 
 // PDA lookup requires an 8-byte array.

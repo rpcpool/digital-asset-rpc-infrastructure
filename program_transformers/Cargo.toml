@@ -31,6 +31,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["time"] }
 tracing = { workspace = true }
 spl-token-2022 = {workspace = true, features = ["no-entrypoint"]} 
+prometheus = { workspace = true }
+lazy_static = { workspace = true }
 
 [lints]
 workspace = true

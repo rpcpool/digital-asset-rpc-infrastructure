@@ -24,6 +24,22 @@ pub enum ProgramTransformerError {
     DownloadMetadataNotify(Box<dyn std::error::Error + Send + Sync>),
 }
 
+impl ProgramTransformerError {
+    pub const fn get_error_type(&self) -> &'static str {
+        match self {
+            ProgramTransformerError::ChangeLogEventMalformed => "ChangeLogEventMalformed",
+            ProgramTransformerError::StorageWriteError(_) => "StorageWriteError",
+            ProgramTransformerError::NotImplemented => "NotImplemented",
+            ProgramTransformerError::DeserializationError(_) => "DeserializationError",
+            ProgramTransformerError::SerializatonError(_) => "SerializatonError",
+            ProgramTransformerError::ParsingError(_) => "ParsingError",
+            ProgramTransformerError::DatabaseError(_) => "DatabaseError",
+            ProgramTransformerError::AssetIndexError(_) => "AssetIndexError",
+            ProgramTransformerError::DownloadMetadataNotify(_) => "DownloadMetadataNotify",
+        }
+    }
+}
+
 impl From<BlockbusterError> for ProgramTransformerError {
     fn from(err: BlockbusterError) -> Self {
         ProgramTransformerError::ParsingError(err.to_string())

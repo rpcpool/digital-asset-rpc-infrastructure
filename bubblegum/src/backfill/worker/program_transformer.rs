@@ -1,9 +1,7 @@
-use anyhow::Result;
 use clap::Parser;
 use das_core::{create_download_metadata_notifier, DownloadMetadataInfo};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use log::error;
 use program_transformers::{ProgramTransformer, TransactionInfo};
 use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Sender, UnboundedSender};
@@ -24,7 +22,7 @@ impl ProgramTransformerWorkerArgs {
         &self,
         context: BubblegumContext,
         forwarder: UnboundedSender<DownloadMetadataInfo>,
-    ) -> Result<(JoinHandle<()>, Sender<TransactionInfo>)> {
+    ) -> (JoinHandle<()>, Sender<TransactionInfo>) {
         let (sender, mut receiver) =
             channel::<TransactionInfo>(self.program_transformer_channel_size);
 
@@ -52,10 +50,13 @@ impl ProgramTransformerWorkerArgs {
                         .handle_transaction(&transaction)
                         .await
                     {
-                        error!(
+                        eprintln!(
                             "Failed to handle bubblegum instruction for txn {:?}: {:?}",
                             transaction.signature, err
                         );
+                        crate::metrics::BUBBLEGUM_PROGRAM_TRANSFORMER_ERROR_COUNT
+                            .with_label_values(&[err.get_error_type()])
+                            .inc();
                     }
                 });
 
@@ -65,6 +66,6 @@ impl ProgramTransformerWorkerArgs {
             futures::future::join_all(handlers).await;
         });
 
-        Ok((handle, sender))
+        (handle, sender)
     }
 }
