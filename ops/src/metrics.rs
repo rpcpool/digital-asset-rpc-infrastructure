@@ -3,7 +3,9 @@ use {
     das_core::{METADATA_JSON_DOWNLOAD_ERROR_COUNT, METADATA_JSON_DOWNLOAD_SUCCESS_COUNT},
     http_body_util::Full,
     hyper::{
-        Request, Response, body::{Bytes, Incoming}, service::service_fn
+        body::{Bytes, Incoming},
+        service::service_fn,
+        Request, Response,
     },
     hyper_util::{rt::TokioIo, server::conn::auto},
     program_transformers::metrics::{
