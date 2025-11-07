@@ -2,6 +2,7 @@ use anyhow::Result;
 use cadence::{BufferedUdpMetricSink, QueuingMetricSink, StatsdClient};
 use cadence_macros::set_global_default;
 use clap::Parser;
+use prometheus::Counter;
 use std::net::UdpSocket;
 
 #[derive(Clone, Parser, Debug)]
@@ -28,4 +29,15 @@ pub fn setup_metrics(config: &MetricsArgs) -> Result<()> {
     set_global_default(client);
 
     Ok(())
+}
+
+lazy_static::lazy_static! {
+    pub static ref METADATA_JSON_DOWNLOAD_SUCCESS_COUNT: Counter = Counter::new(
+        "metadata_json_download_success_count",
+        "Total number of successful metadata JSON downloads"
+    ).unwrap();
+
+    pub static ref METADATA_JSON_DOWNLOAD_ERROR_COUNT: Counter = Counter::new(
+        "metadata_json_download_error_count", "Total number of metadata JSON download errors",
+    ).unwrap();
 }

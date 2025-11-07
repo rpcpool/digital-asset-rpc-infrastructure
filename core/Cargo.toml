@@ -37,6 +37,8 @@ sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres"] }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
+prometheus = { workspace = true }
+lazy_static = { workspace = true }
 
 [features]
 rpc-mock = []

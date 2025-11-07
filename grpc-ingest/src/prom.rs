@@ -1,7 +1,10 @@
 use {
     crate::{redis::RedisStreamMessageError, version::VERSION as VERSION_INFO},
     das_bubblegum::ProofReport,
-    das_core::MetadataJsonTaskError,
+    das_core::{
+        MetadataJsonTaskError, METADATA_JSON_DOWNLOAD_ERROR_COUNT,
+        METADATA_JSON_DOWNLOAD_SUCCESS_COUNT,
+    },
     http_body_util::Full,
     hyper::{
         body::{Bytes, Incoming},
@@ -11,7 +14,8 @@ use {
     hyper_util::{rt::TokioIo, server::conn::auto},
     program_transformers::{error::ProgramTransformerError, AccountInfo},
     prometheus::{
-        HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder,
+        Counter, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry,
+        TextEncoder,
     },
     std::{convert::Infallible, net::SocketAddr, sync::Once},
     tokio::{net::TcpListener, sync::mpsc::error::SendError},
@@ -116,6 +120,17 @@ lazy_static::lazy_static! {
         &[]
     ).unwrap();
 
+    pub static ref PROGRAM_TRANSFORMER_ACCOUNT_INFO_COUNT: Counter = Counter::with_opts(
+        Opts::new("program_transformer_account_info_count", "Number of account info processed by the program transformer")
+    ).unwrap();
+
+    pub static ref PROCESSED_SNAPSHOT_UPDATES_COUNT: Counter = Counter::with_opts(
+        Opts::new("processed_snapshot_updates_count", "Number of updates processed from snapshot files")
+    ).unwrap();
+
+    pub static ref PROGRAM_TRANSFORMER_ACCOUNT_ERROR_COUNT: Counter = Counter::with_opts(
+        Opts::new("program_transformer_account_error_count", "Number of errors processing accounts by the program transformer")
+    ).unwrap();
 }
 
 fn metrics_handler() -> Result<Response<Full<Bytes>>, Infallible> {
@@ -179,6 +194,11 @@ pub fn run_metrics_server(address: SocketAddr) -> anyhow::Result<()> {
         register!(BUBBLEGUM_TREE_CORRUPT_PROOFS);
         register!(DOWNLOAD_METADATA_PUBLISH_TIME);
         register!(CURRENT_INGESTER_SLOT);
+        register!(PROGRAM_TRANSFORMER_ACCOUNT_INFO_COUNT);
+        register!(PROCESSED_SNAPSHOT_UPDATES_COUNT);
+        register!(PROGRAM_TRANSFORMER_ACCOUNT_ERROR_COUNT);
+        register!(METADATA_JSON_DOWNLOAD_ERROR_COUNT);
+        register!(METADATA_JSON_DOWNLOAD_SUCCESS_COUNT);
 
         VERSION_INFO_METRIC
             .with_label_values(&[

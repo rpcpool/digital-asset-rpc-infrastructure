@@ -301,29 +301,14 @@ impl ConfigProgramTransformerRunner {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ConfigSnapshot {
-    pub redis: ConfigGrpcRedis,
     pub postgres: ConfigPostgres,
-    pub grpc: ConfigGeyser,
     pub program_transform: ConfigProgramTransformerRunner,
     pub snapshot_write: ConfigAccountSnapshotWriter,
-    pub snapshot_process: ConfigIngestStream,
-    pub snapshot_read: ConfigSubscription,
     pub download_metadata: MetadataJsonDownloadWorkerArgs,
-}
-
-impl From<ConfigSnapshot> for ConfigGrpc {
-    fn from(snapshot: ConfigSnapshot) -> Self {
-        let subscriptions = {
-            let mut map = HashMap::new();
-            map.insert("snapshot".to_string(), snapshot.snapshot_read);
-            map
-        };
-        ConfigGrpc {
-            geyser: snapshot.grpc,
-            subscriptions,
-            redis: snapshot.redis,
-        }
-    }
+    /// The sidecar endpoint to download the snapshot from.
+    pub sidecar_endpoint: String,
+    /// List of programs to process from the downloaded snapshot.
+    pub programs_to_process: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

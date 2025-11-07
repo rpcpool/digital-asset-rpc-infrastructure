@@ -21,6 +21,53 @@ pub struct AssetTokenAccountColumns {
     pub slot_updated_token_account: Option<i64>,
 }
 
+/// # Upsert Asset Token Account Columns
+///
+/// ```sql
+/// INSERT INTO asset (
+///     id,
+///     owner,
+///     frozen,
+///     delegate,
+///     slot_updated,
+///     slot_updated_token_account
+/// ) VALUES (
+///     $1, $2, $3, $4, $5, $6
+/// )
+/// ON CONFLICT (id)
+/// DO UPDATE SET
+///     owner = EXCLUDED.owner,
+///     frozen = EXCLUDED.frozen,
+///     delegate = EXCLUDED.delegate,
+///     slot_updated_token_account = EXCLUDED.slot_updated_token_account
+/// WHERE (
+///     -- First condition: Either field changes AND slot condition, OR slot is null
+///     (
+///         -- Any of these fields changed
+///         (
+///             EXCLUDED.owner IS DISTINCT FROM asset.owner OR
+///             EXCLUDED.frozen IS DISTINCT FROM asset.frozen OR
+///             EXCLUDED.delegate IS DISTINCT FROM asset.delegate
+///         )
+///         AND
+///         -- Slot condition (only if $slot_updated_token_account is provided as value in the query)
+///         (
+///             CASE
+///                 WHEN $slot_updated_token_account IS NOT NULL
+///                 THEN asset.slot_updated_token_account <= $slot_updated_token_account
+///                 ELSE TRUE
+///             END
+///         )
+///     )
+///     OR
+///     -- Second condition: existing slot is null
+///     asset.slot_updated_token_account IS NULL
+/// )
+/// AND
+///     -- Final condition: only update Single owner type assets
+///     asset.owner_type = 'Single'::owner_type;
+/// ```
+///
 pub async fn upsert_assets_token_account_columns<T: ConnectionTrait + TransactionTrait>(
     columns: AssetTokenAccountColumns,
     txn_or_conn: &T,
@@ -122,6 +169,54 @@ pub struct AssetMintAccountColumns {
     pub extensions: Option<Value>,
 }
 
+/// # Upsert Asset Mint Account Columns
+///
+/// ```sql
+/// INSERT INTO asset (
+///     id,
+///     supply,
+///     supply_mint,
+///     slot_updated_mint_account,
+///     slot_updated,
+///     mint_extensions,
+///     asset_data,
+///     specification_asset_class,
+///     specification_version,
+///     owner_type
+/// ) VALUES (
+///     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+/// )
+/// ON CONFLICT (id)
+/// DO UPDATE SET
+///     supply = EXCLUDED.supply,
+///     supply_mint = EXCLUDED.supply_mint,
+///     slot_updated_mint_account = EXCLUDED.slot_updated_mint_account,
+///     mint_extensions = EXCLUDED.mint_extensions,
+///     asset_data = EXCLUDED.asset_data,
+///     owner_type = EXCLUDED.owner_type,
+///     specification_version = EXCLUDED.specification_version
+/// WHERE (
+///     -- First condition: Field changes AND slot condition
+///     (
+///         -- Any of these fields changed
+///         (
+///             EXCLUDED.supply IS DISTINCT FROM asset.supply OR
+///             EXCLUDED.supply_mint IS DISTINCT FROM asset.supply_mint OR
+///             EXCLUDED.slot_updated_mint_account IS DISTINCT FROM asset.slot_updated_mint_account OR
+///             EXCLUDED.mint_extensions IS DISTINCT FROM asset.mint_extensions OR
+///             EXCLUDED.asset_data IS DISTINCT FROM asset.asset_data OR
+///             EXCLUDED.owner_type IS DISTINCT FROM asset.owner_type OR
+///             EXCLUDED.specification_version IS DISTINCT FROM asset.specification_version
+///         )
+///         AND
+///         -- Slot condition: existing slot <= new slot
+///         asset.slot_updated_mint_account <= $slot_updated_mint_account
+///     )
+///     OR
+///     -- Second condition: existing slot is null (allows update regardless)
+///     asset.slot_updated_mint_account IS NULL
+/// );
+/// ```
 pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + TransactionTrait>(
     columns: AssetMintAccountColumns,
     txn_or_conn: &T,

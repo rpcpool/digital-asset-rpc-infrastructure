@@ -236,10 +236,24 @@ fn spawn_task(
         let asset_data_id =
             bs58::encode(download_metadata_info.asset_data_id.clone()).into_string();
 
-        if let Err(e) =
-            perform_metadata_json_task(client, pool, &download_metadata_info, config).await
-        {
-            error!("Asset {} failed: {}", asset_data_id, e);
+        let result = tokio::time::timeout(
+            Duration::from_millis(1000), // 1 second total timeout
+            perform_metadata_json_task(client, pool, &download_metadata_info, config),
+        )
+        .await;
+
+        match result {
+            Ok(Ok(())) => {
+                crate::metrics::METADATA_JSON_DOWNLOAD_SUCCESS_COUNT.inc();
+            }
+            Ok(Err(e)) => {
+                eprintln!("# Asset {} failed: {}", asset_data_id, e);
+
+                crate::metrics::METADATA_JSON_DOWNLOAD_ERROR_COUNT.inc();
+            }
+            Err(_timeout) => {
+                error!("Asset {} timed out after 1 second", asset_data_id);
+            }
         }
 
         debug!(
@@ -363,12 +377,24 @@ impl DownloadMetadata {
         download_metadata_info: &DownloadMetadataInfo,
         config: Arc<DownloadMetadataJsonRetryConfig>,
     ) -> Result<(), MetadataJsonTaskError> {
-        perform_metadata_json_task(
-            self.client.clone(),
-            self.pool.clone(),
-            download_metadata_info,
-            config,
+        let result = tokio::time::timeout(
+            Duration::from_millis(1000), // 1 second total timeout
+            perform_metadata_json_task(
+                self.client.clone(),
+                self.pool.clone(),
+                download_metadata_info,
+                config,
+            ),
         )
-        .await
+        .await;
+
+        match result {
+            Ok(Ok(())) => Ok(()),
+            Ok(e) => e,
+            Err(_timeout) => {
+                error!("Asset timed out after 1 second");
+                Ok(())
+            }
+        }
     }
 }
