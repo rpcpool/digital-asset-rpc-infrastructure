@@ -60,10 +60,20 @@ pub async fn start_backfill(context: BubblegumContext, args: BackfillArgs) -> Re
     let trees = if let Some(ref only_trees) = args.only_trees {
         TreeResponse::find(&context.solana_rpc, only_trees.clone()).await?
     } else {
+        tracing::warn!(target: "all_trees", "No trees specified, will process all trees");
         TreeResponse::all(&context.solana_rpc).await?
     };
 
     tracing::info!(target: "backfill_tree_count", "Processing {} amount of trees", trees.len());
+
+    if args.tree_worker.force {
+        let filter_rpc = args
+            .tree_worker
+            .gap_worker
+            .overfetch_args
+            .filter_existing_signatures;
+        tracing::warn!(target: "force_backfill", "FORCE flag is set, will process all txs (filter_existing_signatures flag set to: {})", filter_rpc);
+    }
 
     let mut crawl_handles = FuturesUnordered::new();
 
