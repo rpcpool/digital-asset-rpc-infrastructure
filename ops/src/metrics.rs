@@ -16,7 +16,7 @@ use {
         BUBBLEGUM_DOWNLOAD_METADATA_NOTIFIER_ERROR_COUNT,
         BUBBLEGUM_PROGRAM_TRANSFORMER_SUCCESS_COUNT,
     },
-    prometheus::{Registry, TextEncoder},
+    prometheus::{core::Collector, Registry, TextEncoder},
     std::{convert::Infallible, net::SocketAddr, str::FromStr, sync::Once},
     tokio::net::TcpListener,
     tracing::{error, info},
@@ -114,6 +114,37 @@ pub fn run_metrics_server(address: String) -> anyhow::Result<()> {
             });
         }
     });
+
+    Ok(())
+}
+
+fn print_metric<T: Collector>(metric: &T) -> anyhow::Result<()> {
+    let metric_family = metric.collect();
+    let metric_name = metric_family
+        .first()
+        .map(|mf| mf.name())
+        .unwrap_or("unknown metric");
+
+    let text = prometheus::TextEncoder::new()
+        .encode_to_string(&metric_family)
+        .unwrap_or_else(|e| format!("encode error: {e}"));
+    tracing::info!("# {}:\n{}", metric_name, text);
+
+    Ok(())
+}
+
+pub fn print_metrics() -> anyhow::Result<()> {
+    print_metric(&*das_core::METADATA_JSON_DOWNLOAD_SUCCESS_COUNT)?;
+    print_metric(&*das_core::METADATA_JSON_DOWNLOAD_ERROR_COUNT)?;
+    print_metric(&*das_bubblegum::metrics::BUBBLEGUM_PROGRAM_TRANSFORMER_ERROR_COUNT)?;
+    print_metric(&*program_transformers::metrics::BUBBLEGUM_PROGRAM_TRANSFORMER_SUCCESS_COUNT)?;
+    print_metric(
+        &*program_transformers::metrics::BUBBLEGUM_DOWNLOAD_METADATA_NOTIFIER_ERROR_COUNT,
+    )?;
+    print_metric(&*das_bubblegum::metrics::BUBBLEGUM_TREE_GAP_COUNT)?;
+    print_metric(&*das_bubblegum::metrics::BUBBLEGUM_RPC_GET_TRANSACTION_COUNT)?;
+    print_metric(&*das_bubblegum::metrics::BUBBLEGUM_RPC_GET_SIGNATURES_FOR_ADDRESS_COUNT)?;
+    print_metric(&*das_bubblegum::metrics::BUBBLEGUM_RPC_GET_SIGNATURES_FOR_ADDRESS_TOTAL_COUNT)?;
 
     Ok(())
 }
