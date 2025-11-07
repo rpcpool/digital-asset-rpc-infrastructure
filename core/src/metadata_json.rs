@@ -248,7 +248,6 @@ fn spawn_task(
             }
             Ok(Err(e)) => {
                 error!(target: "eprintln", "# Asset {} failed: {}", asset_data_id, e);
-
                 crate::metrics::METADATA_JSON_DOWNLOAD_ERROR_COUNT.inc();
             }
             Err(_timeout) => {
