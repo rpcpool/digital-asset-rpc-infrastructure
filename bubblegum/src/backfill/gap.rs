@@ -1,7 +1,12 @@
-use crate::{error::ErrorKind, Rpc};
+use crate::{error::ErrorKind, BubblegumContext};
 use anyhow::Result;
 use clap::{Args, Parser};
-use sea_orm::{DatabaseConnection, DbBackend, FromQueryResult, Statement, Value};
+use das_core::DatabasePool;
+use digital_asset_types::dao::cl_audits_v2;
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, DbBackend, EntityTrait, FromQueryResult, PaginatorTrait,
+    QueryFilter, Statement, Value,
+};
 use solana_client::rpc_response::RpcConfirmedTransactionStatusWithSignature;
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
 use std::str::FromStr;
@@ -28,6 +33,12 @@ pub struct OverfetchArgs {
     /// Lookup used with LEAD in the SQL query to get the overfetch tx
     #[arg(long, env, default_value = "10")]
     pub overfetch_lookup_limit: i32,
+
+    /// Filter out signatures that are already in the database (in `cl_audits_v2` table)
+    /// This is mainly meant for the case we run backfill with `--force` flag but we
+    /// only want to process new signatures
+    #[arg(long, env, default_value = "false")]
+    pub filter_existing_signatures: bool,
 }
 
 const TREE_GAP_SQL: &str = r#"
@@ -157,10 +168,13 @@ impl TreeGapFill {
 
     pub async fn crawl(
         &self,
-        client: Rpc,
+        context: BubblegumContext,
         sender: Sender<Signature>,
         overfetch_args: OverfetchArgs,
     ) -> Result<()> {
+        let client = context.solana_rpc.clone();
+        let conn = context.database_pool.connection();
+
         let mut before = self.before;
 
         let (limit, until) = if self.overfetch_tx.is_some() {
@@ -187,6 +201,21 @@ impl TreeGapFill {
 
             for sig in successful_transactions.iter() {
                 let sig = Signature::from_str(&sig.signature)?;
+
+                // Filter out signatures that are already in the database (based on `overfetch_args` config)
+                if overfetch_args.filter_existing_signatures {
+                    let exists = cl_audits_v2::Entity::find()
+                        .filter(cl_audits_v2::Column::Tree.eq(self.tree.as_ref().to_vec()))
+                        .filter(cl_audits_v2::Column::Tx.eq(sig.as_ref().to_vec()))
+                        .count(&conn)
+                        .await?
+                        > 0;
+
+                    if exists {
+                        continue;
+                    }
+                }
+
                 sender.send(sig).await?;
             }
 

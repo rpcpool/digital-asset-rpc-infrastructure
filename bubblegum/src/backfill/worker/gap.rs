@@ -4,7 +4,6 @@ use crate::{
 };
 use anyhow::Result;
 use clap::Parser;
-use das_core::Rpc;
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::error;
 use solana_sdk::signature::Signature;
@@ -46,10 +45,10 @@ impl GapWorkerArgs {
                     handlers.next().await;
                 }
 
-                let client = context.solana_rpc.clone();
                 let sender = sender.clone();
 
-                let handle = spawn_crawl_worker(client, sender, gap, overfetch_args.clone());
+                let handle =
+                    spawn_crawl_worker(context.clone(), sender, gap, overfetch_args.clone());
 
                 handlers.push(handle);
             }
@@ -62,13 +61,13 @@ impl GapWorkerArgs {
 }
 
 fn spawn_crawl_worker(
-    client: Rpc,
+    context: BubblegumContext,
     sender: Sender<Signature>,
     gap: TreeGapFill,
     overfetch_args: OverfetchArgs,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        if let Err(e) = gap.crawl(client, sender, overfetch_args).await {
+        if let Err(e) = gap.crawl(context, sender, overfetch_args).await {
             error!("tree transaction: {:?}", e);
         }
     })
