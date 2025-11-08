@@ -307,8 +307,6 @@ pub struct ConfigSnapshot {
     pub download_metadata: MetadataJsonDownloadWorkerArgs,
     /// The sidecar endpoint to download the snapshot from.
     pub sidecar_endpoint: String,
-    /// List of programs to process from the downloaded snapshot.
-    pub programs_to_process: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
