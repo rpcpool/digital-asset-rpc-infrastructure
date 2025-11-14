@@ -380,7 +380,7 @@ impl AccountSnapshotWriter {
         self.update_sender.clone()
     }
 
-    pub fn take_error_receiver(&mut self) -> Option<mpsc::Receiver<()>> {
+    pub const fn take_error_receiver(&mut self) -> Option<mpsc::Receiver<()>> {
         self.error_receiver.take()
     }
 

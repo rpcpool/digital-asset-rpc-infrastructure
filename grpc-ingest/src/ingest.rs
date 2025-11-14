@@ -44,7 +44,7 @@ impl DownloadMetadataPublish {
         }
     }
 
-    pub fn take_sender(&mut self) -> Option<UnboundedSender<DownloadMetadataInfo>> {
+    pub const fn take_sender(&mut self) -> Option<UnboundedSender<DownloadMetadataInfo>> {
         self.sender.take()
     }
 
