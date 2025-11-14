@@ -12,6 +12,7 @@ use {
 
 mod accountsdb_helpers;
 mod config;
+mod fumarole;
 mod grpc;
 mod ingest;
 mod monitor;

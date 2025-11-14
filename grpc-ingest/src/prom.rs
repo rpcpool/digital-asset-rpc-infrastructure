@@ -131,6 +131,42 @@ lazy_static::lazy_static! {
     pub static ref PROGRAM_TRANSFORMER_ACCOUNT_ERROR_COUNT: Counter = Counter::with_opts(
         Opts::new("program_transformer_account_error_count", "Number of errors processing accounts by the program transformer")
     ).unwrap();
+
+    pub static ref ACCOUNT_NOT_FOUND_IN_GRPC_COUNT: Counter = Counter::with_opts(
+        Opts::new("account_not_found_in_grpc_count", "Number of accounts not found in grpc")
+    ).unwrap();
+
+    pub static ref TX_NOT_FOUND_IN_GRPC_COUNT: Counter = Counter::with_opts(
+        Opts::new("tx_not_found_in_grpc_count", "Number of transactions not found in grpc")
+    ).unwrap();
+
+    pub static ref ACCOUNT_NOT_FOUND_IN_FUMAROLE_COUNT: Counter = Counter::with_opts(
+        Opts::new("account_not_found_in_fumarole_count", "Number of accounts not found in fumarole")
+    ).unwrap();
+
+    pub static ref TX_NOT_FOUND_IN_FUMAROLE_COUNT: Counter = Counter::with_opts(
+        Opts::new("tx_not_found_in_fumarole_count", "Number of transactions not found in fumarole")
+    ).unwrap();
+
+    pub static ref GRPC_UPDATES_COUNT: Counter = Counter::with_opts(
+        Opts::new("grpc_updates_count", "Number of updates received from grpc")
+    ).unwrap();
+
+    pub static ref FUMAROLE_UPDATES_COUNT: Counter = Counter::with_opts(
+        Opts::new("fumarole_updates_count", "Number of updates received from fumarole")
+    ).unwrap();
+
+    pub static ref FUMAROLE_GROUP_NOT_FOUND_COUNT: Counter = Counter::with_opts(
+        Opts::new("fumarole_group_not_found_count", "Number of fumarole groups not found")
+    ).unwrap();
+
+    pub static ref FUMAROLE_GROUP_STALE_COUNT: Counter = Counter::with_opts(
+        Opts::new("fumarole_group_stale_count", "Number of fumarole groups stale")
+    ).unwrap();
+
+    pub static ref FUMAROLE_CONNECT_COUNT: Counter = Counter::with_opts(
+        Opts::new("fumarole_connect_count", "Number of fumarole connections")
+    ).unwrap();
 }
 
 fn metrics_handler() -> Result<Response<Full<Bytes>>, Infallible> {
@@ -199,6 +235,16 @@ pub fn run_metrics_server(address: SocketAddr) -> anyhow::Result<()> {
         register!(PROGRAM_TRANSFORMER_ACCOUNT_ERROR_COUNT);
         register!(METADATA_JSON_DOWNLOAD_ERROR_COUNT);
         register!(METADATA_JSON_DOWNLOAD_SUCCESS_COUNT);
+
+        register!(ACCOUNT_NOT_FOUND_IN_GRPC_COUNT);
+        register!(TX_NOT_FOUND_IN_GRPC_COUNT);
+        register!(ACCOUNT_NOT_FOUND_IN_FUMAROLE_COUNT);
+        register!(TX_NOT_FOUND_IN_FUMAROLE_COUNT);
+        register!(GRPC_UPDATES_COUNT);
+        register!(FUMAROLE_UPDATES_COUNT);
+        register!(FUMAROLE_GROUP_NOT_FOUND_COUNT);
+        register!(FUMAROLE_GROUP_STALE_COUNT);
+        register!(FUMAROLE_CONNECT_COUNT);
 
         VERSION_INFO_METRIC
             .with_label_values(&[

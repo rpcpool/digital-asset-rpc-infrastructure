@@ -1,20 +1,16 @@
 use {
     crate::{
-        config::{ConfigGrpc, ConfigGrpcRequestFilter, ConfigSubscription},
-        prom::{grpc_tasks_total_dec, grpc_tasks_total_inc, redis_xadd_status_inc},
-        redis::TrackedPipeline,
-        util::create_shutdown,
+        config::{ConfigGrpc, ConfigGrpcRequestFilter, ConfigStream, ConfigSubscription}, fumarole::FumaroleCheckerSource, prom::{self, grpc_tasks_total_dec, grpc_tasks_total_inc, redis_xadd_status_inc}, redis::TrackedPipeline
     },
-    anyhow::Context,
-    futures::{
-        stream::{FuturesUnordered, StreamExt},
-        SinkExt,
-    },
+    futures::stream::{FuturesUnordered, StreamExt},
     redis::streams::StreamMaxlen,
     solana_sdk::system_program::ID as system_program_id,
     std::{collections::HashMap, sync::Arc, time::Duration},
     tokio::{
-        sync::{oneshot, Mutex},
+        sync::{
+            Mutex, mpsc::{self, Sender}
+        },
+        task::JoinHandle,
         time::sleep,
     },
     tracing::{debug, warn},
@@ -35,58 +31,35 @@ const PING_ID: i32 = 0;
 pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
     let redis_client = redis::Client::open(config.redis.url.clone())?;
     let connection = redis_client.get_multiplexed_tokio_connection().await?;
-
-    let mut shutdown = create_shutdown()?;
-
     let config = Arc::new(config);
 
     let subscriptions = config.subscriptions.clone();
 
-    let (global_shutdown_tx, mut global_shutdown_rx) = oneshot::channel();
-    let global_shutdown_tx = Arc::new(Mutex::new(Some(global_shutdown_tx)));
-
-    let mut subscription_tasks = Vec::new();
-    for (label, subscription_config) in subscriptions {
+    //TODO: This is only serving to test fumarole against common gRPC stream
+    let fumarole_checker_tx = crate::fumarole::fumarole_checker();
+    for (label, subscription_config) in subscriptions.clone() {
+        
         let subscription = Subscription {
             label,
             config: subscription_config,
         };
-        let task = SubscriptionTask::build()
+        SubscriptionTask::build()
             .config(Arc::clone(&config))
-            .connection(connection.clone())
             .subscription(subscription)
-            .start(Arc::clone(&global_shutdown_tx))
-            .await?;
+            .start(fumarole_checker_tx.clone())
+            .await;
 
-        subscription_tasks.push(task);
     }
 
-    tokio::select! {
-        _ = &mut global_shutdown_rx => {
-            warn!(
-                target: "grpc2redis",
-                action = "global_shutdown_signal_received",
-                message = "Global shutdown signal received, stopping all tasks"
-            );
+    let handle = start(config, connection, subscriptions.values().next().unwrap().clone(), fumarole_checker_tx.clone()).await?;
+    match handle.await {
+        Ok(_) => {
+            warn!(target: "grpc2redis", message = "Subscription task ended OK");
         }
-        _ = shutdown.next() => {
-            warn!(
-                target: "grpc2redis",
-                action = "shutdown_signal_received",
-                message = "Shutdown signal received, waiting for spawned tasks to complete"
-            );
+        Err(err) => {
+            tracing::error!(target: "grpc2redis", message = "Subscription task ended with error", ?err);
         }
     }
-
-    futures::future::join_all(
-        subscription_tasks
-            .into_iter()
-            .map(|task| task.stop())
-            .collect::<Vec<_>>(),
-    )
-    .await
-    .into_iter()
-    .collect::<anyhow::Result<()>>()?;
 
     Ok(())
 }
@@ -99,7 +72,6 @@ pub struct Subscription {
 #[derive(Default)]
 pub struct SubscriptionTask {
     pub config: Arc<ConfigGrpc>,
-    pub connection: Option<redis::aio::MultiplexedConnection>,
     pub subscription: Option<Subscription>,
 }
 
@@ -118,30 +90,18 @@ impl SubscriptionTask {
         self
     }
 
-    pub fn connection(mut self, connection: redis::aio::MultiplexedConnection) -> Self {
-        self.connection = Some(connection);
-        self
-    }
-
     pub async fn start(
         mut self,
-        global_shutdown_tx: Arc<Mutex<Option<oneshot::Sender<()>>>>,
-    ) -> anyhow::Result<SubscriptionTaskStop> {
+        fumarole_checker_tx: Sender<(FumaroleCheckerSource, SubscribeUpdate)>,
+    ) {
         let config = Arc::clone(&self.config);
-        let connection = self
-            .connection
-            .take()
-            .expect("Redis Connection is required");
 
-        let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
         let subscription = self.subscription.take().expect("Subscription is required");
         let label = subscription.label.clone();
         let subscription_config = Arc::new(subscription.config);
-        let connection = connection.clone();
 
-        let ConfigSubscription { stream, filter } = subscription_config.as_ref().clone();
+        let ConfigSubscription { stream: _, filter } = subscription_config.as_ref().clone();
 
-        let stream_config = Arc::new(stream.clone());
         let mut req_accounts = HashMap::with_capacity(1);
         let mut req_transactions = HashMap::with_capacity(1);
         let mut req_slot = HashMap::with_capacity(1);
@@ -172,231 +132,230 @@ impl SubscriptionTask {
             ..Default::default()
         };
 
-        let pipes: Vec<_> = (0..stream_config.pipeline_count)
-            .map(|_| Arc::new(Mutex::new(TrackedPipeline::default())))
-            .collect();
-        let mut tasks = FuturesUnordered::new();
-
         let mut dragon_mouth_client =
-            GeyserGrpcClient::build_from_shared(config.geyser.endpoint.clone())?
-                .x_token(config.geyser.x_token.clone())?
+            GeyserGrpcClient::build_from_shared(config.geyser.endpoint.clone())
+                .expect("failed to build gRPC client")
+                .x_token(config.geyser.x_token.clone())
+                .expect("failed to set x-token")
                 .connect_timeout(Duration::from_secs(config.geyser.connect_timeout))
                 .timeout(Duration::from_secs(config.geyser.timeout))
                 .connect()
                 .await
-                .context("failed to connect to gRPC")?;
+                .expect("failed to connect to gRPC");
 
-        let (mut subscribe_tx, stream) = dragon_mouth_client
+        let (mut _subscribe_tx, stream) = dragon_mouth_client
             .subscribe_with_request(Some(request))
-            .await?;
-        let global_shutdown_tx = Arc::clone(&global_shutdown_tx);
+            .await.expect("failed to subscribe to gRPC");
 
-        let control = tokio::spawn({
-            async move {
-                tokio::pin!(stream);
+        // Send GRPC updates to fumarole checker
+        tokio::spawn(async move {
+            tokio::pin!(stream);
+            while let Some(Ok(update)) = stream.next().await {
 
-                let mut flush_handles = Vec::new();
-                let mut shutdown_senders = Vec::new();
+                prom::GRPC_UPDATES_COUNT.inc();
 
-                for pipe in &pipes {
-                    let pipe = Arc::clone(pipe);
-                    let stream_config = Arc::clone(&stream_config);
-                    let label = label.clone();
-                    let mut connection = connection.clone();
-                    let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
-
-                    let flush_handle = tokio::spawn(async move {
-                        loop {
-                            tokio::select! {
-                                _ = sleep(stream_config.pipeline_max_idle) => {
-                                    let mut pipe = pipe.lock().await;
-                                    let flush = pipe.flush(&mut connection).await;
-
-                                    let status = flush.as_ref().map(|_| ()).map_err(|_| ());
-                                    let count = flush.as_ref().unwrap_or_else(|count| count);
-
-                                    debug!(target: "grpc2redis", action = "flush_redis_pip_deadline", stream = ?stream_config.name, status = ?status, count = ?count);
-                                    redis_xadd_status_inc(&stream_config.name, &label, status, *count);
-                                }
-                                _ = &mut shutdown_rx => {
-                                    let mut pipe = pipe.lock().await;
-                                    let flush = pipe.flush(&mut connection).await;
-
-                                    let status = flush.as_ref().map(|_| ()).map_err(|_| ());
-                                    let count = flush.as_ref().unwrap_or_else(|count| count);
-
-                                    debug!(target: "grpc2redis", action = "final_flush_redis_pipe", stream = ?stream_config.name, status = ?status, count = ?count);
-                                    redis_xadd_status_inc(&stream_config.name, &label, status, *count);
-                                    break;
-                                }
-                            }
-                        }
-                    });
-
-                    flush_handles.push(flush_handle);
-                    shutdown_senders.push(shutdown_tx);
+                match fumarole_checker_tx.send((FumaroleCheckerSource::Grpc, update.clone())).await {
+                    Ok(_) => (),
+                    Err(err) => {
+                        tracing::error!(target: "grpc2redis", message = "Failed to send GRPC update to fumarole checker", ?err);
+                    }
                 }
+            }
+        });
+    }
+}
 
-                let mut current_pipe_index = 0;
+pub async fn start(
+    config: Arc<ConfigGrpc>,
+    connection: redis::aio::MultiplexedConnection,
+    subscription_config: ConfigSubscription,
+    fumarole_checker_tx: Sender<(FumaroleCheckerSource, SubscribeUpdate)>,
+) -> anyhow::Result<JoinHandle<()>> {
+    let connection = connection.clone();
 
-                loop {
-                    tokio::select! {
-                        event = stream.next() => {
-                            match event {
-                                Some(Ok(msg)) => {
-                                    match msg.update_oneof {
-                                        Some(UpdateOneof::Account(_)) | Some(UpdateOneof::Transaction(_)) | Some(UpdateOneof::BlockMeta(_)) => {
-                                            if tasks.len() >= stream_config.max_concurrency {
-                                                tasks.next().await;
-                                            }
-                                            grpc_tasks_total_inc(&label, &stream_config.name);
+    let ConfigSubscription { stream, filter } = subscription_config.clone();
 
-                                            tasks.push(tokio::spawn({
-                                                let pipe = Arc::clone(&pipes[current_pipe_index]);
-                                                let label = label.clone();
-                                                let stream_config = Arc::clone(&stream_config);
+    let stream_config = Arc::new(stream.clone());
 
-                                                async move {
-                                                    let stream = stream_config.name.clone();
-                                                    let stream_maxlen = stream_config.max_len;
+    let pipes: Vec<_> = (0..stream_config.pipeline_count)
+        .map(|_| Arc::new(Mutex::new(TrackedPipeline::default())))
+        .collect();
 
-                                                    let SubscribeUpdate { update_oneof, .. } = msg;
+    let (fumarole_tx, mut fumarole_rx) = mpsc::channel(10_000);
 
-                                                    let mut pipe = pipe.lock().await;
+    let (mut fumarole_handle, mut fumarole_sink) =
+        crate::fumarole::connect(config.fumarole.clone(), fumarole_tx.clone()).await?;
 
-                                                    if let Some(update) = update_oneof {
-                                                        match update {
-                                                            UpdateOneof::Account(account) => {
-                                                                if let Some(ref acc) = account.account {
-                                                                    if acc.owner == system_program_id.to_bytes().to_vec() && (acc.lamports != 0 || !acc.data.is_empty()) {
-                                                                        return;
-                                                                    }
-                                                                }
+    let control = tokio::spawn({
+        async move {
 
-                                                                pipe.xadd_maxlen(
-                                                                    &stream.to_string(),
-                                                                    StreamMaxlen::Approx(stream_maxlen),
-                                                                    "*",
-                                                                    account.encode_to_vec(),
-                                                                );
-                                                            }
+            for pipe in &pipes {
+                let pipe = Arc::clone(pipe);
+                let stream_config = Arc::clone(&stream_config);
+                let mut connection = connection.clone();
 
-                                                            UpdateOneof::Transaction(transaction) => {
-                                                                if let Some(transaction) = &transaction.transaction {
-                                                                    if let Some(meta) = &transaction.meta {
-                                                                        if meta.err.is_some() {
-                                                                            return;
-                                                                        }
-                                                                    }
-                                                                }
+                tokio::spawn(async move {
+                    loop {
+                        sleep(stream_config.pipeline_max_idle).await;
 
-                                                                pipe.xadd_maxlen(
-                                                                    &stream.to_string(),
-                                                                    StreamMaxlen::Approx(stream_maxlen),
-                                                                    "*",
-                                                                    transaction.encode_to_vec(),
-                                                                );
-                                                            }
-                                                            UpdateOneof::BlockMeta(block_meta) => {
-                                                                pipe.xadd_maxlen(
-                                                                    &stream.to_string(),
-                                                                    StreamMaxlen::Approx(stream_maxlen),
-                                                                    "*",
-                                                                    block_meta.encode_to_vec(),
-                                                                );
-                                                            }
-                                                            _ => {
-                                                                warn!(target: "grpc2redis", action = "unknown_update_variant", label = ?label, message = "Unknown update variant");
-                                                            }
-                                                        }
-                                                    }
+                        let mut pipe = pipe.lock().await;
+                        let flush = pipe.flush(&mut connection).await;
 
-                                                    grpc_tasks_total_dec(&label, &stream_config.name);
-                                                }
-                                            }));
+                        let status = flush.as_ref().map(|_| ()).map_err(|_| ());
+                        let count = flush.as_ref().unwrap_or_else(|count| count);
 
-                                            current_pipe_index = (current_pipe_index + 1) % pipes.len();
-                                        }
-                                        Some(UpdateOneof::Ping(_)) => {
-                                            let ping = subscribe_tx
-                                                .send(SubscribeRequest {
-                                                    ping: Some(SubscribeRequestPing { id: PING_ID }),
-                                                    ..Default::default()
-                                                })
-                                                .await;
+                        debug!(target: "grpc2redis", action = "flush_redis_pip_deadline", status = ?status, count = ?count);
+                        redis_xadd_status_inc("fumarole", "TOTAL", status, *count);
+                    }
+                });
+            }
 
-                                            match ping {
-                                                Ok(_) => {
-                                                    debug!(target: "grpc2redis", action = "send_ping", message = "Ping sent successfully", id = PING_ID);
-                                                }
-                                                Err(err) => {
-                                                    warn!(target: "grpc2redis", action = "send_ping_failed", message = "Failed to send ping", ?err, id = PING_ID);
-                                                }
-                                            }
-                                        }
-                                        Some(UpdateOneof::Pong(pong)) => {
-                                            if pong.id == PING_ID {
-                                                debug!(target: "grpc2redis", action = "receive_pong", message = "Pong received", id = PING_ID);
-                                            } else {
-                                                warn!(target: "grpc2redis", action = "receive_unknown_pong", message = "Unknown pong id received", id = pong.id);
-                                            }
-                                        }
-                                        _ => {
-                                            warn!(target: "grpc2redis", action = "unknown_update_variant", message = "Unknown update variant");
-                                        }
+            let mut current_pipe_index = 0;
+            let mut tasks = FuturesUnordered::new();
+
+            loop {
+                tokio::select! {
+                    event = fumarole_rx.recv() => {
+                        match event {
+                            Some(msg) => {
+
+                                prom::FUMAROLE_UPDATES_COUNT.inc();
+
+                                match fumarole_checker_tx.send((FumaroleCheckerSource::Fumarole, msg.clone())).await {
+                                    Ok(_) => (),
+                                    Err(err) => {
+                                        tracing::error!(target: "grpc2redis", message = "Failed to send message to fumarole checker", ?err);
                                     }
                                 }
-                                None | Some(Err(_)) => {
-                                    warn!(target: "grpc2redis", action = "stream_closed", message = "Stream closed, stopping subscription task", ?label);
 
-                                    let mut global_shutdown_tx = global_shutdown_tx.lock().await;
-                                    if let Some(global_shutdown_tx) = global_shutdown_tx.take() {
-                                        let _ = global_shutdown_tx.send(());
-                                    }
-                                }
+
+                                let pipe = Arc::clone(&pipes[current_pipe_index]);
+
+                                save_update_to_redis(pipe, msg, Arc::clone(&stream_config), fumarole_sink.clone(), &mut tasks).await;
+
+                                current_pipe_index = (current_pipe_index + 1) % pipes.len();
+                            }
+                            None => {
+                                tracing::error!("Receiving None on the Fumarole receiver. Reconnection went wrong");
                             }
                         }
-                        _ = &mut shutdown_rx => {
-                            debug!(target: "grpc2redis", action = "shutdown_signal_received", message = "Shutdown signal received, stopping subscription task", ?label);
-                            break;
+                    }
+                    // If the JoinHandle ends, means we lost the fumarole connection, reconnect
+                    result = &mut fumarole_handle => {
+                        match result {
+                            Ok(_) => {
+                                warn!(target: "grpc2redis", message = "Fumarole connection ended OK");
+                            }
+                            Err(err) => {
+                                warn!(target: "grpc2redis", message = "Fumarole connection ended with error", ?err);
+                            }
+                        }
+
+                        // Wait before reconnecting to avoid overwhelming the fumarole server
+                        sleep(Duration::from_secs(10)).await;
+
+                        // This will replace the previous fumarole handle with a new connection, to keep awaiting on it for future reconnections
+                        let (fumarole_new_handle, fumarole_new_sink) =
+                            crate::fumarole::connect(config.fumarole.clone(), fumarole_tx.clone()).await.expect("Failed to reconnect to fumarole");
+
+                        fumarole_handle = fumarole_new_handle;
+                        fumarole_sink = fumarole_new_sink;
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(control)
+}
+
+pub async fn save_update_to_redis(
+    pipe: Arc<Mutex<TrackedPipeline>>,
+    msg: SubscribeUpdate,
+    stream_config: Arc<ConfigStream>,
+    sink: Sender<SubscribeRequest>,
+    tasks: &mut FuturesUnordered<JoinHandle<()>>,
+) {
+    if tasks.len() >= stream_config.max_concurrency {
+        tasks.next().await;
+    }
+
+    grpc_tasks_total_inc("fumarole", "TOTAL");
+
+    tasks.push(tokio::spawn( async move {
+        match msg.update_oneof {
+            Some(UpdateOneof::Account(account)) => {
+                if let Some(ref acc) = account.account {
+                    if acc.owner == system_program_id.to_bytes().to_vec()
+                        && (acc.lamports != 0 || !acc.data.is_empty())
+                    {
+                        return;
+                    }
+                }
+    
+                let mut pipe = pipe.lock().await;
+                pipe.xadd_maxlen(
+                    "ACCOUNTS",
+                    StreamMaxlen::Approx(stream_config.max_len),
+                    "*",
+                    account.encode_to_vec(),
+                );
+            }
+            Some(UpdateOneof::Transaction(transaction)) => {
+                if let Some(transaction) = &transaction.transaction {
+                    if let Some(meta) = &transaction.meta {
+                        if meta.err.is_some() {
+                            return;
                         }
                     }
                 }
-
-                debug!(target: "grpc2redis", action = "shutdown_subscription_task", message = "Subscription task stopped", ?label);
-                while (tasks.next().await).is_some() {}
-
-                for shutdown_tx in shutdown_senders {
-                    debug!(target: "grpc2redis", action = "send_shutdown_signal", message = "Sending shutdown signal to flush handles");
-                    let _ = shutdown_tx.send(());
-                }
-
-                debug!(target: "grpc2redis", action = "wait_flush_handles", message = "Waiting for flush handles to complete");
-                futures::future::join_all(flush_handles).await;
+    
+                let mut pipe = pipe.lock().await;
+                pipe.xadd_maxlen(
+                    "TRANSACTIONS",
+                    StreamMaxlen::Approx(stream_config.max_len),
+                    "*",
+                    transaction.encode_to_vec(),
+                );
             }
-        });
+            Some(UpdateOneof::BlockMeta(block_meta)) => {
+                let mut pipe = pipe.lock().await;
+    
+                pipe.xadd_maxlen(
+                    "SLOT",
+                    StreamMaxlen::Approx(stream_config.max_len),
+                    "*",
+                    block_meta.encode_to_vec(),
+                );
+            }
+            Some(UpdateOneof::Ping(_)) => {
+                let ping = sink
+                    .send(SubscribeRequest {
+                        ping: Some(SubscribeRequestPing { id: PING_ID }),
+                        ..Default::default()
+                    })
+                    .await;
+    
+                match ping {
+                    Ok(_) => {
+                        debug!(target: "grpc2redis", action = "send_ping", message = "Ping sent successfully", id = PING_ID);
+                    }
+                    Err(err) => {
+                        warn!(target: "grpc2redis", action = "send_ping_failed", message = "Failed to send ping", ?err, id = PING_ID);
+                    }
+                }
+            }
+            Some(UpdateOneof::Pong(pong)) => {
+                if pong.id == PING_ID {
+                    debug!(target: "grpc2redis", action = "receive_pong", message = "Pong received", id = PING_ID);
+                } else {
+                    warn!(target: "grpc2redis", action = "receive_unknown_pong", message = "Unknown pong id received", id = pong.id);
+                }
+            }
+            _ => warn!(target: "grpc2redis", action = "unknown_update_variant", message = "Unknown update variant")
+            
+        }
 
-        Ok(SubscriptionTaskStop {
-            shutdown_tx,
-            control,
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct SubscriptionTaskStop {
-    pub shutdown_tx: tokio::sync::oneshot::Sender<()>,
-    pub control: tokio::task::JoinHandle<()>,
-}
-
-impl SubscriptionTaskStop {
-    pub async fn stop(self) -> anyhow::Result<()> {
-        self.shutdown_tx
-            .send(())
-            .map_err(|_| anyhow::anyhow!("Failed to send shutdown signal"))?;
-
-        self.control.await?;
-
-        Ok(())
-    }
+        grpc_tasks_total_dec("fumarole", "TOTAL");
+    }));
 }

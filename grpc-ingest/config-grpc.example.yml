@@ -85,3 +85,9 @@ subscriptions:
 redis:
   # redis connection url
   url: redis://localhost:6379
+
+fumarole:
+  consumer_group_name: "your-group-name"
+  x_subscription_id: "your-subscription-id"
+  fumarole_endpoint: "http://127.0.0.1:10000"
+  fumarole_x_token: null
