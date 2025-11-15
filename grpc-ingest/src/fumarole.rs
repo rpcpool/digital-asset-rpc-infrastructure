@@ -207,6 +207,10 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                         Some(account_data) => {
                             match source {
                                 FumaroleCheckerSource::Grpc => {
+                                    prom::DISCRIMINATED_UPDATES_COUNT
+                                        .with_label_values(&["grpc", "account"])
+                                        .inc();
+
                                     slot = Some(account.slot);
 
                                     // If GRPC, save into hashmap
@@ -216,16 +220,24 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                                     );
                                 }
                                 FumaroleCheckerSource::Fumarole => {
+                                    prom::DISCRIMINATED_UPDATES_COUNT
+                                        .with_label_values(&["fumarole", "account"])
+                                        .inc();
+
                                     let grpc_data = accounts_map
                                         .remove(&(account_data.pubkey, account_data.txn_signature));
                                     if let Some(grpc_slot) = grpc_data {
                                         if grpc_slot != account.slot {
                                             // increment counter error (account not found in grpc)
-                                            prom::ACCOUNT_NOT_FOUND_IN_GRPC_COUNT.inc();
+                                            prom::ACCOUNT_NOT_FOUND_IN_GRPC_COUNT
+                                                .with_label_values(&["slot_mismatch"])
+                                                .inc();
                                         }
                                     } else {
                                         // increment counter error (account not found in grpc)
-                                        prom::ACCOUNT_NOT_FOUND_IN_GRPC_COUNT.inc();
+                                        prom::ACCOUNT_NOT_FOUND_IN_GRPC_COUNT
+                                            .with_label_values(&["not_found"])
+                                            .inc();
                                     }
                                 }
                             }
@@ -238,21 +250,33 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                         Some(txn) => {
                             match source {
                                 FumaroleCheckerSource::Grpc => {
+                                    prom::DISCRIMINATED_UPDATES_COUNT
+                                        .with_label_values(&["grpc", "transaction"])
+                                        .inc();
+
                                     slot = Some(transaction.slot);
 
                                     // If GRPC, save into hashmap
                                     txs_map.insert(txn.signature, transaction.slot);
                                 }
                                 FumaroleCheckerSource::Fumarole => {
+                                    prom::DISCRIMINATED_UPDATES_COUNT
+                                        .with_label_values(&["fumarole", "transaction"])
+                                        .inc();
+
                                     let grpc_data = txs_map.remove(&txn.signature);
                                     if let Some(grpc_slot) = grpc_data {
                                         if grpc_slot != transaction.slot {
                                             // increment counter error (tx not found in grpc)
-                                            prom::TX_NOT_FOUND_IN_GRPC_COUNT.inc();
+                                            prom::TX_NOT_FOUND_IN_GRPC_COUNT
+                                                .with_label_values(&["slot_mismatch"])
+                                                .inc();
                                         }
                                     } else {
                                         // increment counter error (tx not found in grpc)
-                                        prom::TX_NOT_FOUND_IN_GRPC_COUNT.inc();
+                                        prom::TX_NOT_FOUND_IN_GRPC_COUNT
+                                            .with_label_values(&["not_found"])
+                                            .inc();
                                     }
                                 }
                             }

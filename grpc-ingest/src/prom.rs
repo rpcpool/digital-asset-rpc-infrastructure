@@ -14,8 +14,8 @@ use {
     hyper_util::{rt::TokioIo, server::conn::auto},
     program_transformers::{error::ProgramTransformerError, AccountInfo},
     prometheus::{
-        Counter, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry,
-        TextEncoder,
+        Counter, CounterVec, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts,
+        Registry, TextEncoder,
     },
     std::{convert::Infallible, net::SocketAddr, sync::Once},
     tokio::{net::TcpListener, sync::mpsc::error::SendError},
@@ -132,12 +132,14 @@ lazy_static::lazy_static! {
         Opts::new("program_transformer_account_error_count", "Number of errors processing accounts by the program transformer")
     ).unwrap();
 
-    pub static ref ACCOUNT_NOT_FOUND_IN_GRPC_COUNT: Counter = Counter::with_opts(
-        Opts::new("account_not_found_in_grpc_count", "Number of accounts not found in grpc")
+    pub static ref ACCOUNT_NOT_FOUND_IN_GRPC_COUNT: CounterVec = CounterVec::new(
+        Opts::new("account_not_found_in_grpc_count", "Number of accounts not found in grpc"),
+        &["origin"]
     ).unwrap();
 
-    pub static ref TX_NOT_FOUND_IN_GRPC_COUNT: Counter = Counter::with_opts(
-        Opts::new("tx_not_found_in_grpc_count", "Number of transactions not found in grpc")
+    pub static ref TX_NOT_FOUND_IN_GRPC_COUNT: CounterVec = CounterVec::new(
+        Opts::new("tx_not_found_in_grpc_count", "Number of transactions not found in grpc"),
+        &["origin"]
     ).unwrap();
 
     pub static ref ACCOUNT_NOT_FOUND_IN_FUMAROLE_COUNT: Counter = Counter::with_opts(
@@ -166,6 +168,11 @@ lazy_static::lazy_static! {
 
     pub static ref FUMAROLE_CONNECT_COUNT: Counter = Counter::with_opts(
         Opts::new("fumarole_connect_count", "Number of fumarole connections")
+    ).unwrap();
+
+    pub static ref DISCRIMINATED_UPDATES_COUNT: CounterVec = CounterVec::new(
+        Opts::new("discriminated_updates_count", "Number of discriminated updates"),
+        &["source", "update_type"]
     ).unwrap();
 }
 
@@ -245,6 +252,7 @@ pub fn run_metrics_server(address: SocketAddr) -> anyhow::Result<()> {
         register!(FUMAROLE_GROUP_NOT_FOUND_COUNT);
         register!(FUMAROLE_GROUP_STALE_COUNT);
         register!(FUMAROLE_CONNECT_COUNT);
+        register!(DISCRIMINATED_UPDATES_COUNT);
 
         VERSION_INFO_METRIC
             .with_label_values(&[

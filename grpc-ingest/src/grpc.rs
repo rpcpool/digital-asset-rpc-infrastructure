@@ -17,8 +17,7 @@ use {
     yellowstone_grpc_client::GeyserGrpcClient,
     yellowstone_grpc_proto::{
         geyser::{
-            SubscribeRequest, SubscribeRequestFilterBlocksMeta, SubscribeRequestPing,
-            SubscribeUpdate,
+            CommitmentLevel, SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterTransactions, SubscribeRequestPing, SubscribeUpdate
         },
         prelude::subscribe_update::UpdateOneof,
         prost::Message,
@@ -37,19 +36,20 @@ pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
 
     //TODO: This is only serving to test fumarole against common gRPC stream
     let fumarole_checker_tx = crate::fumarole::fumarole_checker();
-    for (label, subscription_config) in subscriptions.clone() {
-        
-        let subscription = Subscription {
-            label,
-            config: subscription_config,
-        };
-        SubscriptionTask::build()
-            .config(Arc::clone(&config))
-            .subscription(subscription)
-            .start(fumarole_checker_tx.clone())
-            .await;
 
-    }
+    // for (label, subscription_config) in subscriptions.clone() {   
+    //     let subscription = Subscription {
+    //         label,
+    //         config: subscription_config,
+    //     };
+    //     SubscriptionTask::build()
+    //         .config(Arc::clone(&config))
+    //         .subscription(subscription)
+    //         .start(fumarole_checker_tx.clone())
+    //         .await;
+    // }
+
+    start_individual_grpc_subscription(Arc::clone(&config), fumarole_checker_tx.clone()).await;
 
     let handle = start(config, connection, subscriptions.values().next().unwrap().clone(), fumarole_checker_tx.clone()).await?;
     match handle.await {
@@ -358,4 +358,83 @@ pub async fn save_update_to_redis(
 
         grpc_tasks_total_dec("fumarole", "TOTAL");
     }));
+}
+
+pub async fn start_individual_grpc_subscription(
+    config: Arc<ConfigGrpc>,
+    fumarole_checker_tx: Sender<(FumaroleCheckerSource, SubscribeUpdate)>,
+) {
+
+    let subscribe_request = SubscribeRequest {
+        accounts: [(
+            "accounts".to_string(),
+            SubscribeRequestFilterAccounts {
+                account: vec![],
+                owner: vec![
+                    "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s".to_string(),
+                    "inscokhJarcjaEs59QbQ7hYjrKz25LEPRfCbP8EmdUp".to_string(),
+                    "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d".to_string(),
+                    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+                    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb".to_string(),
+                    "11111111111111111111111111111111".to_string(),
+                ],
+                filters: vec![],
+            },
+        )]
+        .into(),
+        transactions: [(
+            "transactions".to_string(),
+            SubscribeRequestFilterTransactions {
+                account_include: vec![
+                    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb".to_string(),
+                    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+                    "BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY".to_string(),
+                ],
+                account_exclude: vec![],
+                account_required: vec![],
+                vote: Some(false),
+                failed: Some(false),
+                signature: None,
+            },
+        )]
+        .into(),
+        commitment: Some(CommitmentLevel::Confirmed as i32),
+        blocks_meta: [(
+            "blocks_meta".to_string(),
+            SubscribeRequestFilterBlocksMeta {},
+        )]
+        .into(),
+        ..Default::default()
+    };
+
+    let mut dragon_mouth_client =
+        GeyserGrpcClient::build_from_shared(config.geyser.endpoint.clone())
+            .expect("failed to build gRPC client")
+            .x_token(config.geyser.x_token.clone())
+            .expect("failed to set x-token")
+            .connect_timeout(Duration::from_secs(config.geyser.connect_timeout))
+            .timeout(Duration::from_secs(config.geyser.timeout))
+            .connect()
+            .await
+            .expect("failed to connect to gRPC");
+
+    let (mut _subscribe_tx, stream) = dragon_mouth_client
+        .subscribe_with_request(Some(subscribe_request))
+        .await.expect("failed to subscribe to gRPC");
+
+    // Send GRPC updates to fumarole checker
+    tokio::spawn(async move {
+        tokio::pin!(stream);
+        while let Some(Ok(update)) = stream.next().await {
+
+            prom::GRPC_UPDATES_COUNT.inc();
+
+            match fumarole_checker_tx.send((FumaroleCheckerSource::Grpc, update.clone())).await {
+                Ok(_) => (),
+                Err(err) => {
+                    tracing::error!(target: "grpc2redis", message = "Failed to send GRPC update to fumarole checker", ?err);
+                }
+            }
+        }
+    });
 }
