@@ -1,5 +1,6 @@
 use crate::{config::DasFumaroleConfig, prom};
 use bytesize::ByteSize;
+use solana_sdk::{bs58, pubkey::Pubkey};
 use std::{collections::HashMap, num::NonZero};
 use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use yellowstone_fumarole_client::{
@@ -224,20 +225,100 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                                         .with_label_values(&["fumarole", "account"])
                                         .inc();
 
-                                    let grpc_data = accounts_map
-                                        .remove(&(account_data.pubkey, account_data.txn_signature));
+                                    let grpc_data = accounts_map.remove(&(
+                                        account_data.pubkey.clone(),
+                                        account_data.txn_signature.clone(),
+                                    ));
+
                                     if let Some(grpc_slot) = grpc_data {
                                         if grpc_slot != account.slot {
                                             // increment counter error (account not found in grpc)
                                             prom::ACCOUNT_NOT_FOUND_IN_GRPC_COUNT
                                                 .with_label_values(&["slot_mismatch"])
                                                 .inc();
+
+                                            let program_owner = match Pubkey::try_from(
+                                                account_data.owner.as_slice(),
+                                            ) {
+                                                Ok(owner) => owner.to_string(),
+                                                Err(_) => {
+                                                    tracing::error!(target: "account_not_found_in_grpc_owner_conversion_failed", "Owner conversion failed: {:?}", account_data.owner);
+                                                    "".to_string()
+                                                }
+                                            };
+
+                                            let tx_sig = match &account_data.txn_signature {
+                                                Some(sig) => bs58::encode(sig).into_string(),
+                                                None => {
+                                                    tracing::error!(target: "account_not_found_in_grpc_slot_mismatch-unknown", "Account slot mismatch: {:?}", bs58::encode(&account_data.pubkey).into_string());
+                                                    "".to_string()
+                                                }
+                                            };
+                                            let msg = format!(
+                                                "Account slot mismatch: {:?} - tx_sig: {:?} - slot: {:?} - program_owner: {:?}",
+                                                bs58::encode(&account_data.pubkey).into_string(),
+                                                tx_sig,
+                                                account.slot,
+                                                program_owner
+                                            );
+
+                                            tracing::error!(target: "account_not_found_in_grpc_slot_mismatch", msg)
                                         }
                                     } else {
                                         // increment counter error (account not found in grpc)
                                         prom::ACCOUNT_NOT_FOUND_IN_GRPC_COUNT
                                             .with_label_values(&["not_found"])
                                             .inc();
+
+                                        // Discriminate logs by program owner
+                                        let program_owner = match Pubkey::try_from(
+                                            account_data.owner.as_slice(),
+                                        ) {
+                                            Ok(owner) => owner.to_string(),
+                                            Err(_) => {
+                                                tracing::error!(target: "account_not_found_in_grpc_owner_conversion_failed", "Owner conversion failed: {:?}", account_data.owner);
+                                                "".to_string()
+                                            }
+                                        };
+
+                                        let tx_sig = match &account_data.txn_signature {
+                                            Some(sig) => bs58::encode(sig).into_string(),
+                                            None => {
+                                                tracing::error!(target: "account_not_found_in_grpc_not_found-unknown", "Account not found in grpc: {:?}", bs58::encode(&account_data.pubkey).into_string());
+                                                "".to_string()
+                                            }
+                                        };
+                                        let msg = format!(
+                                            "Account not found in grpc: {:?} - tx_sig: {:?} - slot: {:?} - program_owner: {:?}",
+                                            bs58::encode(&account_data.pubkey).into_string(),
+                                            tx_sig,
+                                            account.slot,
+                                            program_owner
+                                        );
+
+                                        match program_owner.as_str() {
+                                            "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s" => {
+                                                tracing::error!(target: "account_not_found_in_grpc_not_found-metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s", msg)
+                                            }
+                                            "inscokhJarcjaEs59QbQ7hYjrKz25LEPRfCbP8EmdUp" => {
+                                                tracing::error!(target: "account_not_found_in_grpc_not_found-inscokhJarcjaEs59QbQ7hYjrKz25LEPRfCbP8EmdUp", msg)
+                                            }
+                                            "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d" => {
+                                                tracing::error!(target: "account_not_found_in_grpc_not_found-CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d", msg)
+                                            }
+                                            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" => {
+                                                tracing::error!(target: "account_not_found_in_grpc_not_found-TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", msg)
+                                            }
+                                            "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" => {
+                                                tracing::error!(target: "account_not_found_in_grpc_not_found-TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", msg)
+                                            }
+                                            "11111111111111111111111111111111" => {
+                                                tracing::error!(target: "account_not_found_in_grpc_not_found-11111111111111111111111111111111", msg)
+                                            }
+                                            _ => {
+                                                tracing::error!(target: "account_not_found_in_grpc_not_found-unknown", msg)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -271,12 +352,16 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                                             prom::TX_NOT_FOUND_IN_GRPC_COUNT
                                                 .with_label_values(&["slot_mismatch"])
                                                 .inc();
+
+                                            tracing::error!(target: "tx_not_found_in_grpc_slot_mismatch", "Transaction slot mismatch: {:?}", bs58::encode(&txn.signature).into_string());
                                         }
                                     } else {
                                         // increment counter error (tx not found in grpc)
                                         prom::TX_NOT_FOUND_IN_GRPC_COUNT
                                             .with_label_values(&["not_found"])
                                             .inc();
+
+                                        tracing::error!(target: "tx_not_found_in_grpc_not_found", "Transaction not found in grpc: {:?}", bs58::encode(&txn.signature).into_string());
                                     }
                                 }
                             }
@@ -296,8 +381,12 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                     let mut deleted_accounts = 0; // accounts not found in fumarole
                     let mut deleted_txs = 0; // txs not found in fumarole
 
-                    accounts_map.retain(|(_pubkey, _tx_sig), account_slot| {
+                    accounts_map.retain(|(pubkey, tx_sig), account_slot| {
                         if *account_slot < slot - 25 {
+                            let pubkey = bs58::encode(pubkey).into_string();
+                            let tx_sig = bs58::encode(tx_sig.clone().unwrap_or_default()).into_string();
+                            tracing::error!(target: "account_not_found_in_fumarole", "Account not found in fumarole: {:?} - tx_sig: {:?}", pubkey, tx_sig);
+
                             deleted_accounts += 1;
                             false
                         } else {
@@ -305,8 +394,11 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                         }
                     });
 
-                    txs_map.retain(|_sig, tx_slot| {
+                    txs_map.retain(|tx_sig, tx_slot| {
                         if *tx_slot < slot - 25 {
+                            let tx_sig = bs58::encode(tx_sig).into_string();
+                            tracing::error!(target: "tx_not_found_in_fumarole", "Transaction not found in fumarole: {:?}", tx_sig);
+
                             deleted_txs += 1;
                             false
                         } else {
