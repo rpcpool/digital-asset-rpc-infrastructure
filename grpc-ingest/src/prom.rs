@@ -134,7 +134,7 @@ lazy_static::lazy_static! {
 
     pub static ref ACCOUNT_NOT_FOUND_IN_GRPC_COUNT: CounterVec = CounterVec::new(
         Opts::new("account_not_found_in_grpc_count", "Number of accounts not found in grpc"),
-        &["origin"]
+        &["origin", "program_owner"]
     ).unwrap();
 
     pub static ref TX_NOT_FOUND_IN_GRPC_COUNT: CounterVec = CounterVec::new(
