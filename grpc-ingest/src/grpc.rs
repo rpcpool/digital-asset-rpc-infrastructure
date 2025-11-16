@@ -398,7 +398,7 @@ pub async fn start_individual_grpc_subscription(
             },
         )]
         .into(),
-        commitment: Some(CommitmentLevel::Confirmed as i32),
+        commitment: Some(CommitmentLevel::Finalized as i32),
         blocks_meta: [(
             "blocks_meta".to_string(),
             SubscribeRequestFilterBlocksMeta {},
