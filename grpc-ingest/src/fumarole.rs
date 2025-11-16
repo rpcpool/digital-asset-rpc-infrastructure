@@ -227,7 +227,10 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                                     // If GRPC, save into hashmap
                                     accounts_map.insert(
                                         (account_data.pubkey, account_data.txn_signature),
-                                        account.slot,
+                                        FetcherAccount {
+                                            slot: account.slot,
+                                            times_visited: 0,
+                                        },
                                     );
                                 }
                                 FumaroleCheckerSource::Fumarole => {
@@ -235,13 +238,22 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                                         .with_label_values(&["fumarole", "account", &program_owner])
                                         .inc();
 
-                                    let grpc_data = accounts_map.remove(&(
+                                    let grpc_data = accounts_map.get_mut(&(
                                         account_data.pubkey.clone(),
                                         account_data.txn_signature.clone(),
                                     ));
 
-                                    if let Some(grpc_slot) = grpc_data {
-                                        if grpc_slot != account.slot {
+                                    if let Some(fetcher_account) = grpc_data {
+                                        // Check for potential duplicated updates from fumarole
+                                        if fetcher_account.times_visited > 0 {
+                                            prom::DUPLICATED_FUMAROLE_ACCOUNT_COUNT
+                                                .with_label_values(&[&program_owner])
+                                                .inc();
+                                        }
+
+                                        fetcher_account.times_visited += 1;
+
+                                        if fetcher_account.slot != account.slot {
                                             // increment counter error (account not found in grpc)
                                             prom::ACCOUNT_NOT_FOUND_IN_GRPC_COUNT
                                                 .with_label_values(&["slot_mismatch", "all"])
@@ -376,13 +388,13 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
             //      - if new_slot - last_clean_slot > 30, clean hashmaps
             //      - increment errors for each deleted update
             if let Some(slot) = slot {
-                if slot > last_clean_slot + 3000 {
+                if slot > last_clean_slot + 200 {
                     last_clean_slot = slot;
                     let mut deleted_accounts = 0; // accounts not found in fumarole
                     let mut deleted_txs = 0; // txs not found in fumarole
 
-                    accounts_map.retain(|(pubkey, tx_sig), account_slot| {
-                        if *account_slot < slot - 2000 {
+                    accounts_map.retain(|(pubkey, tx_sig), account_update| {
+                        if account_update.slot < slot - 200 {
                             let pubkey = bs58::encode(pubkey).into_string();
                             let tx_sig = bs58::encode(tx_sig.clone().unwrap_or_default()).into_string();
                             tracing::error!(target: "account_not_found_in_fumarole", "Account not found in fumarole: {:?} - tx_sig: {:?}", pubkey, tx_sig);
@@ -418,4 +430,9 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
     });
 
     tx
+}
+
+struct FetcherAccount {
+    pub slot: u64,
+    pub times_visited: u8,
 }

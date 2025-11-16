@@ -174,6 +174,11 @@ lazy_static::lazy_static! {
         Opts::new("discriminated_updates_count", "Number of discriminated updates"),
         &["source", "update_type", "program_owner"]
     ).unwrap();
+
+    pub static ref DUPLICATED_FUMAROLE_ACCOUNT_COUNT: CounterVec = CounterVec::new(
+        Opts::new("duplicated_fumarole_account_count", "Number of duplicated fumarole accounts"),
+        &["program_owner"]
+    ).unwrap();
 }
 
 fn metrics_handler() -> Result<Response<Full<Bytes>>, Infallible> {
@@ -253,6 +258,7 @@ pub fn run_metrics_server(address: SocketAddr) -> anyhow::Result<()> {
         register!(FUMAROLE_GROUP_STALE_COUNT);
         register!(FUMAROLE_CONNECT_COUNT);
         register!(DISCRIMINATED_UPDATES_COUNT);
+        register!(DUPLICATED_FUMAROLE_ACCOUNT_COUNT);
 
         VERSION_INFO_METRIC
             .with_label_values(&[
