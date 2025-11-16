@@ -172,7 +172,7 @@ lazy_static::lazy_static! {
 
     pub static ref DISCRIMINATED_UPDATES_COUNT: CounterVec = CounterVec::new(
         Opts::new("discriminated_updates_count", "Number of discriminated updates"),
-        &["source", "update_type"]
+        &["source", "update_type", "program_owner"]
     ).unwrap();
 }
 

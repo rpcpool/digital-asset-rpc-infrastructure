@@ -206,10 +206,20 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                 Some(UpdateOneof::Account(account)) => {
                     match account.account {
                         Some(account_data) => {
+                            let program_owner = match Pubkey::try_from(
+                                account_data.owner.as_slice(),
+                            ) {
+                                Ok(owner) => owner.to_string(),
+                                Err(_) => {
+                                    tracing::error!(target: "account_not_found_in_grpc_owner_conversion_failed", "Owner conversion failed: {:?}", account_data.owner);
+                                    "unknown".to_string()
+                                }
+                            };
+
                             match source {
                                 FumaroleCheckerSource::Grpc => {
                                     prom::DISCRIMINATED_UPDATES_COUNT
-                                        .with_label_values(&["grpc", "account"])
+                                        .with_label_values(&["grpc", "account", &program_owner])
                                         .inc();
 
                                     slot = Some(account.slot);
@@ -222,7 +232,7 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                                 }
                                 FumaroleCheckerSource::Fumarole => {
                                     prom::DISCRIMINATED_UPDATES_COUNT
-                                        .with_label_values(&["fumarole", "account"])
+                                        .with_label_values(&["fumarole", "account", &program_owner])
                                         .inc();
 
                                     let grpc_data = accounts_map.remove(&(
@@ -236,16 +246,6 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                                             prom::ACCOUNT_NOT_FOUND_IN_GRPC_COUNT
                                                 .with_label_values(&["slot_mismatch", "all"])
                                                 .inc();
-
-                                            let program_owner = match Pubkey::try_from(
-                                                account_data.owner.as_slice(),
-                                            ) {
-                                                Ok(owner) => owner.to_string(),
-                                                Err(_) => {
-                                                    tracing::error!(target: "account_not_found_in_grpc_owner_conversion_failed", "Owner conversion failed: {:?}", account_data.owner);
-                                                    "".to_string()
-                                                }
-                                            };
 
                                             let tx_sig = match &account_data.txn_signature {
                                                 Some(sig) => bs58::encode(sig).into_string(),
@@ -332,7 +332,7 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                             match source {
                                 FumaroleCheckerSource::Grpc => {
                                     prom::DISCRIMINATED_UPDATES_COUNT
-                                        .with_label_values(&["grpc", "transaction"])
+                                        .with_label_values(&["grpc", "transaction", "all"])
                                         .inc();
 
                                     slot = Some(transaction.slot);
@@ -342,7 +342,7 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                                 }
                                 FumaroleCheckerSource::Fumarole => {
                                     prom::DISCRIMINATED_UPDATES_COUNT
-                                        .with_label_values(&["fumarole", "transaction"])
+                                        .with_label_values(&["fumarole", "transaction", "all"])
                                         .inc();
 
                                     let grpc_data = txs_map.remove(&txn.signature);
