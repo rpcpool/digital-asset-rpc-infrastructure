@@ -376,13 +376,13 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
             //      - if new_slot - last_clean_slot > 30, clean hashmaps
             //      - increment errors for each deleted update
             if let Some(slot) = slot {
-                if slot > last_clean_slot + 200 {
+                if slot > last_clean_slot + 3000 {
                     last_clean_slot = slot;
                     let mut deleted_accounts = 0; // accounts not found in fumarole
                     let mut deleted_txs = 0; // txs not found in fumarole
 
                     accounts_map.retain(|(pubkey, tx_sig), account_slot| {
-                        if *account_slot < slot - 200 {
+                        if *account_slot < slot - 2000 {
                             let pubkey = bs58::encode(pubkey).into_string();
                             let tx_sig = bs58::encode(tx_sig.clone().unwrap_or_default()).into_string();
                             tracing::error!(target: "account_not_found_in_fumarole", "Account not found in fumarole: {:?} - tx_sig: {:?}", pubkey, tx_sig);
