@@ -197,11 +197,12 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
         let mut txs_map = HashMap::new();
         let mut last_clean_slot = 0;
 
+        let mut fumarole_accounts_map: HashMap<(Vec<u8>, Option<Vec<u8>>), FetcherAccount> =
+            HashMap::new();
+
         while let Some((source, update)) = rx.recv().await {
             let mut slot = None;
 
-            // If fumarole, check if update is in hashmap (if not increment error)(if I see there are too many errors, I can try to make a buffer also for fumarole,
-            //  in case they are arriving earlier for some reason)
             match update.update_oneof {
                 Some(UpdateOneof::Account(account)) => {
                     match account.account {
@@ -226,12 +227,30 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
 
                                     // If GRPC, save into hashmap
                                     accounts_map.insert(
-                                        (account_data.pubkey, account_data.txn_signature),
+                                        (
+                                            account_data.pubkey.clone(),
+                                            account_data.txn_signature.clone(),
+                                        ),
                                         FetcherAccount {
                                             slot: account.slot,
                                             times_visited: 0,
                                         },
                                     );
+
+                                    // If the data is already in the fumarole buffer, means that fumarole arrived earlier than grpc
+                                    let fumarole_data = fumarole_accounts_map.get_mut(&(
+                                        account_data.pubkey,
+                                        account_data.txn_signature,
+                                    ));
+
+                                    if let Some(fumarole_account) = fumarole_data {
+                                        fumarole_account.times_visited += 1;
+
+                                        // increment counter
+                                        prom::ACCOUNT_NOT_FOUND_IN_GRPC_COUNT
+                                            .with_label_values(&["fumarole_arrived_earlier", "all"])
+                                            .inc();
+                                    }
                                 }
                                 FumaroleCheckerSource::Fumarole => {
                                     prom::DISCRIMINATED_UPDATES_COUNT
@@ -331,6 +350,18 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                                                 tracing::error!(target: "account_not_found_in_grpc_not_found-unknown", msg)
                                             }
                                         }
+
+                                        // We push it also to the fumarole buffer (to cover the case where fumarole arrives earlier than grpc)
+                                        fumarole_accounts_map.insert(
+                                            (
+                                                account_data.pubkey.clone(),
+                                                account_data.txn_signature.clone(),
+                                            ),
+                                            FetcherAccount {
+                                                slot: account.slot,
+                                                times_visited: 0,
+                                            },
+                                        );
                                     }
                                 }
                             }
@@ -418,7 +449,13 @@ pub fn fumarole_checker() -> Sender<(FumaroleCheckerSource, SubscribeUpdate)> {
                         }
                     });
 
+                    // No checks, just to prevent the hashmap from growing indefinitely
+                    fumarole_accounts_map
+                        .retain(|_, account_update| account_update.slot >= slot - 200);
+
                     if deleted_accounts > 0 {
+                        // TODO: With the new check for duplicated accounts updates, this is now incorrect (we are not removing accounts
+                        //  from the hashmap any more)
                         prom::ACCOUNT_NOT_FOUND_IN_FUMAROLE_COUNT.inc_by(deleted_accounts as f64);
                     }
                     if deleted_txs > 0 {
