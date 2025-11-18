@@ -42,6 +42,7 @@ use {
 mod asset_upserts;
 pub mod bubblegum;
 pub mod error;
+pub mod metrics;
 mod mpl_core_program;
 mod system;
 mod token;
@@ -170,20 +171,29 @@ impl ProgramTransformer {
 
                 match concrete {
                     ProgramParseResult::Bubblegum(parsing_result) => {
-                        handle_bubblegum_instruction(
+                        let result = handle_bubblegum_instruction(
                             parsing_result,
                             &ix,
                             &db,
                             &self.download_metadata_notifier,
                         )
-                        .await
-                        .map_err(|err| {
-                            error!(
-                                "Failed to handle bubblegum instruction for txn {:?}: {:?}",
-                                tx_info.signature, err
-                            );
-                            err
-                        })?;
+                        .await;
+
+                        match result {
+                            Ok(instruction_name) => {
+                                metrics::BUBBLEGUM_PROGRAM_TRANSFORMER_SUCCESS_COUNT
+                                    .with_label_values(&[instruction_name])
+                                    .inc();
+                            }
+                            Err(err) => {
+                                error!(
+                                    target: "program_transformer_txn",
+                                    "Failed to handle bubblegum instruction for txn {:?}: {:?}",
+                                    tx_info.signature, err
+                                );
+                                return Err(err);
+                            }
+                        }
                     }
                     ProgramParseResult::TokenProgramEntity(parsing_result) => {
                         if let TokenProgramEntity::CloseIx(acc_to_close) = parsing_result {

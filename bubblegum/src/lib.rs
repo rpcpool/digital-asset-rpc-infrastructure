@@ -1,5 +1,6 @@
 mod backfill;
 mod error;
+pub mod metrics;
 mod tree;
 
 use das_core::{DownloadMetadataJsonRetryConfig, MetadataJsonDownloadWorker};
@@ -59,8 +60,20 @@ pub async fn start_backfill(context: BubblegumContext, args: BackfillArgs) -> Re
     let trees = if let Some(ref only_trees) = args.only_trees {
         TreeResponse::find(&context.solana_rpc, only_trees.clone()).await?
     } else {
+        tracing::warn!(target: "all_trees", "No trees specified, will process all trees");
         TreeResponse::all(&context.solana_rpc).await?
     };
+
+    tracing::info!(target: "backfill_tree_count", "Processing {} amount of trees", trees.len());
+
+    if args.tree_worker.force {
+        let filter_rpc = args
+            .tree_worker
+            .gap_worker
+            .overfetch_args
+            .filter_existing_signatures;
+        tracing::warn!(target: "force_backfill", "FORCE flag is set, will process all txs (filter_existing_signatures flag set to: {})", filter_rpc);
+    }
 
     let mut crawl_handles = FuturesUnordered::new();
 
@@ -86,12 +99,12 @@ pub async fn start_backfill(context: BubblegumContext, args: BackfillArgs) -> Re
     let (program_transformer_worker, transaction_info_sender) = args
         .tree_worker
         .program_transformer_worker
-        .start(context.clone(), download_metadata_worker_sender)?;
+        .start(context.clone(), download_metadata_worker_sender);
 
     let (signature_worker, signature_sender) = args
         .tree_worker
         .signature_worker
-        .start(context.clone(), transaction_info_sender)?;
+        .start(context.clone(), transaction_info_sender);
 
     for tree in trees {
         if crawl_handles.len() >= args.tree_crawler_count {
@@ -180,10 +193,10 @@ pub async fn start_bubblegum_replay(
             .run();
 
     let (program_transformer_worker, transaction_info_sender) = program_transformer_worker_args
-        .start(program_transformer_context, download_metadata_worker_sender)?;
+        .start(program_transformer_context, download_metadata_worker_sender);
 
     let (signature_worker, signature_sender) =
-        signature_worker_args.start(signature_context, transaction_info_sender)?;
+        signature_worker_args.start(signature_context, transaction_info_sender);
 
     for audit in cl_audits {
         let signature = Signature::try_from(audit.tx.as_ref())?;

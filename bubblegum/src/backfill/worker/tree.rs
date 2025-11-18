@@ -106,6 +106,8 @@ impl TreeWorkerArgs {
                     if let Err(e) = tree_gap_sender.send(gap).await {
                         error!("send gap: {:?}", e);
                     }
+
+                    crate::metrics::BUBBLEGUM_TREE_GAP_COUNT.inc();
                 }
             }
 

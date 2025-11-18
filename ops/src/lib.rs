@@ -2,4 +2,5 @@
 pub mod account;
 pub mod bubblegum;
 pub mod metadata;
+pub mod metrics;
 pub mod purge;

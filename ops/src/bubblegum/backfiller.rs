@@ -1,3 +1,4 @@
+use crate::metrics;
 use anyhow::Result;
 use clap::Parser;
 use das_bubblegum::{start_backfill, BackfillArgs, BubblegumContext};
@@ -49,5 +50,9 @@ pub async fn run(config: Args) -> Result<()> {
     let solana_rpc = Rpc::from_config(&config.solana);
     let context = BubblegumContext::new(database_pool, solana_rpc);
 
-    start_backfill(context, config.backfill_bubblegum).await
+    start_backfill(context, config.backfill_bubblegum).await?;
+
+    metrics::print_metrics()?;
+
+    Ok(())
 }

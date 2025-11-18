@@ -150,7 +150,7 @@ impl SignatureWorkerArgs {
         &self,
         context: BubblegumContext,
         forwarder: TransactionSender,
-    ) -> Result<(JoinHandle<()>, Sender<Signature>)> {
+    ) -> (JoinHandle<()>, Sender<Signature>) {
         let (sig_sender, mut sig_receiver) = channel::<Signature>(self.signature_channel_size);
         let worker_count = self.signature_worker_count;
 
@@ -173,7 +173,7 @@ impl SignatureWorkerArgs {
             futures::future::join_all(handlers).await;
         });
 
-        Ok((handle, sig_sender))
+        (handle, sig_sender)
     }
 }
 
@@ -183,6 +183,8 @@ async fn queue_transaction<'a>(
     signature: Signature,
 ) -> Result<(), ErrorKind> {
     let transaction = client.get_transaction(&signature).await?;
+
+    crate::metrics::BUBBLEGUM_RPC_GET_TRANSACTION_COUNT.inc();
 
     sender
         .send(FetchedEncodedTransactionWithStatusMeta(transaction).try_into()?)
