@@ -35,18 +35,12 @@ const DEFAULT_PROGRAM_TRANSFORMER_MAX_WORKERS: usize = 20;
 const DEFAULT_PROGRAM_TRANSFORMER_BUFFER_CAPACITY: usize = 10_000;
 
 /// Runs snapshot repair using the latest full and incremental snapshot tar files.
-/// Only accounts owned by programs listed in `programs_to_process` are processed.
 /// After ingestion, cleans up "closed" accounts: any `token_accounts`/`tokens` rows
 /// with `slot_updated <= snapshot_slot` (to don't delete accounts newer than the snapshot) that
-/// are missing from `account_snapshots` are deleted. The cleanup filter by `token_program IN
-/// programs_to_process` only affects Token (Tokenkeg)  and Token-2022; other programs won’t
-/// delete anything.
+/// are missing from `account_snapshots` are deleted. The cleanup only affects Token (Tokenkeg)
+/// and Token-2022; other programs won’t delete anything.
 pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
     let pool = pg_create_pool(config.postgres.clone()).await?;
-
-    if config.programs_to_process.is_empty() {
-        panic!("programs_to_process is empty");
-    }
 
     let (download_metadata_sender, download_metadata_worker) = MetadataJsonDownloadWorker::build()
         .pool(pool.clone())
@@ -130,24 +124,7 @@ pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
     // Delete token accounts that are not in the snapshot (but not newer) for the selected subset of programs
     let start_time = tokio::time::Instant::now();
 
-    let mut values = vec![Value::BigInt(Some(slot as i64))];
-
-    values.extend(
-        config
-            .programs_to_process
-            .iter()
-            .map(|p| Pubkey::from_str(p).expect("Invalid program pubkey"))
-            .map(|p| Value::Bytes(Some(Box::new(p.to_bytes().to_vec())))),
-    );
-
-    // Array not support on this version of SeaORM so we manually build the sql placeholders
-    let token_programs_processed_placeholders = (0..config.programs_to_process.len())
-        .map(|i| format!("${}", i + 2)) // $1 is slot
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let sql = format!(
-        r#"
+    let sql = r#"
 DELETE FROM token_accounts
 WHERE pubkey IN (
     SELECT token_accounts.pubkey
@@ -156,17 +133,14 @@ WHERE pubkey IN (
         ON account_snapshots.pubkey = token_accounts.pubkey
     WHERE account_snapshots.pubkey IS NULL
         AND token_accounts.slot_updated <= $1
-        AND token_accounts.token_program IN({token_programs_processed_placeholders})
 );
-        "#,
-        token_programs_processed_placeholders = token_programs_processed_placeholders
-    );
+        "#;
 
     let token_accounts_deleted = db_connection
         .execute(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            &sql,
-            values.clone(),
+            sql,
+            vec![Value::BigInt(Some(slot as i64))],
         ))
         .await?
         .rows_affected();
@@ -179,8 +153,7 @@ WHERE pubkey IN (
     );
 
     // Delete mints that are not in the snapshot (but not newer)
-    let sql = format!(
-        r#"
+    let sql = r#"
 DELETE FROM tokens
 WHERE mint IN (
     SELECT tokens.mint
@@ -189,17 +162,14 @@ WHERE mint IN (
         ON account_snapshots.pubkey = tokens.mint
     WHERE account_snapshots.pubkey IS NULL
         AND tokens.slot_updated <= $1
-        AND token_accounts.token_program IN({token_programs_processed_placeholders})
 );
-        "#,
-        token_programs_processed_placeholders = token_programs_processed_placeholders
-    );
+        "#;
 
     let tokens_deleted = db_connection
         .execute(Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
-            &sql,
-            values,
+            sql,
+            vec![Value::BigInt(Some(slot as i64))],
         ))
         .await?
         .rows_affected();
@@ -238,7 +208,7 @@ pub struct AccountSnapshotWriterBuilder {
     batch_size: Option<usize>,
     pool: Option<PgPool>,
     max_workers: Option<usize>,
-    program_transformer_runner_sender: Option<mpsc::Sender<Vec<AccountInfo>>>,
+    program_transformer_runner_sender: Option<mpsc::Sender<AccountInfo>>,
 }
 
 impl AccountSnapshotWriterBuilder {
@@ -264,7 +234,7 @@ impl AccountSnapshotWriterBuilder {
 
     pub fn program_transformer_runner_sender(
         mut self,
-        program_transformer_runner_sender: mpsc::Sender<Vec<AccountInfo>>,
+        program_transformer_runner_sender: mpsc::Sender<AccountInfo>,
     ) -> Self {
         self.program_transformer_runner_sender = Some(program_transformer_runner_sender);
         self
@@ -289,10 +259,23 @@ impl AccountSnapshotWriterBuilder {
             let error_sender = error_sender.clone();
             let mut join_set = JoinSet::new();
 
+            // We only save to account_snapshots table tokenkeg and token-2022 accounts
+            let token_programs_ids = [
+                Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap(),
+                Pubkey::from_str("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb").unwrap(),
+            ];
+
             loop {
                 tokio::select! {
                     Some(update) = update_receiver.recv() => {
-                        updates.push(update);
+                        // We only batch and save to account_snapshots table tokenkeg and token2022 accounts
+                        if token_programs_ids.contains(&update.owner) {
+                            updates.push(update.clone());
+                        }
+
+                        if let Err(e) = program_transformer_runner_sender.send(update).await {
+                            error!("Failed program transformer sender: {}", e)
+                        }
 
                         if updates.len() >= batch_size {
                             let batch = std::mem::take(&mut updates);
@@ -335,10 +318,6 @@ impl AccountSnapshotWriterBuilder {
                                     }
                                 }
                             });
-
-                            if let Err(e) = program_transformer_runner_sender.send(batch).await {
-                                error!("Failed program transformer sender: {}", e)
-                            }
                         }
                     }
                     _ = &mut stop_receiver => {
@@ -374,10 +353,6 @@ impl AccountSnapshotWriterBuilder {
                                         error!("Failed to send batch write send_err(shutdown): {} - db_err: {}", send_err, db_err);
                                     }
                                 }
-
-                            if let Err(e) = program_transformer_runner_sender.send(batch).await {
-                                error!("Failed program transformer sender: {}", e)
-                            }
                         }
                         break;
                     }
@@ -420,7 +395,7 @@ impl AccountSnapshotWriter {
 
 pub struct ProgramTransformerRunner {
     handle: JoinHandle<()>,
-    worker_sender: mpsc::Sender<Vec<AccountInfo>>,
+    worker_sender: mpsc::Sender<AccountInfo>,
     shutdown_sender: Option<oneshot::Sender<()>>,
 }
 
@@ -429,7 +404,7 @@ impl ProgramTransformerRunner {
         ProgramTransformerRunnerBuilder::default()
     }
 
-    pub fn sender(&self) -> mpsc::Sender<Vec<AccountInfo>> {
+    pub fn sender(&self) -> mpsc::Sender<AccountInfo> {
         self.worker_sender.clone()
     }
 
@@ -469,8 +444,7 @@ impl ProgramTransformerRunnerBuilder {
         let buffer_capacity = self
             .buffer_capacity
             .unwrap_or(DEFAULT_PROGRAM_TRANSFORMER_BUFFER_CAPACITY);
-        let (worker_sender, mut worker_receiver) =
-            mpsc::channel::<Vec<AccountInfo>>(buffer_capacity);
+        let (worker_sender, mut worker_receiver) = mpsc::channel::<AccountInfo>(buffer_capacity);
         let (shutdown_sender, mut shutdown_receiver) = oneshot::channel();
         let program_transformer = self
             .program_transformer
@@ -488,26 +462,24 @@ impl ProgramTransformerRunnerBuilder {
                     _ = &mut shutdown_receiver => {
                         break;
                     }
-                    Some(account_infos) = worker_receiver.recv() => {
+                    Some(account_info) = worker_receiver.recv() => {
                         let program_transformer = Arc::clone(&program_transformer);
 
-                        for account_info in account_infos {
-                            while join_set.len() >= max_workers {
-                                join_set.join_next().await;
-                            }
-
-                            crate::prom::PROGRAM_TRANSFORMER_ACCOUNT_INFO_COUNT.inc();
-
-                            let program_transformer = Arc::clone(&program_transformer);
-
-                            join_set.spawn(async move {
-                                let result = program_transformer.handle_account_update(&account_info).await;
-                                if let Err(e) = result {
-                                    eprintln!("Failed program_transformer.handle_account_update: {:?}", e);
-                                    crate::prom::PROGRAM_TRANSFORMER_ACCOUNT_ERROR_COUNT.inc();
-                                }
-                            });
+                        while join_set.len() >= max_workers {
+                            join_set.join_next().await;
                         }
+
+                        crate::prom::PROGRAM_TRANSFORMER_ACCOUNT_INFO_COUNT.inc();
+
+                        let program_transformer = Arc::clone(&program_transformer);
+
+                        join_set.spawn(async move {
+                            let result = program_transformer.handle_account_update(&account_info).await;
+                            if let Err(e) = result {
+                                eprintln!("Failed program_transformer.handle_account_update: {:?}", e);
+                                crate::prom::PROGRAM_TRANSFORMER_ACCOUNT_ERROR_COUNT.inc();
+                            }
+                        });
                     }
                 }
             }
@@ -878,11 +850,14 @@ async fn download_and_process_snapshot_file(
 
     let solana_snapshot = unpack_compressed_snapshot(path, snapshot_slot);
 
-    let programs_to_process = config
-        .programs_to_process
-        .iter()
-        .map(|p| Pubkey::from_str(p).expect("Invalid program pubkey"))
-        .collect::<Vec<Pubkey>>();
+    // We only try to process all programs related to DAS standard
+    let programs_to_process = [
+        Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap(),
+        Pubkey::from_str("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb").unwrap(),
+        Pubkey::from_str("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s").unwrap(),
+        Pubkey::from_str("inscokhJarcjaEs59QbQ7hYjrKz25LEPRfCbP8EmdUp").unwrap(),
+        Pubkey::from_str("CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d").unwrap(),
+    ];
 
     let mut total_accounts = 0;
 

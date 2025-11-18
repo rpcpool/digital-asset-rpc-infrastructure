@@ -10,7 +10,7 @@ postgres:
   # max connections
   max_connections: 500
 
-# Receives batches of AccountInfo from `snapshot_write` and processes them 1 by 1.
+# Receives `AccountInfo`s from `snapshot_write` and processes them 1 by 1.
 program_transform:
   # Max amount of program transformers processing individual AccountInfo concurrently.
   # Note: In practice this will usually be the main bottleneck.
@@ -19,10 +19,10 @@ program_transform:
 
 # Receives AccountInfo's individually from the downloaded snapshot, batches them
 #  and saves them to the `account_snapshots` table, and sends them to
-#  `program_transform` in the same batches.
+#  `program_transform` individually.
 snapshot_write:
-  # Max amount of AccountSnapshotWriter sending batches of AccountInfo to `program_transform`
-  max_workers: 10
+  # Max amount of AccountSnapshotWriter sending `AccountInfo`s to `program_transform`
+  max_workers: 100
   # Channel capacity for the AccountSnapshotWriter (number of `AccountInfo`).
   # Senders read from the snapshot AccountsFile's
   channel_capacity: 10000
@@ -38,7 +38,3 @@ download_metadata:
 
 # The sidecar endpoint to download the snapshot from.
 sidecar_endpoint: http://127.0.0.1:13080
-
-# List of programs to process from the downloaded snapshot.
-programs_to_process:
-  - TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
