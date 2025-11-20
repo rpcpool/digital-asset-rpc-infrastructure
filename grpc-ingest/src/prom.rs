@@ -1,9 +1,9 @@
 use {
     crate::{redis::RedisStreamMessageError, version::VERSION as VERSION_INFO},
     das_bubblegum::metrics::{
-        BUBBLEGUM_GAPS_MONITOR_GAPS_PER_TREE, BUBBLEGUM_GAPS_MONITOR_LENGTH_PER_GAP,
-        BUBBLEGUM_GAPS_MONITOR_TIME_PER_TREE, BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT,
-        SCANNED_TREES_COUNT, TOTAL_TREES_COUNT,
+        BUBBLEGUM_GAPS_MONITOR_GAPS_PER_TREE, BUBBLEGUM_GAPS_MONITOR_LAST_GAPS_LENGTH,
+        BUBBLEGUM_GAPS_MONITOR_LENGTH_PER_GAP, BUBBLEGUM_GAPS_MONITOR_TIME_PER_TREE,
+        BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT, SCANNED_TREES_COUNT, TOTAL_TREES_COUNT,
     },
     das_bubblegum::ProofReport,
     das_core::{
@@ -211,6 +211,7 @@ pub fn run_metrics_server(address: SocketAddr) -> anyhow::Result<()> {
         register!(SCANNED_TREES_COUNT);
         register!(TOTAL_TREES_COUNT);
         register!(BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT);
+        register!(BUBBLEGUM_GAPS_MONITOR_LAST_GAPS_LENGTH);
 
         VERSION_INFO_METRIC
             .with_label_values(&[

@@ -73,6 +73,9 @@ pub async fn run(context: BubblegumContext) -> anyhow::Result<()> {
             metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT
                 .with_label_values(&["last_gaps"])
                 .inc();
+
+            // Record discriminated last gap length
+            metrics::BUBBLEGUM_GAPS_MONITOR_LAST_GAPS_LENGTH.observe(last_gap_length as f64);
         }
 
         metrics::BUBBLEGUM_GAPS_MONITOR_TIME_PER_TREE.observe(start_time.elapsed().as_secs_f64());
