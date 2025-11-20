@@ -38,29 +38,8 @@ pub async fn run(context: BubblegumContext) -> anyhow::Result<()> {
 
         let gaps = TreeGapModel::find(&conn, tree.pubkey, 0).await?;
 
-        let last_potential_gap = check_last_potential_gap(context.clone(), tree.pubkey).await?;
-
-        if last_potential_gap.is_none() {
-            tracing::error!(
-                target: "no_sigs_for_tree",
-                "No last sig in db for tree {} - seq: {}",
-                tree.pubkey,
-                tree.seq
-            );
-
-            if tree.seq > 0 {
-                // Save to file
-                trees_with_no_sigs_in_db.push(tree.pubkey);
-
-                metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
-                    .with_label_values(&["gt_0"])
-                    .inc();
-            } else {
-                metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
-                    .with_label_values(&["eq_0"])
-                    .inc();
-            }
-        }
+        let last_potential_gap =
+            check_last_potential_gap(context.clone(), &tree, &mut trees_with_no_sigs_in_db).await?;
 
         if !gaps.is_empty() || last_potential_gap.is_some() {
             let mut total_gaps = gaps.len();
@@ -116,16 +95,19 @@ pub async fn run(context: BubblegumContext) -> anyhow::Result<()> {
 /// Get the most recent tx for the tree from the DB, and compares it against the
 ///  las RPC get_signatures_for_address call, to check if there is not any new txs
 /// missing in the DB.
+///
+/// It also checks if the tree is in the DB and if not, it adds it to the list of trees with no sigs in the DB.
 async fn check_last_potential_gap(
     context: BubblegumContext,
-    tree: Pubkey,
+    tree: &TreeResponse,
+    trees_with_no_sigs_in_db: &mut Vec<Pubkey>,
 ) -> anyhow::Result<Option<usize>> {
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(context.database_pool);
 
     let last_tx_sigs_in_rpc = context
         .solana_rpc
         .get_signatures_for_address(
-            &tree,
+            &tree.pubkey,
             None,
             None,
             Some(GET_SIGNATURES_FOR_ADDRESS_LIMIT_DEFAULT),
@@ -133,7 +115,7 @@ async fn check_last_potential_gap(
         .await?;
 
     let last_sig_in_db = cl_audits_v2::Entity::find()
-        .filter(cl_audits_v2::Column::Tree.eq(tree.as_ref().to_vec()))
+        .filter(cl_audits_v2::Column::Tree.eq(tree.pubkey.as_ref().to_vec()))
         .order_by_desc(cl_audits_v2::Column::Seq)
         .one(&conn)
         .await?;
@@ -141,25 +123,48 @@ async fn check_last_potential_gap(
     // Check final last potential gap (rpc vs db)
     let mut last_potential_gap = None;
 
-    if let Some(model) = last_sig_in_db {
-        let tx_sig = Signature::try_from(model.tx.as_ref())?;
-        let mut gap_length = 0;
+    match last_sig_in_db {
+        Some(model) => {
+            let tx_sig = Signature::try_from(model.tx.as_ref())?;
+            let mut gap_length = 0;
 
-        for sig in last_tx_sigs_in_rpc {
-            if sig.err.is_some() {
-                continue;
-            }
-
-            let rpc_sig = Signature::from_str(&sig.signature)?;
-            if rpc_sig == tx_sig {
-                if gap_length > 0 {
-                    last_potential_gap = Some(gap_length);
+            for sig in last_tx_sigs_in_rpc {
+                if sig.err.is_some() {
+                    continue;
                 }
 
-                break;
-            }
+                let rpc_sig = Signature::from_str(&sig.signature)?;
+                if rpc_sig == tx_sig {
+                    if gap_length > 0 {
+                        last_potential_gap = Some(gap_length);
+                    }
 
-            gap_length += 1;
+                    break;
+                }
+
+                gap_length += 1;
+            }
+        }
+        None => {
+            tracing::error!(
+                target: "no_sigs_for_tree",
+                "No last sig in db for tree {} - seq: {}",
+                tree.pubkey,
+                tree.seq
+            );
+
+            if tree.seq > 0 {
+                // Save to file
+                trees_with_no_sigs_in_db.push(tree.pubkey);
+
+                metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
+                    .with_label_values(&["gt_0"])
+                    .inc();
+            } else {
+                metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
+                    .with_label_values(&["eq_0"])
+                    .inc();
+            }
         }
     };
 
