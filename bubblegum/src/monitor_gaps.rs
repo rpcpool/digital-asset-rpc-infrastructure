@@ -256,7 +256,6 @@ fn reset_metrics() {
     metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
         .with_label_values(&["eq_0"])
         .set(0);
-    metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_CL_AUDITS_V2_COUNT.set(0);
     metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
         .with_label_values(&["missed_txs"])
         .set(0);
