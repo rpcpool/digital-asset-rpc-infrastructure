@@ -29,6 +29,7 @@ pub async fn run(context: BubblegumContext) -> anyhow::Result<()> {
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(context.database_pool.clone());
 
     get_trees_in_db(&conn).await?;
+    get_total_cl_audits_v2_in_db(&conn).await?;
 
     let mut trees_with_no_sigs_in_db = vec![];
 
@@ -40,7 +41,25 @@ pub async fn run(context: BubblegumContext) -> anyhow::Result<()> {
         let last_potential_gap = check_last_potential_gap(context.clone(), tree.pubkey).await?;
 
         if last_potential_gap.is_none() {
-            trees_with_no_sigs_in_db.push(tree.pubkey);
+            tracing::error!(
+                target: "no_sigs_for_tree",
+                "No last sig in db for tree {} - seq: {}",
+                tree.pubkey,
+                tree.seq
+            );
+
+            if tree.seq > 0 {
+                // Save to file
+                trees_with_no_sigs_in_db.push(tree.pubkey);
+
+                metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT
+                    .with_label_values(&["last_gap_with_seq_gt_0"])
+                    .inc();
+            } else {
+                metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT
+                    .with_label_values(&["last_gap_with_seq_eq_0"])
+                    .inc();
+            }
         }
 
         if !gaps.is_empty() || last_potential_gap.is_some() {
@@ -122,29 +141,26 @@ async fn check_last_potential_gap(
     // Check final last potential gap (rpc vs db)
     let mut last_potential_gap = None;
 
-    match last_sig_in_db {
-        Some(model) => {
-            let tx_sig = Signature::try_from(model.tx.as_ref())?;
-            let mut gap_length = 0;
+    if let Some(model) = last_sig_in_db {
+        let tx_sig = Signature::try_from(model.tx.as_ref())?;
+        let mut gap_length = 0;
 
-            for sig in last_tx_sigs_in_rpc {
-                if sig.err.is_some() {
-                    continue;
-                }
-
-                let rpc_sig = Signature::from_str(&sig.signature)?;
-                if rpc_sig == tx_sig {
-                    if gap_length > 0 {
-                        last_potential_gap = Some(gap_length);
-                    }
-
-                    break;
-                }
-
-                gap_length += 1;
+        for sig in last_tx_sigs_in_rpc {
+            if sig.err.is_some() {
+                continue;
             }
+
+            let rpc_sig = Signature::from_str(&sig.signature)?;
+            if rpc_sig == tx_sig {
+                if gap_length > 0 {
+                    last_potential_gap = Some(gap_length);
+                }
+
+                break;
+            }
+
+            gap_length += 1;
         }
-        None => tracing::error!(target: "no_sigs_for_tree", "No last sig in db for tree {}", tree),
     };
 
     Ok(last_potential_gap)
@@ -187,4 +203,23 @@ async fn get_trees_in_db(conn: &DatabaseConnection) -> anyhow::Result<i64> {
         .set(trees_in_cl_items);
 
     Ok(trees_in_cl_audits_v2)
+}
+
+/// Get the total number of cl_audits_v2 in the DB and update the metric.
+async fn get_total_cl_audits_v2_in_db(conn: &DatabaseConnection) -> anyhow::Result<i64> {
+    let total_cl_audits_v2 = conn
+        .query_one(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT COUNT(*) FROM cl_audits_v2".to_string(),
+        ))
+        .await?
+        .map(|row| row.try_get::<i64>("", "count"))
+        .transpose()?
+        .unwrap_or(0);
+
+    tracing::info!(target: "monitor_gaps", "Total cl_audits_v2 in DB: {}", total_cl_audits_v2);
+
+    metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_CL_AUDITS_V2_COUNT.set(total_cl_audits_v2);
+
+    Ok(total_cl_audits_v2)
 }

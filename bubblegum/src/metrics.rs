@@ -133,4 +133,8 @@ lazy_static::lazy_static! {
             524288.0,
         ]),
     ).unwrap();
+
+    pub static ref BUBBLEGUM_GAPS_MONITOR_TOTAL_CL_AUDITS_V2_COUNT: IntGauge = IntGauge::new(
+        "bubblegum_gaps_monitor_total_cl_audits_v2_count", "Total number of cl_audits_v2 in the DB"
+    ).unwrap();
 }
