@@ -32,12 +32,13 @@ pub async fn run(config: ConfigMonitorGaps) -> anyhow::Result<()> {
         metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT
             .with_label_values(&["gaps_length"])
             .set(0);
-        metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT
-            .with_label_values(&["last_gap_with_seq_gt_0"])
+        metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
+            .with_label_values(&["gt_0"])
             .set(0);
-        metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT
-            .with_label_values(&["last_gap_with_seq_eq_0"])
+        metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
+            .with_label_values(&["eq_0"])
             .set(0);
+
         metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_CL_AUDITS_V2_COUNT.set(0);
 
         tracing::info!(target: "monitor_gaps", "Monitor gaps iteration took {} seconds", start_time.elapsed().as_secs());

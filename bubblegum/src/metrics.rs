@@ -137,4 +137,9 @@ lazy_static::lazy_static! {
     pub static ref BUBBLEGUM_GAPS_MONITOR_TOTAL_CL_AUDITS_V2_COUNT: IntGauge = IntGauge::new(
         "bubblegum_gaps_monitor_total_cl_audits_v2_count", "Total number of cl_audits_v2 in the DB"
     ).unwrap();
+
+    pub static ref BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB: IntGaugeVec = IntGaugeVec::new(
+        Opts::new("bubblegum_gaps_monitor_non_existent_trees_in_db", "Total number of non existent trees in the DB"),
+        &["seq"]
+    ).unwrap();
 }

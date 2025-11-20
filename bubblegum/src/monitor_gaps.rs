@@ -52,12 +52,12 @@ pub async fn run(context: BubblegumContext) -> anyhow::Result<()> {
                 // Save to file
                 trees_with_no_sigs_in_db.push(tree.pubkey);
 
-                metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT
-                    .with_label_values(&["last_gap_with_seq_gt_0"])
+                metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
+                    .with_label_values(&["gt_0"])
                     .inc();
             } else {
-                metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT
-                    .with_label_values(&["last_gap_with_seq_eq_0"])
+                metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
+                    .with_label_values(&["eq_0"])
                     .inc();
             }
         }
