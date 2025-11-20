@@ -1,4 +1,4 @@
-use prometheus::{Counter, CounterVec, Histogram, HistogramOpts, Opts};
+use prometheus::{Counter, CounterVec, Histogram, HistogramOpts, IntGauge, IntGaugeVec, Opts};
 
 lazy_static::lazy_static! {
     /// It uses the u8 representation of the error type to label the metric.
@@ -88,5 +88,19 @@ lazy_static::lazy_static! {
         "bubblegum_gaps_monitor_time_per_tree",
         "Time taken to monitor gaps for a tree"
     )
+    ).unwrap();
+
+    pub static ref SCANNED_TREES_COUNT: IntGauge = IntGauge::new(
+        "scanned_trees_count", "Total number of trees scanned"
+    ).unwrap();
+
+    pub static ref TOTAL_TREES_COUNT: IntGaugeVec = IntGaugeVec::new(
+        Opts::new("total_trees_count", "Total number of trees by source (DB or RPC)"),
+        &["source"]
+    ).unwrap();
+
+    pub static ref BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT: IntGaugeVec = IntGaugeVec::new(
+        Opts::new("bubblegum_gaps_monitor_total_gaps_count", "Total number of gaps by type (trees with gaps, gaps, and gaps length)"),
+        &["type"]
     ).unwrap();
 }
