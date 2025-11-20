@@ -1,5 +1,9 @@
 use {
     crate::{redis::RedisStreamMessageError, version::VERSION as VERSION_INFO},
+    das_bubblegum::metrics::{
+        BUBBLEGUM_GAPS_MONITOR_GAPS_PER_TREE, BUBBLEGUM_GAPS_MONITOR_LENGTH_PER_GAP,
+        BUBBLEGUM_GAPS_MONITOR_TIME_PER_TREE,
+    },
     das_bubblegum::ProofReport,
     das_core::{
         MetadataJsonTaskError, METADATA_JSON_DOWNLOAD_ERROR_COUNT,
@@ -199,6 +203,10 @@ pub fn run_metrics_server(address: SocketAddr) -> anyhow::Result<()> {
         register!(PROGRAM_TRANSFORMER_ACCOUNT_ERROR_COUNT);
         register!(METADATA_JSON_DOWNLOAD_ERROR_COUNT);
         register!(METADATA_JSON_DOWNLOAD_SUCCESS_COUNT);
+
+        register!(BUBBLEGUM_GAPS_MONITOR_GAPS_PER_TREE);
+        register!(BUBBLEGUM_GAPS_MONITOR_LENGTH_PER_GAP);
+        register!(BUBBLEGUM_GAPS_MONITOR_TIME_PER_TREE);
 
         VERSION_INFO_METRIC
             .with_label_values(&[
