@@ -510,14 +510,6 @@ impl ConfigBubblegumVerify {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct DasFumaroleConfig {
-    pub consumer_group_name: String,
-    pub x_subscription_id: String,
-    pub fumarole_endpoint: String,
-    pub fumarole_x_token: Option<String>,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct ConfigMonitorGaps {
     pub postgres: ConfigPostgres,
