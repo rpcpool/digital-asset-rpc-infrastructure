@@ -30,6 +30,7 @@ pub async fn run(context: BubblegumContext) -> anyhow::Result<()> {
 
     get_trees_in_db(&conn).await?;
     get_total_cl_audits_v2_in_db(&conn).await?;
+    reset_metrics();
 
     let mut trees_with_no_sigs_in_db = vec![];
 
@@ -160,6 +161,11 @@ async fn check_last_potential_gap(
                 metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
                     .with_label_values(&["gt_0"])
                     .inc();
+
+                // Estime the number of missed txs based on the tree seq
+                metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
+                    .with_label_values(&["missed_txs"])
+                    .add(tree.seq as i64);
             } else {
                 metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
                     .with_label_values(&["eq_0"])
@@ -227,4 +233,31 @@ async fn get_total_cl_audits_v2_in_db(conn: &DatabaseConnection) -> anyhow::Resu
     metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_CL_AUDITS_V2_COUNT.set(total_cl_audits_v2);
 
     Ok(total_cl_audits_v2)
+}
+
+/// Reset the metrics for the monitor gaps. (meant to clean up the metrics after each iteration)
+fn reset_metrics() {
+    metrics::SCANNED_TREES_COUNT.set(0);
+    metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT
+        .with_label_values(&["trees_with_gaps"])
+        .set(0);
+    metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT
+        .with_label_values(&["gaps"])
+        .set(0);
+    metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT
+        .with_label_values(&["last_gaps"])
+        .set(0);
+    metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_GAPS_COUNT
+        .with_label_values(&["gaps_length"])
+        .set(0);
+    metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
+        .with_label_values(&["gt_0"])
+        .set(0);
+    metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
+        .with_label_values(&["eq_0"])
+        .set(0);
+    metrics::BUBBLEGUM_GAPS_MONITOR_TOTAL_CL_AUDITS_V2_COUNT.set(0);
+    metrics::BUBBLEGUM_GAPS_MONITOR_NON_EXISTENT_TREES_IN_DB
+        .with_label_values(&["missed_txs"])
+        .set(0);
 }
