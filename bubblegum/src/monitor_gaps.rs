@@ -8,6 +8,7 @@ use sea_orm::{
     QueryOrder, SqlxPostgresConnector, Statement,
 };
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
+use std::collections::HashSet;
 use std::io::Write;
 use std::{fs::File, str::FromStr};
 use tokio::time::Instant;
@@ -24,11 +25,16 @@ pub async fn run(context: BubblegumContext) -> anyhow::Result<()> {
         .with_label_values(&["rpc"])
         .set(trees.len() as i64);
 
-    tracing::info!(target: "monitor_gaps", "Trees in RPC: {}", trees.len());
+    let rpc_hash_set = trees
+        .iter()
+        .map(|tree| tree.pubkey.to_string())
+        .collect::<HashSet<String>>();
+
+    tracing::info!(target: "monitor_gaps", "Trees in RPC: {} - hash set: {}", trees.len(), rpc_hash_set.len());
 
     let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(context.database_pool.clone());
 
-    get_trees_in_db(&conn).await?;
+    get_trees_in_db(&conn, &rpc_hash_set).await?;
     get_total_cl_audits_v2_in_db(&conn).await?;
     reset_metrics();
 
@@ -147,14 +153,14 @@ async fn check_last_potential_gap(
             }
         }
         None => {
-            tracing::error!(
-                target: "no_sigs_for_tree",
-                "No last sig in db for tree {} - seq: {}",
-                tree.pubkey,
-                tree.seq
-            );
-
             if tree.seq > 0 {
+                tracing::error!(
+                    target: "no_sigs_for_tree",
+                    "No last sig in db for tree {} - seq: {}",
+                    tree.pubkey,
+                    tree.seq
+                );
+
                 // Save to file
                 trees_with_no_sigs_in_db.push(tree.pubkey);
 
@@ -178,23 +184,55 @@ async fn check_last_potential_gap(
 }
 
 /// Reads the trees in the DB (cl_audits_v2 and cl_items) and updates the metrics for it.
-async fn get_trees_in_db(conn: &DatabaseConnection) -> anyhow::Result<i64> {
+async fn get_trees_in_db(
+    conn: &DatabaseConnection,
+    rpc_hash_set: &HashSet<String>,
+) -> anyhow::Result<i64> {
     // Trees in DB cl_audits_v2
-    let trees_in_cl_audits_v2 = conn
-        .query_one(Statement::from_string(
+    let trees_in_cl_audits_v2_rows = conn
+        .query_all(Statement::from_string(
             DatabaseBackend::Postgres,
-            "SELECT COUNT(DISTINCT tree) AS count FROM cl_audits_v2".to_string(),
+            "SELECT DISTINCT tree FROM cl_audits_v2".to_string(),
         ))
-        .await?
-        .map(|row| row.try_get::<i64>("", "count"))
-        .transpose()?
-        .unwrap_or(0);
+        .await?;
 
-    tracing::info!(target: "monitor_gaps", "Trees in DB cl_audits_v2: {}", trees_in_cl_audits_v2);
+    let trees_in_cl_audits_v2: Vec<Pubkey> = trees_in_cl_audits_v2_rows
+        .iter()
+        .filter_map(|row| {
+            row.try_get::<Vec<u8>>("", "tree")
+                .ok()
+                .and_then(|bytes| Pubkey::try_from(bytes).ok())
+        })
+        .collect();
+
+    tracing::info!(target: "monitor_gaps", "Trees in DB cl_audits_v2: {}", trees_in_cl_audits_v2.len());
 
     metrics::TOTAL_TREES_COUNT
         .with_label_values(&["db_cl_audits_v2"])
-        .set(trees_in_cl_audits_v2);
+        .set(trees_in_cl_audits_v2.len() as i64);
+
+    // Trees in DB but not in RPC
+    let mut missing_trees_in_rpc = vec![];
+    for tree in &trees_in_cl_audits_v2 {
+        if !rpc_hash_set.contains(&tree.to_string()) {
+            missing_trees_in_rpc.push(tree);
+        }
+    }
+
+    metrics::TOTAL_TREES_COUNT
+        .with_label_values(&["missing_trees_in_rpc"])
+        .set(missing_trees_in_rpc.len() as i64);
+
+    // Save missing trees in RPC to file
+    if !missing_trees_in_rpc.is_empty() {
+        let mut file = File::create("bubblegum_missing_trees_in_rpc.log")?;
+
+        for tree in &missing_trees_in_rpc {
+            writeln!(file, "{}", tree)?;
+        }
+    }
+
+    tracing::info!(target: "monitor_gaps", "Missing trees in RPC: {}", missing_trees_in_rpc.len());
 
     // Trees in DB cl_items
     let trees_in_cl_items = conn
@@ -213,7 +251,7 @@ async fn get_trees_in_db(conn: &DatabaseConnection) -> anyhow::Result<i64> {
         .with_label_values(&["db_cl_items"])
         .set(trees_in_cl_items);
 
-    Ok(trees_in_cl_audits_v2)
+    Ok(trees_in_cl_audits_v2.len() as i64)
 }
 
 /// Get the total number of cl_audits_v2 in the DB and update the metric.
