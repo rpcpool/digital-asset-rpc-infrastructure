@@ -40,6 +40,10 @@ pub struct TreeWorkerArgs {
 
     #[clap(long, env, default_value = "false")]
     pub force: bool,
+
+    /// Tries to fill the gap after the last tx in the tree
+    #[clap(long, env, default_value = "false")]
+    pub repair_after_last_tx: bool,
 }
 impl TreeWorkerArgs {
     pub fn start(
@@ -51,6 +55,7 @@ impl TreeWorkerArgs {
         let db_pool = context.database_pool.clone();
         let gap_worker_args = self.gap_worker.clone();
         let force = self.force;
+        let repair_after_last_tx = self.repair_after_last_tx;
 
         tokio::spawn(async move {
             let (gap_worker, tree_gap_sender) = gap_worker_args.start(context, signature_sender)?;
@@ -68,7 +73,7 @@ impl TreeWorkerArgs {
                 .map(TryInto::try_into)
                 .collect::<Result<Vec<_>, _>>()?;
 
-                let upper_known_seq = if force {
+                let upper_known_seq = if force || repair_after_last_tx {
                     None
                 } else {
                     cl_audits_v2::Entity::find()
