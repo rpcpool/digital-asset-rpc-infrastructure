@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use sea_orm::{
     prelude::Decimal,
     sea_query::{
-        Condition, ConditionType, Expr, PostgresQueryBuilder, Query, SimpleExpr, UnionType,
+        Alias, Condition, ConditionType, Expr, PostgresQueryBuilder, Query, SimpleExpr, UnionType,
     },
     ActiveEnum, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, FromQueryResult, JoinType, Order,
     QueryFilter, QueryOrder, Statement,
@@ -242,23 +242,30 @@ where
             )),
             extensions::asset::Column::TokenAccountDelegatedAmount,
         )
-        .join(
+        // Fenced subquery: works around the Postgres ORDER BY + LIMIT planner trap that picks the wrong index on `asset_grouping` and scans
+        // hundreds of millions of rows. `OFFSET 0` is the optimization fence. https://www.endpointdev.com/blog/2009/04/offset-0-ftw/
+        // pg doesnt know the best query to use lol
+        .join_subquery(
             JoinType::InnerJoin,
-            asset_grouping::Entity,
-            Condition::all()
-                .add(
-                    asset_grouping::Column::GroupKey.eq(group_key).and(
-                        asset_grouping::Column::GroupValue.eq(group_value).and(
-                            Expr::tbl(extensions::asset::Entity, asset::Column::Id)
-                                .equals(asset_grouping::Entity, asset_grouping::Column::AssetId),
-                        ),
-                    ),
+            Query::select()
+                .column(asset_grouping::Column::AssetId)
+                .from(asset_grouping::Entity)
+                .cond_where(
+                    Condition::all()
+                        .add(asset_grouping::Column::GroupKey.eq(group_key))
+                        .add(asset_grouping::Column::GroupValue.eq(group_value))
+                        .add(asset_grouping::Column::GroupValue.is_not_null())
+                        .add_option((!options.show_unverified_collections).then(|| {
+                            asset_grouping::Column::Verified
+                                .eq(true)
+                                .or(asset_grouping::Column::Verified.is_null())
+                        })),
                 )
-                .add_option((!options.show_unverified_collections).then(|| {
-                    asset_grouping::Column::Verified
-                        .eq(true)
-                        .or(asset_grouping::Column::Verified.is_null())
-                })),
+                .offset(0u64)
+                .take(),
+            Alias::new("ag"),
+            Expr::tbl(Alias::new("ag"), asset_grouping::Column::AssetId)
+                .equals(extensions::asset::Entity, asset::Column::Id),
         )
         .join(
             JoinType::LeftJoin,
