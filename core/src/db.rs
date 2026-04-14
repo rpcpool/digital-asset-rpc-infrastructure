@@ -78,7 +78,7 @@ pub async fn connect_db(config: &PoolArgs) -> Result<PgPool, sqlx::Error> {
     let options: PgConnectOptions = config
         .database_url
         .parse::<PgConnectOptions>()?
-        .options([("statement_timeout", "10000")]);
+        .options([("statement_timeout", "30000")]);
 
     PgPoolOptions::new()
         .min_connections(config.database_min_connections)
