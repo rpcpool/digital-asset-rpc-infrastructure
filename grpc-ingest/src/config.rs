@@ -146,7 +146,7 @@ impl ConfigGeyser {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ConfigStream {
-    pub name: String,
+    // pub name: String,
     #[serde(
         default = "ConfigStream::default_stream_maxlen",
         deserialize_with = "deserialize_usize_str"
@@ -205,10 +205,9 @@ pub type ConfigGrpcSubscriptions = HashMap<String, ConfigSubscription>;
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ConfigGrpc {
     pub geyser: ConfigGeyser,
-
     pub subscriptions: ConfigGrpcSubscriptions,
-
     pub redis: ConfigGrpcRedis,
+    pub fumarole: DasFumaroleConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -508,4 +507,12 @@ impl ConfigBubblegumVerify {
     pub const fn default_metadata_json_download_worker_request_timeout() -> u64 {
         1000
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct DasFumaroleConfig {
+    pub consumer_group_name: String,
+    pub x_subscription_id: String,
+    pub fumarole_endpoint: String,
+    pub fumarole_x_token: Option<String>,
 }

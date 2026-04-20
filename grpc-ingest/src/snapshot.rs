@@ -121,7 +121,7 @@ pub async fn run(config: ConfigSnapshot) -> anyhow::Result<()> {
 
     let db_connection = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
 
-    // Delete token accounts that are not in the snapshot (but not newer) for the selected subset of programs
+    // Delete token accounts that are not in the snapshot (but not newer)
     let start_time = tokio::time::Instant::now();
 
     let sql = r#"
@@ -380,7 +380,7 @@ impl AccountSnapshotWriter {
         self.update_sender.clone()
     }
 
-    pub fn take_error_receiver(&mut self) -> Option<mpsc::Receiver<()>> {
+    pub const fn take_error_receiver(&mut self) -> Option<mpsc::Receiver<()>> {
         self.error_receiver.take()
     }
 

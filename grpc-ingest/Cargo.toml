@@ -65,6 +65,8 @@ solana-sdk = { workspace = true }
 zstd = { workspace = true }
 tar = { workspace = true }
 bincode = { workspace = true }
+yellowstone-fumarole-client = { git = "https://github.com/rpcpool/yellowstone-fumarole", branch = "solana-1.18" }
+bytesize = "2"
 
 [build-dependencies]
 anyhow = { workspace = true }
