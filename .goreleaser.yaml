@@ -15,7 +15,7 @@ version: 2
 
 before:
     hooks:
-        - cargo zigbuild --release --target x86_64-unknown-linux-gnu --package=das_api --package=migration --package=das-ops --package=nft_ingester
+        - cargo build --release --target x86_64-unknown-linux-gnu --package=das_api --package=migration --package=das-ops --package=nft_ingester
 
 builds:
     - id: das-api
