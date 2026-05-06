@@ -4,48 +4,52 @@
 # GCS upload, cosigning, and GitHub Release publishing are injected via
 # ci/goreleaser-patch.yaml in Binaries-ci at build time.
 #
+# All four workspace binaries are built in a single cargo invocation via
+# before.hooks to avoid parallel cargo file-lock contention. Each build
+# entry then picks up its pre-built binary via builder: prebuilt.
+#
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 
 version: 2
 
+before:
+    hooks:
+        - cargo build --release --target x86_64-unknown-linux-gnu --package=das_api --package=migration --package=das-ops --package=nft_ingester
+
 builds:
     - id: das-api
-      builder: rust
+      builder: prebuilt
+      goos: [linux]
+      goarch: [amd64]
       binary: das_api
-      targets:
-          - x86_64-unknown-linux-gnu
-      flags:
-          - --release
-          - --package=das_api
+      prebuilt:
+          path: target/x86_64-unknown-linux-gnu/release/das_api
 
     - id: migration
-      builder: rust
+      builder: prebuilt
+      goos: [linux]
+      goarch: [amd64]
       binary: migration
-      targets:
-          - x86_64-unknown-linux-gnu
-      flags:
-          - --release
-          - --package=migration
+      prebuilt:
+          path: target/x86_64-unknown-linux-gnu/release/migration
 
     - id: das-ops
-      builder: rust
+      builder: prebuilt
+      goos: [linux]
+      goarch: [amd64]
       binary: das-ops
-      targets:
-          - x86_64-unknown-linux-gnu
-      flags:
-          - --release
-          - --package=das-ops
+      prebuilt:
+          path: target/x86_64-unknown-linux-gnu/release/das-ops
 
     # nft_ingester is the cargo binary name; the archive renames it to
     # das-grpc-ingest-linux-amd64 to preserve the name used by Nomad jobs.
     - id: das-grpc-ingest
-      builder: rust
-      binary: nft_ingester
-      targets:
-          - x86_64-unknown-linux-gnu
-      flags:
-          - --release
-          - --package=nft_ingester
+      builder: prebuilt
+      goos: [linux]
+      goarch: [amd64]
+      binary: das-grpc-ingest
+      prebuilt:
+          path: target/x86_64-unknown-linux-gnu/release/nft_ingester
 
 archives:
     - id: das-api
