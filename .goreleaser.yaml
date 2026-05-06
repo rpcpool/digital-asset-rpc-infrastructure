@@ -4,10 +4,10 @@
 # GCS upload, cosigning, and GitHub Release publishing are injected via
 # ci/goreleaser-patch.yaml in Binaries-ci at build time.
 #
-# All four workspace binaries are built in a single cargo invocation via
-# before.hooks to avoid parallel cargo file-lock contention. Each build
-# entry re-runs cargo with --offline so it is a no-op (binary already
-# present) without needing the network registry lock.
+# All four workspace binaries are built in a single cargo zigbuild invocation
+# via before.hooks (matching the toolchain goreleaser's rust builder uses).
+# Each build entry then uses tool:/bin/true so goreleaser skips cargo entirely
+# and picks up the already-compiled binaries from the target directory.
 #
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 
@@ -15,50 +15,38 @@ version: 2
 
 before:
     hooks:
-        - cargo build --release --target x86_64-unknown-linux-gnu --package=das_api --package=migration --package=das-ops --package=nft_ingester
+        - cargo zigbuild --release --target x86_64-unknown-linux-gnu --package=das_api --package=migration --package=das-ops --package=nft_ingester
 
 builds:
     - id: das-api
       builder: rust
+      tool: /bin/true
       binary: das_api
       targets:
           - x86_64-unknown-linux-gnu
-      flags:
-          - --release
-          - --package=das_api
-          - --offline
 
     - id: migration
       builder: rust
+      tool: /bin/true
       binary: migration
       targets:
           - x86_64-unknown-linux-gnu
-      flags:
-          - --release
-          - --package=migration
-          - --offline
 
     - id: das-ops
       builder: rust
+      tool: /bin/true
       binary: das-ops
       targets:
           - x86_64-unknown-linux-gnu
-      flags:
-          - --release
-          - --package=das-ops
-          - --offline
 
     # nft_ingester is the cargo binary name; the archive renames it to
     # das-grpc-ingest-linux-amd64 to preserve the name used by Nomad jobs.
     - id: das-grpc-ingest
       builder: rust
+      tool: /bin/true
       binary: nft_ingester
       targets:
           - x86_64-unknown-linux-gnu
-      flags:
-          - --release
-          - --package=nft_ingester
-          - --offline
 
 archives:
     - id: das-api
