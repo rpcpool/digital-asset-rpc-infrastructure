@@ -24,6 +24,8 @@ builds:
       binary: das_api
       targets:
           - x86_64-unknown-linux-gnu
+      flags:
+          - --package=das_api
 
     - id: migration
       builder: rust
@@ -31,6 +33,8 @@ builds:
       binary: migration
       targets:
           - x86_64-unknown-linux-gnu
+      flags:
+          - --package=migration
 
     - id: das-ops
       builder: rust
@@ -38,6 +42,8 @@ builds:
       binary: das-ops
       targets:
           - x86_64-unknown-linux-gnu
+      flags:
+          - --package=das-ops
 
     # nft_ingester is the cargo binary name; the archive renames it to
     # das-grpc-ingest-linux-amd64 to preserve the name used by Nomad jobs.
@@ -47,6 +53,8 @@ builds:
       binary: nft_ingester
       targets:
           - x86_64-unknown-linux-gnu
+      flags:
+          - --package=nft_ingester
 
 archives:
     - id: das-api
