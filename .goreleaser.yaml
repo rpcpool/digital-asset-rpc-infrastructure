@@ -64,10 +64,9 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
-
-extra_files:
-  - glob: init.sql
-  - glob: short-commit-hash.txt
+    files:
+      - init.sql
+      - short-commit-hash.txt
 
 release:
   github:
