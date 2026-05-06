@@ -6,7 +6,8 @@
 #
 # All four workspace binaries are built in a single cargo invocation via
 # before.hooks to avoid parallel cargo file-lock contention. Each build
-# entry then picks up its pre-built binary via builder: prebuilt.
+# entry re-runs cargo with --offline so it is a no-op (binary already
+# present) without needing the network registry lock.
 #
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 
@@ -18,38 +19,46 @@ before:
 
 builds:
     - id: das-api
-      builder: prebuilt
-      goos: [linux]
-      goarch: [amd64]
+      builder: rust
       binary: das_api
-      prebuilt:
-          path: target/x86_64-unknown-linux-gnu/release/das_api
+      targets:
+          - x86_64-unknown-linux-gnu
+      flags:
+          - --release
+          - --package=das_api
+          - --offline
 
     - id: migration
-      builder: prebuilt
-      goos: [linux]
-      goarch: [amd64]
+      builder: rust
       binary: migration
-      prebuilt:
-          path: target/x86_64-unknown-linux-gnu/release/migration
+      targets:
+          - x86_64-unknown-linux-gnu
+      flags:
+          - --release
+          - --package=migration
+          - --offline
 
     - id: das-ops
-      builder: prebuilt
-      goos: [linux]
-      goarch: [amd64]
+      builder: rust
       binary: das-ops
-      prebuilt:
-          path: target/x86_64-unknown-linux-gnu/release/das-ops
+      targets:
+          - x86_64-unknown-linux-gnu
+      flags:
+          - --release
+          - --package=das-ops
+          - --offline
 
     # nft_ingester is the cargo binary name; the archive renames it to
     # das-grpc-ingest-linux-amd64 to preserve the name used by Nomad jobs.
     - id: das-grpc-ingest
-      builder: prebuilt
-      goos: [linux]
-      goarch: [amd64]
-      binary: das-grpc-ingest
-      prebuilt:
-          path: target/x86_64-unknown-linux-gnu/release/nft_ingester
+      builder: rust
+      binary: nft_ingester
+      targets:
+          - x86_64-unknown-linux-gnu
+      flags:
+          - --release
+          - --package=nft_ingester
+          - --offline
 
 archives:
     - id: das-api
