@@ -4,6 +4,11 @@
 # repo. GCS upload, cosigning, and GitHub Release publishing are injected via
 # ci/goreleaser-patch.yaml in Binaries-ci at build time.
 #
+# All four workspace binaries are built in a single cargo build invocation
+# via before.hooks (avoids cargo file-lock contention from parallel builds).
+# Each build entry then uses tool:/bin/true so goreleaser skips cargo entirely
+# and picks up the already-compiled binaries from the target directory.
+#
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 
 version: 2
@@ -11,55 +16,44 @@ version: 2
 before:
   hooks:
     - sh -c "git rev-parse --short HEAD > short-commit-hash.txt"
+    - cargo build --release --target x86_64-unknown-linux-gnu --package=das_api --package=migration --package=das-ops --package=nft_ingester
 
 builds:
   - id: das_api
     builder: rust
+    tool: /bin/true
     binary: das_api
     targets:
       - x86_64-unknown-linux-gnu
     flags:
-      - --release
-      - --bin=das_api
-    env:
-      - OPENSSL_INCLUDE_DIR=/usr/include
-      - OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu
+      - --package=das_api
 
   - id: migration
     builder: rust
+    tool: /bin/true
     binary: migration
     targets:
       - x86_64-unknown-linux-gnu
     flags:
-      - --release
-      - --bin=migration
-    env:
-      - OPENSSL_INCLUDE_DIR=/usr/include
-      - OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu
+      - --package=migration
 
   - id: das-ops
     builder: rust
+    tool: /bin/true
     binary: das-ops
     targets:
       - x86_64-unknown-linux-gnu
     flags:
-      - --release
-      - --bin=das-ops
-    env:
-      - OPENSSL_INCLUDE_DIR=/usr/include
-      - OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu
+      - --package=das-ops
 
   - id: nft_ingester
     builder: rust
+    tool: /bin/true
     binary: nft_ingester
     targets:
       - x86_64-unknown-linux-gnu
     flags:
-      - --release
-      - --bin=nft_ingester
-    env:
-      - OPENSSL_INCLUDE_DIR=/usr/include
-      - OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu
+      - --package=nft_ingester
 
 archives:
   - formats: [binary]
