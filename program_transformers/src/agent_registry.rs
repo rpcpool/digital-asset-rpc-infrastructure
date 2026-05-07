@@ -8,7 +8,7 @@ use {
     sea_orm::{
         entity::{ColumnTrait, EntityTrait},
         sea_query::Expr,
-        ConnectionTrait, QueryFilter, TransactionTrait,
+        ConnectionTrait, QueryFilter, Statement, TransactionTrait,
     },
     solana_sdk::pubkey::Pubkey,
 };
@@ -53,6 +53,23 @@ pub async fn handle_agent_registry_account<T: ConnectionTrait + TransactionTrait
     let agent_token_bytes: Option<Vec<u8>> =
         inner.agent_token_mint.map(|mint| mint.to_bytes().to_vec());
 
+    // Wrap the UPDATE in a transaction with a short lock_timeout so a stuck
+    // concurrent writer (e.g. a Core asset upsert holding the row lock) can't
+    // block agent-registry ingestion indefinitely. Mirrors the pattern used in
+    // mpl_core_program/v1_asset.rs and token/mod.rs.
+    let txn = conn.begin().await?;
+    let backend = txn.get_database_backend();
+    txn.execute(Statement::from_string(
+        backend,
+        "SET LOCAL lock_timeout = '1s';".to_string(),
+    ))
+    .await?;
+    txn.execute(Statement::from_string(
+        backend,
+        "SET LOCAL application_name = 'das::program_transformers::agent_registry';".to_string(),
+    ))
+    .await?;
+
     asset::Entity::update_many()
         .col_expr(asset::Column::AgentToken, Expr::value(agent_token_bytes))
         .col_expr(asset::Column::SlotUpdatedAgentRegistry, Expr::value(slot_i))
@@ -64,9 +81,11 @@ pub async fn handle_agent_registry_account<T: ConnectionTrait + TransactionTrait
                 .is_null()
                 .or(asset::Column::SlotUpdatedAgentRegistry.lte(slot_i)),
         )
-        .exec(conn)
+        .exec(&txn)
         .await
         .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
+
+    txn.commit().await?;
 
     Ok(())
 }

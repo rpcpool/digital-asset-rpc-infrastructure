@@ -11,14 +11,17 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        // Drop the existing unique constraint on (asset_id, group_key)
+        // Drop the existing unique constraint on (asset_id, group_key).
+        // Use IF EXISTS so this is idempotent on partially-applied DBs and
+        // safe under the migration-rename scenario documented in
+        // TRITON_BUILD_MERGE_NOTES.md §B2 (operators upgrading from a main-side
+        // DB whose seaql_migrations entries reference different filenames).
         manager
-            .drop_index(
-                sea_query::Index::drop()
-                    .name("asset_grouping_key_unique")
-                    .table(AssetGrouping::Table)
-                    .to_owned(),
-            )
+            .get_connection()
+            .execute(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "DROP INDEX IF EXISTS asset_grouping_key_unique".to_string(),
+            ))
             .await?;
 
         // Create partial unique index for 'collection' group_key only
