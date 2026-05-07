@@ -11,7 +11,7 @@ use {
         SinkExt,
     },
     redis::streams::StreamMaxlen,
-    solana_sdk::system_program::ID as system_program_id,
+    solana_system_interface::program::ID as system_program_id,
     std::{collections::HashMap, sync::Arc, time::Duration},
     tokio::{
         sync::{oneshot, Mutex},
@@ -21,13 +21,11 @@ use {
     yellowstone_grpc_client::GeyserGrpcClient,
     yellowstone_grpc_proto::{
         geyser::{
-            SubscribeRequest, SubscribeRequestFilterBlocksMeta, SubscribeRequestPing,
-            SubscribeUpdate,
+            subscribe_update::UpdateOneof, SubscribeRequest, SubscribeRequestFilterBlocksMeta,
+            SubscribeRequestPing, SubscribeUpdate,
         },
-        prelude::subscribe_update::UpdateOneof,
         prost::Message,
     },
-    yellowstone_grpc_tools::config::GrpcRequestToProto,
 };
 
 const PING_ID: i32 = 0;

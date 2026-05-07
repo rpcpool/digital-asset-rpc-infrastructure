@@ -11,8 +11,7 @@ members = [
   "migration",
   "nft_ingester",
   "ops",
-  # "grpc-ingest" — temporarily excluded after Yellowstone v12.3.0 removed
-  # yellowstone-grpc-tools. To be ported in a follow-up PR.
+  "grpc-ingest",
   "program_transformers",
   "tools/acc_forwarder",
   "tools/bgtask_creator",
@@ -47,7 +46,7 @@ bs58 = "0.4.0"
 bytemuck = { version = "1.14.0", features = ["derive"] }
 cadence = "0.29.0"
 cadence-macros = "0.29.0"
-cargo-lock = "9.0.0"
+cargo-lock = "11.0.1"
 chrono = "0.4.19"
 clap = "4.2.2"
 das-core = { path = "core" }
@@ -151,7 +150,11 @@ wasm-bindgen = "0.2.83"
 opentelemetry-otlp = "0.30.0"
 pin-project = "1.1.10"
 solana-accounts-db = "3.0.0"
+solana-hard-forks = "3.0.0"
 solana-runtime = "3.0.0"
+solana-stake-interface = "2.0"
+yellowstone-grpc-client = { version = "9", default-features = false }
+yellowstone-grpc-proto = { version = "9", default-features = false }
 zstd = "0.13"
 tar = "0.4"
 bincode = "1.3"

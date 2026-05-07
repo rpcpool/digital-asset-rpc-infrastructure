@@ -28,14 +28,71 @@ use {
     },
     tracing::{debug, error, warn},
     yellowstone_grpc_proto::{
-        convert_from::{
-            create_message_instructions, create_meta_inner_instructions, create_pubkey_vec,
-        },
         geyser::SubscribeUpdateBlockMeta,
-        prelude::{SubscribeUpdateAccount, SubscribeUpdateTransaction},
+        prelude::{
+            CompiledInstruction as ProtoCompiledInstruction,
+            InnerInstructions as ProtoInnerInstructions, SubscribeUpdateAccount,
+            SubscribeUpdateTransaction,
+        },
         prost::Message,
     },
 };
+
+use solana_message::compiled_instruction::CompiledInstruction as MessageCompiledInstruction;
+use solana_transaction_status::{InnerInstruction, InnerInstructions};
+
+// Convert proto pubkey bytes (yellowstone-grpc-proto v9.1 ships with
+// solana-pubkey 2.x via its `convert_from` helpers, which clashes with our
+// solana-sdk 3.x types). Going through the 32-byte representation is
+// version-agnostic.
+fn proto_pubkey(bytes: &[u8]) -> Result<Pubkey, RedisStreamMessageError> {
+    Pubkey::try_from(bytes).map_err(RedisStreamMessageError::PubkeyConversion)
+}
+
+fn proto_pubkey_vec(raw: Vec<Vec<u8>>) -> Result<Vec<Pubkey>, RedisStreamMessageError> {
+    raw.iter().map(|bytes| proto_pubkey(bytes)).collect()
+}
+
+fn proto_to_compiled_instruction(
+    ix: ProtoCompiledInstruction,
+) -> Result<MessageCompiledInstruction, RedisStreamMessageError> {
+    let program_id_index = u8::try_from(ix.program_id_index).map_err(|_| {
+        RedisStreamMessageError::InvalidData("CompiledInstruction.program_id_index".to_string())
+    })?;
+    Ok(MessageCompiledInstruction {
+        program_id_index,
+        accounts: ix.accounts,
+        data: ix.data,
+    })
+}
+
+fn proto_to_inner_instructions(
+    ix: ProtoInnerInstructions,
+) -> Result<InnerInstructions, RedisStreamMessageError> {
+    let index = u8::try_from(ix.index).map_err(|_| {
+        RedisStreamMessageError::InvalidData("InnerInstructions.index".to_string())
+    })?;
+    let mut instructions = Vec::with_capacity(ix.instructions.len());
+    for inner in ix.instructions {
+        let program_id_index = u8::try_from(inner.program_id_index).map_err(|_| {
+            RedisStreamMessageError::InvalidData(
+                "InnerInstruction.program_id_index".to_string(),
+            )
+        })?;
+        instructions.push(InnerInstruction {
+            instruction: MessageCompiledInstruction {
+                program_id_index,
+                accounts: inner.accounts,
+                data: inner.data,
+            },
+            stack_height: inner.stack_height,
+        });
+    }
+    Ok(InnerInstructions {
+        index,
+        instructions,
+    })
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum RedisStreamMessageError {
@@ -117,37 +174,31 @@ impl RedisStreamMessage<Self> for TransactionInfo {
             )
         })?;
 
-        let mut account_keys = create_pubkey_vec(message.account_keys).map_err(|e| {
-            RedisStreamMessageError::Decode(yellowstone_grpc_proto::prost::DecodeError::new(e))
-        })?;
-        for pubkey in create_pubkey_vec(meta.loaded_writable_addresses).map_err(|e| {
-            RedisStreamMessageError::Decode(yellowstone_grpc_proto::prost::DecodeError::new(e))
-        })? {
+        let mut account_keys = proto_pubkey_vec(message.account_keys)?;
+        for pubkey in proto_pubkey_vec(meta.loaded_writable_addresses)? {
             account_keys.push(pubkey);
         }
-        for pubkey in create_pubkey_vec(meta.loaded_readonly_addresses).map_err(|e| {
-            RedisStreamMessageError::Decode(yellowstone_grpc_proto::prost::DecodeError::new(e))
-        })? {
+        for pubkey in proto_pubkey_vec(meta.loaded_readonly_addresses)? {
             account_keys.push(pubkey);
         }
+
+        let message_instructions = message
+            .instructions
+            .into_iter()
+            .map(proto_to_compiled_instruction)
+            .collect::<Result<Vec<_>, _>>()?;
+        let meta_inner_instructions = meta
+            .inner_instructions
+            .into_iter()
+            .map(proto_to_inner_instructions)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             slot,
             signature: Signature::try_from(transaction.signature.as_slice())?,
             account_keys,
-            message_instructions: create_message_instructions(message.instructions).map_err(
-                |e| {
-                    RedisStreamMessageError::Decode(
-                        yellowstone_grpc_proto::prost::DecodeError::new(e),
-                    )
-                },
-            )?,
-            meta_inner_instructions: create_meta_inner_instructions(meta.inner_instructions)
-                .map_err(|e| {
-                    RedisStreamMessageError::Decode(
-                        yellowstone_grpc_proto::prost::DecodeError::new(e),
-                    )
-                })?,
+            message_instructions,
+            meta_inner_instructions,
         })
     }
 }

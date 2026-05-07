@@ -20,7 +20,7 @@ futures = { workspace = true }
 indicatif = { workspace = true }
 log = { workspace = true }
 plerkle_messenger = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 sea-orm = { workspace = true, features = [
   "sqlx-postgres",
   "with-chrono",

@@ -10,8 +10,8 @@ use futures::stream::StreamExt;
 use program_transformers::AccountInfo;
 use sea_orm::{sea_query::OnConflict, ActiveValue, EntityTrait, SqlxPostgresConnector, Value};
 use sea_orm::{ConnectionTrait, Statement};
-use solana_accounts_db::accounts_file::AccountsFile;
-use solana_sdk::{account::ReadableAccount, pubkey::Pubkey};
+use solana_accounts_db::accounts_file::{AccountsFile, StorageAccess};
+use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use std::{
     path::{Path, PathBuf},
@@ -859,48 +859,63 @@ async fn download_and_process_snapshot_file(
         Pubkey::from_str("CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d").unwrap(),
     ];
 
+    // The accounts-file iteration helpers in solana-accounts-db 3.x carry
+    // their own `Pubkey` (from solana-pubkey 4.x = `solana_address::Address`)
+    // which is *not* the same Rust type as the `solana_sdk::pubkey::Pubkey`
+    // used by `program_transformers::AccountInfo`. Bridge via the 32-byte
+    // representation, which is stable across both crates.
+    let programs_to_process_bytes: std::collections::HashSet<[u8; 32]> = programs_to_process
+        .iter()
+        .map(|p| p.to_bytes())
+        .collect();
+
     let mut total_accounts = 0;
 
     for AccountFileData {
         path,
         size: current_len,
         slot: account_slot,
-        write_version,
+        // write_version is no longer tracked per-account in solana-accounts-db
+        // 3.x (StoredAccountInfo lost the field), so we can't sanity-check
+        // it against the snapshot's metadata anymore.
+        write_version: _write_version,
     } in solana_snapshot
     {
-        let (accounts, _accounts_in_file_count) =
-            AccountsFile::new_from_file(path, current_len).expect("Unpack account file");
+        let accounts = AccountsFile::new_for_startup(path, current_len, StorageAccess::Mmap)
+            .expect("Unpack account file");
 
-        for account in accounts.accounts(0) {
-            total_accounts += 1;
+        // First pass: enumerate offsets and tally totals without loading
+        // account data — `scan_accounts_without_data` is the only `pub` API
+        // in 3.x to walk the storage. Filter by owner here so we don't reload
+        // every account in pass 2.
+        let mut offsets_to_load: Vec<usize> = Vec::new();
+        accounts
+            .scan_accounts_without_data(|offset, info| {
+                total_accounts += 1;
+                if programs_to_process_bytes.contains(&info.owner.to_bytes()) {
+                    offsets_to_load.push(offset);
+                }
+            })
+            .expect("scan account file");
 
-            // Skip accounts that are not in the programs to process
-            if !programs_to_process.contains(account.owner()) {
-                continue;
+        // Second pass: re-read each surviving account *with* data, using the
+        // public single-account callback API.
+        for offset in offsets_to_load {
+            let account_info_opt = accounts.get_stored_account_callback(offset, |full| {
+                AccountInfo {
+                    pubkey: Pubkey::from(full.pubkey.to_bytes()),
+                    owner: Pubkey::from(full.owner.to_bytes()),
+                    slot: account_slot,
+                    data: full.data.to_vec(),
+                }
+            });
+
+            if let Some(account_info) = account_info_opt {
+                if let Err(e) = account_snapshot_writer_sender.send(account_info).await {
+                    tracing::error!("Failed to send account info: {}", e);
+                }
+                crate::prom::PROCESSED_SNAPSHOT_UPDATES_COUNT.inc();
             }
-
-            if write_version != account.write_version() {
-                tracing::warn!(
-                    "write_version mismatch for account: {} and slot: {} - write_version: {} - account_write_version: {}",
-                    account.pubkey(),
-                    account_slot,
-                    write_version,
-                    account.write_version()
-                );
-            }
-
-            let account_info = AccountInfo {
-                pubkey: *account.pubkey(),
-                owner: *account.owner(),
-                slot: account_slot,
-                data: account.data().to_vec(),
-            };
-
-            if let Err(e) = account_snapshot_writer_sender.send(account_info).await {
-                tracing::error!("Failed to send account info: {}", e);
-            }
-
-            crate::prom::PROCESSED_SNAPSHOT_UPDATES_COUNT.inc();
         }
     }
 
