@@ -10,7 +10,7 @@ use mpl_bubblegum::accounts::TreeConfig;
 use sea_orm::SqlxPostgresConnector;
 use sha3::{Digest, Keccak256};
 use solana_sdk::pubkey::Pubkey;
-use spl_account_compression::concurrent_tree_wrapper::ProveLeafArgs;
+use mpl_account_compression::concurrent_tree_wrapper::ProveLeafArgs;
 use std::fmt;
 use std::sync::Arc;
 use tokio::sync::Mutex;

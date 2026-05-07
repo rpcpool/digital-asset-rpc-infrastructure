@@ -106,10 +106,10 @@ static WSOL_PUBKEY: pubkey::Pubkey = pubkey!("So11111111111111111111111111111111
 ///     tokens.slot_updated <= $slot_value
 /// );
 /// ```
-pub async fn handle_token_program_account<'a, 'b>(
+pub async fn handle_token_program_account(
     account_info: &AccountInfo,
-    parsing_result: &'a TokenProgramEntity,
-    db: &'b DatabaseConnection,
+    parsing_result: &TokenProgramEntity,
+    db: &DatabaseConnection,
 ) -> ProgramTransformerResult<()> {
     let account_key = account_info.pubkey.to_bytes().to_vec();
     let account_owner = account_info.owner.to_bytes().to_vec();

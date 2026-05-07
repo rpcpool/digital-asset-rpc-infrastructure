@@ -28,9 +28,10 @@ sea-orm = { workspace = true, features = [
 ] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-spl-account-compression = { workspace = true }
+mpl-account-compression = { workspace = true, features = ["no-entrypoint"] }
 solana-account-decoder = { workspace = true }
 solana-client = { workspace = true }
+solana-commitment-config = { workspace = true }
 solana-sdk = { workspace = true }
 solana-transaction-status = { workspace = true }
 sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres"] }

@@ -1,5 +1,6 @@
 use {
     crate::{
+        agent_registry::handle_agent_registry_account,
         bubblegum::handle_bubblegum_instruction,
         error::{ProgramTransformerError, ProgramTransformerResult},
         mpl_core_program::handle_mpl_core_account,
@@ -11,6 +12,7 @@ use {
         instruction::{order_instructions, InstructionBundle, IxPair},
         program_handler::ProgramParser,
         programs::{
+            agent_registry::AgentRegistryParser,
             bubblegum::BubblegumParser,
             mpl_core_program::MplCoreParser,
             system::SystemProgramParser,
@@ -29,7 +31,8 @@ use {
     },
     serde::Deserialize,
     serde_json::{Map, Value},
-    solana_sdk::{instruction::CompiledInstruction, pubkey::Pubkey, signature::Signature},
+    solana_message::compiled_instruction::CompiledInstruction,
+    solana_sdk::{pubkey::Pubkey, signature::Signature},
     solana_transaction_status::InnerInstructions,
     sqlx::PgPool,
     std::collections::{HashMap, HashSet, VecDeque},
@@ -39,6 +42,7 @@ use {
     tracing::{debug, error},
 };
 
+mod agent_registry;
 mod asset_upserts;
 pub mod bubblegum;
 pub mod error;
@@ -80,7 +84,7 @@ pub struct ProgramTransformer {
 
 impl ProgramTransformer {
     pub fn new(pool: PgPool, download_metadata_notifier: DownloadMetadataNotifier) -> Self {
-        let mut parsers: HashMap<Pubkey, Box<dyn ProgramParser>> = HashMap::with_capacity(6);
+        let mut parsers: HashMap<Pubkey, Box<dyn ProgramParser>> = HashMap::with_capacity(8);
         let bgum = BubblegumParser {};
         let token_metadata = TokenMetadataParser {};
         let token = TokenProgramParser {};
@@ -88,6 +92,7 @@ impl ProgramTransformer {
         let token_extensions = Token2022ProgramParser {};
         let token_inscription = TokenInscriptionParser {};
         let system = SystemProgramParser {};
+        let agent_registry = AgentRegistryParser {};
         parsers.insert(bgum.key(), Box::new(bgum));
         parsers.insert(token_metadata.key(), Box::new(token_metadata));
         parsers.insert(token.key(), Box::new(token));
@@ -95,6 +100,7 @@ impl ProgramTransformer {
         parsers.insert(token_extensions.key(), Box::new(token_extensions));
         parsers.insert(token_inscription.key(), Box::new(token_inscription));
         parsers.insert(system.key(), Box::new(system));
+        parsers.insert(agent_registry.key(), Box::new(agent_registry));
         let hs = parsers.iter().fold(HashSet::new(), |mut acc, (k, _)| {
             acc.insert(*k);
             acc
@@ -258,6 +264,15 @@ impl ProgramTransformer {
                         parsing_result,
                         &db,
                         &self.download_metadata_notifier,
+                    )
+                    .await
+                }
+                ProgramParseResult::AgentRegistry(parsing_result) => {
+                    handle_agent_registry_account(
+                        &db,
+                        account_info.pubkey,
+                        parsing_result,
+                        account_info.slot,
                     )
                     .await
                 }

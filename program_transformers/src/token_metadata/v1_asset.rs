@@ -22,9 +22,9 @@ use {
     },
     sea_orm::{
         entity::{ActiveValue, EntityTrait},
-        query::JsonValue,
+        query::{JsonValue, QueryTrait},
         sea_query::{query::OnConflict, Alias, Expr},
-        Condition, ConnectionTrait, Statement, TransactionTrait,
+        Condition, ConnectionTrait, DbBackend, Statement, TransactionTrait,
     },
     solana_sdk::pubkey,
     solana_sdk::pubkey::Pubkey,
@@ -259,6 +259,8 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
             mpl_core_plugins_json_version: None,
             mpl_core_external_plugins: None,
             mpl_core_unknown_external_plugins: None,
+            is_agent: false,
+            asset_signer: None,
         },
         &txn,
     )
@@ -319,64 +321,40 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         .await
         .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
 
-    if let Some(c) = &metadata.collection {
-        let model = asset_grouping::ActiveModel {
-            asset_id: ActiveValue::Set(mint_pubkey_vec.clone()),
-            group_key: ActiveValue::Set("collection".to_string()),
-            group_value: ActiveValue::Set(Some(c.key.to_string())),
-            verified: ActiveValue::Set(c.verified),
-            group_info_seq: ActiveValue::Set(Some(0)),
-            slot_updated: ActiveValue::Set(Some(slot_i)),
-            ..Default::default()
-        };
+    // MIP-11 (#270): always upsert a collection row, writing NULL when the
+    // asset has no collection. Required so out-of-order ingestion can't slip
+    // a stale collection value past the slot guard, and so removing an asset
+    // from a collection actually clears the indexed row. Targets the partial
+    // unique index `asset_grouping_collection_unique`.
+    let (collection_value, collection_verified) = match &metadata.collection {
+        Some(c) => (Some(c.key.to_string()), c.verified),
+        None => (None, false),
+    };
 
-        asset_grouping::Entity::insert(model)
-            .on_conflict(
-                OnConflict::columns([
-                    asset_grouping::Column::AssetId,
-                    asset_grouping::Column::GroupKey,
-                ])
-                .update_columns([
-                    asset_grouping::Column::GroupValue,
-                    asset_grouping::Column::Verified,
-                    asset_grouping::Column::SlotUpdated,
-                ])
-                .action_cond_where(
-                    Condition::all()
-                        .add(
-                            Condition::any()
-                                .add(
-                                    Expr::tbl(
-                                        Alias::new("excluded"),
-                                        asset_grouping::Column::GroupValue,
-                                    )
-                                    .ne(Expr::tbl(
-                                        asset_grouping::Entity,
-                                        asset_grouping::Column::GroupValue,
-                                    )),
-                                )
-                                .add(
-                                    Expr::tbl(
-                                        Alias::new("excluded"),
-                                        asset_grouping::Column::Verified,
-                                    )
-                                    .ne(Expr::tbl(
-                                        asset_grouping::Entity,
-                                        asset_grouping::Column::Verified,
-                                    )),
-                                ),
-                        )
-                        .add(
-                            Expr::tbl(asset_grouping::Entity, asset_grouping::Column::SlotUpdated)
-                                .lte(slot_i),
-                        ),
-                )
-                .to_owned(),
-            )
-            .exec_without_returning(&txn)
-            .await
-            .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
-    }
+    let model = asset_grouping::ActiveModel {
+        asset_id: ActiveValue::Set(mint_pubkey_vec.clone()),
+        group_key: ActiveValue::Set("collection".to_string()),
+        group_value: ActiveValue::Set(collection_value),
+        verified: ActiveValue::Set(collection_verified),
+        group_info_seq: ActiveValue::Set(Some(0)),
+        slot_updated: ActiveValue::Set(Some(slot_i)),
+        ..Default::default()
+    };
+    let mut query = asset_grouping::Entity::insert(model).build(DbBackend::Postgres);
+
+    query.sql = format!(
+        "{} ON CONFLICT (asset_id, group_key) WHERE (group_key = 'collection') DO UPDATE SET \
+        group_value = EXCLUDED.group_value, \
+        verified = EXCLUDED.verified, \
+        slot_updated = EXCLUDED.slot_updated, \
+        group_info_seq = EXCLUDED.group_info_seq \
+        WHERE excluded.slot_updated >= asset_grouping.slot_updated \
+        OR asset_grouping.slot_updated IS NULL",
+        query.sql
+    );
+    txn.execute(query)
+        .await
+        .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
 
     let creators = metadata
         .creators

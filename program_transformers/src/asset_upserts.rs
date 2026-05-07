@@ -365,6 +365,8 @@ pub struct AssetMetadataAccountColumns {
     pub mpl_core_plugins_json_version: Option<i32>,
     pub mpl_core_external_plugins: Option<Value>,
     pub mpl_core_unknown_external_plugins: Option<Value>,
+    pub is_agent: bool,
+    pub asset_signer: Option<Vec<u8>>,
 }
 
 pub async fn upsert_assets_metadata_account_columns<T: ConnectionTrait + TransactionTrait>(
@@ -397,6 +399,8 @@ pub async fn upsert_assets_metadata_account_columns<T: ConnectionTrait + Transac
         mpl_core_plugins_json_version: Set(columns.mpl_core_plugins_json_version),
         mpl_core_external_plugins: Set(columns.mpl_core_external_plugins),
         mpl_core_unknown_external_plugins: Set(columns.mpl_core_unknown_external_plugins),
+        is_agent: Set(columns.is_agent),
+        asset_signer: Set(columns.asset_signer),
         ..Default::default()
     };
     asset::Entity::insert(active_model)
@@ -426,6 +430,8 @@ pub async fn upsert_assets_metadata_account_columns<T: ConnectionTrait + Transac
                     asset::Column::MplCorePluginsJsonVersion,
                     asset::Column::MplCoreExternalPlugins,
                     asset::Column::MplCoreUnknownExternalPlugins,
+                    asset::Column::IsAgent,
+                    asset::Column::AssetSigner,
                 ])
                 .action_cond_where(
                     Condition::any()
@@ -646,6 +652,23 @@ pub async fn upsert_assets_metadata_account_columns<T: ConnectionTrait + Transac
                                                     asset::Column::MplCoreUnknownExternalPlugins,
                                                 ),
                                             ),
+                                        )
+                                        .add(
+                                            Expr::tbl(
+                                                Alias::new("excluded"),
+                                                asset::Column::IsAgent,
+                                            )
+                                            .ne(Expr::tbl(asset::Entity, asset::Column::IsAgent)),
+                                        )
+                                        .add(
+                                            Expr::tbl(
+                                                Alias::new("excluded"),
+                                                asset::Column::AssetSigner,
+                                            )
+                                            .ne(Expr::tbl(
+                                                asset::Entity,
+                                                asset::Column::AssetSigner,
+                                            )),
                                         ),
                                 )
                                 .add(

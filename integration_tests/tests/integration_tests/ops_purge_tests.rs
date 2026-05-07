@@ -22,7 +22,7 @@ use serde_json::json;
 use serial_test::serial;
 use solana_client::{
     rpc_request::RpcRequest,
-    rpc_response::{Response, RpcApiVersion, RpcResponseContext},
+    rpc_response::{Response, RpcApiVersion, RpcResponseContext, UiTransactionError},
 };
 use solana_sdk::{
     message::MessageHeader,
@@ -51,7 +51,7 @@ fn system_program_account() -> UiAccount {
     UiAccount {
         lamports: 0,
         data: UiAccountData::LegacyBinary("".to_string()),
-        owner: solana_sdk::system_program::id().to_string(),
+        owner: solana_system_interface::program::id().to_string(),
         executable: false,
         rent_epoch: 0,
         space: Some(0),
@@ -128,7 +128,7 @@ fn encoded_confirmed_transaction_with_status_meta(
                 }),
             }),
             meta: Some(UiTransactionStatusMeta {
-                err,
+                err: err.map(UiTransactionError::from),
                 status: Ok(()),
                 fee: 0,
                 pre_balances: vec![499999999999999950, 50, 1],
@@ -141,6 +141,7 @@ fn encoded_confirmed_transaction_with_status_meta(
                 loaded_addresses: OptionSerializer::Skip,
                 return_data: OptionSerializer::Skip,
                 compute_units_consumed: OptionSerializer::Skip,
+                cost_units: OptionSerializer::Skip,
             }),
         },
         block_time: Some(1628633791),

@@ -6,7 +6,7 @@ use futures::{stream::FuturesUnordered, StreamExt};
 use log::error;
 use program_transformers::TransactionInfo;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::instruction::CompiledInstruction;
+use solana_message::compiled_instruction::CompiledInstruction;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_transaction_status::{

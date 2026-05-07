@@ -34,6 +34,15 @@ pub struct ProgramTransformer {
 }
 
 impl ProgramTransformer {
+    // NOTE (post-merge gap): the gRPC-side `program_transformers::ProgramTransformer`
+    // also registers MplCore, Token-2022, TokenInscription, System, and
+    // AgentRegistry parsers; this Plerkle adapter does not. Account updates
+    // for those programs that arrive via the legacy Plerkle/Redis path are
+    // silently skipped by `match_program`. If you deploy `nft_ingester`
+    // (Plerkle) instead of `grpc-ingest`, fork the matching gRPC handlers
+    // (`program_transformers/src/{mpl_core_program, token_extensions,
+    // token_inscription, system, agent_registry}`) into this module and add
+    // dispatch arms in `handle_account_update`. Tracked for a follow-up PR.
     pub fn new(pool: PgPool, task_sender: UnboundedSender<TaskData>, cl_audits: bool) -> Self {
         let mut matchers: HashMap<Pubkey, Box<dyn ProgramParser>> = HashMap::with_capacity(1);
         let bgum = BubblegumParser {};
