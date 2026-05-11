@@ -1,6 +1,9 @@
 use {
     crate::{
-        config::{load as config_load, ConfigGrpc, ConfigIngest, ConfigPrometheus, ConfigSnapshot},
+        config::{
+            load as config_load, ConfigGrpc, ConfigIngest, ConfigMonitorGaps, ConfigPrometheus,
+            ConfigSnapshot,
+        },
         prom::run_metrics_server,
     },
     anyhow::Context,
@@ -15,6 +18,7 @@ mod config;
 mod grpc;
 mod ingest;
 mod monitor;
+mod monitor_gaps;
 mod postgres;
 mod prom;
 mod redis;
@@ -53,6 +57,9 @@ enum ArgsAction {
     /// For more details see the [`snapshot::run`] docs.
     #[command(name = "snapshot")]
     Snapshot,
+    #[command(name = "monitor-gaps")]
+    /// Monitor gaps in the bubblegum index
+    MonitorGaps,
 }
 
 #[tokio::main]
@@ -103,6 +110,13 @@ async fn main() -> anyhow::Result<()> {
                 .with_context(|| format!("failed to parse config from: {}", args.config))?;
 
             snapshot::run(config).await
+        }
+        ArgsAction::MonitorGaps => {
+            let config = config_load::<ConfigMonitorGaps>(&args.config)
+                .await
+                .with_context(|| format!("failed to parse config from: {}", args.config))?;
+
+            monitor_gaps::run(config).await
         }
     }
 }
