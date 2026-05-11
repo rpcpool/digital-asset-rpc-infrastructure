@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use sea_orm::{
     prelude::Decimal,
     sea_query::{
-        Condition, ConditionType, Expr, PostgresQueryBuilder, Query, SimpleExpr, UnionType,
+        Alias, Condition, ConditionType, Expr, PostgresQueryBuilder, Query, SimpleExpr, UnionType,
     },
     ActiveEnum, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, FromQueryResult, JoinType, Order,
     QueryFilter, QueryOrder, Statement,
@@ -242,23 +242,33 @@ where
             )),
             extensions::asset::Column::TokenAccountDelegatedAmount,
         )
-        .join(
+        // Fenced subquery: works around the Postgres ORDER BY + LIMIT planner trap that picks the wrong index on `asset_grouping` and scans
+        // hundreds of millions of rows. `OFFSET 0` is the optimization fence. https://www.endpointdev.com/blog/2009/04/offset-0-ftw/
+        // pg doesnt know the best query to use lol
+        .join_subquery(
             JoinType::InnerJoin,
-            asset_grouping::Entity,
-            Condition::all()
-                .add(
-                    asset_grouping::Column::GroupKey.eq(group_key.clone()).and(
-                        asset_grouping::Column::GroupValue.eq(group_value.clone()).and(
-                            Expr::tbl(extensions::asset::Entity, asset::Column::Id)
-                                .equals(asset_grouping::Entity, asset_grouping::Column::AssetId),
-                        ),
-                    ),
+            Query::select()
+                .column(asset_grouping::Column::AssetId)
+                .from(asset_grouping::Entity)
+                .cond_where(
+                    Condition::all()
+                        // Cloned because the same values are reused by the
+                        // post-fetch `full_assets.retain(...)` below (MIP-11
+                        // safety net for stale groupings).
+                        .add(asset_grouping::Column::GroupKey.eq(group_key.clone()))
+                        .add(asset_grouping::Column::GroupValue.eq(group_value.clone()))
+                        .add(asset_grouping::Column::GroupValue.is_not_null())
+                        .add_option((!options.show_unverified_collections).then(|| {
+                            asset_grouping::Column::Verified
+                                .eq(true)
+                                .or(asset_grouping::Column::Verified.is_null())
+                        })),
                 )
-                .add_option((!options.show_unverified_collections).then(|| {
-                    asset_grouping::Column::Verified
-                        .eq(true)
-                        .or(asset_grouping::Column::Verified.is_null())
-                })),
+                .offset(0u64)
+                .take(),
+            Alias::new("ag"),
+            Expr::tbl(Alias::new("ag"), asset_grouping::Column::AssetId)
+                .equals(extensions::asset::Entity, asset::Column::Id),
         )
         .join(
             JoinType::LeftJoin,
@@ -972,92 +982,7 @@ where
             .union(UnionType::All, token_asset_stmt)
             .to_owned()
     } else {
-        extensions::asset::Row::select()
-            .expr_as(
-                Expr::col((tokens::Entity, tokens::Column::Supply)),
-                extensions::asset::Column::MintSupply,
-            )
-            .expr_as(
-                Expr::col((tokens::Entity, tokens::Column::Decimals)),
-                extensions::asset::Column::MintDecimals,
-            )
-            .expr_as(
-                Expr::col((tokens::Entity, tokens::Column::TokenProgram)),
-                extensions::asset::Column::MintTokenProgram,
-            )
-            .expr_as(
-                Expr::col((tokens::Entity, tokens::Column::MintAuthority)),
-                extensions::asset::Column::MintAuthority,
-            )
-            .expr_as(
-                Expr::col((tokens::Entity, tokens::Column::FreezeAuthority)),
-                extensions::asset::Column::MintFreezeAuthority,
-            )
-            .expr_as(
-                Expr::col((tokens::Entity, tokens::Column::CloseAuthority)),
-                extensions::asset::Column::MintCloseAuthority,
-            )
-            .expr_as(
-                Expr::col((tokens::Entity, tokens::Column::ExtensionData)),
-                extensions::asset::Column::MintExtensionData,
-            )
-            .expr_as(
-                Expr::col((token_accounts::Entity, token_accounts::Column::Pubkey)),
-                extensions::asset::Column::TokenAccountPubkey,
-            )
-            .expr_as(
-                Expr::col((token_accounts::Entity, token_accounts::Column::Owner)),
-                extensions::asset::Column::TokenOwner,
-            )
-            .expr_as(
-                Expr::col((token_accounts::Entity, token_accounts::Column::Delegate)),
-                extensions::asset::Column::TokenAccountDelegate,
-            )
-            .expr_as(
-                Expr::col((token_accounts::Entity, token_accounts::Column::Amount)),
-                extensions::asset::Column::TokenAccountAmount,
-            )
-            .expr_as(
-                Expr::col((token_accounts::Entity, token_accounts::Column::Frozen)),
-                extensions::asset::Column::TokenAccountFrozen,
-            )
-            .expr_as(
-                Expr::col((
-                    token_accounts::Entity,
-                    token_accounts::Column::CloseAuthority,
-                )),
-                extensions::asset::Column::TokenAccountCloseAuthority,
-            )
-            .expr_as(
-                Expr::col((
-                    token_accounts::Entity,
-                    token_accounts::Column::DelegatedAmount,
-                )),
-                extensions::asset::Column::TokenAccountDelegatedAmount,
-            )
-            .join(
-                JoinType::LeftJoin,
-                tokens::Entity,
-                Expr::tbl(extensions::asset::Entity, asset::Column::Id)
-                    .equals(tokens::Entity, tokens::Column::Mint),
-            )
-            .join(
-                JoinType::LeftJoin,
-                token_accounts::Entity,
-                Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
-                    .eq(OwnerType::Single.as_enum())
-                    .and(
-                        Expr::tbl(extensions::asset::Entity, asset::Column::Id)
-                            .equals(token_accounts::Entity, token_accounts::Column::Mint)
-                            .and(
-                                Expr::tbl(extensions::asset::Entity, asset::Column::Owner)
-                                    .equals(token_accounts::Entity, token_accounts::Column::Owner),
-                            )
-                            .and(token_accounts::Column::Amount.gt(0)),
-                    ),
-            )
-            .from_as(asset::Entity, extensions::asset::Entity)
-            .to_owned()
+        return Err(DbErr::Custom("No owner address provided".to_string()));
     };
 
     let mut stmt = Query::select()

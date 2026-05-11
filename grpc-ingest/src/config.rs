@@ -622,3 +622,9 @@ impl ConfigBubblegumVerify {
         1000
     }
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConfigMonitorGaps {
+    pub postgres: ConfigPostgres,
+    pub rpc: String,
+}

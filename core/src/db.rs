@@ -75,7 +75,10 @@ impl PoolArgs {
 /////
 ///// * `Result<PgPool, sqlx::Error>` - On success, returns a `PgPool`. On failure, returns a `sqlx::Error`.
 pub async fn connect_db(config: &PoolArgs) -> Result<PgPool, sqlx::Error> {
-    let options: PgConnectOptions = config.database_url.parse()?;
+    let options: PgConnectOptions = config
+        .database_url
+        .parse::<PgConnectOptions>()?
+        .options([("statement_timeout", "30000")]);
 
     PgPoolOptions::new()
         .min_connections(config.database_min_connections)

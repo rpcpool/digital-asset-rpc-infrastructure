@@ -1,7 +1,8 @@
 mod backfill;
 mod error;
 pub mod metrics;
-mod tree;
+pub mod monitor_gaps;
+pub mod tree;
 
 use das_core::{DownloadMetadataJsonRetryConfig, MetadataJsonDownloadWorker};
 use das_core::{MetadataJsonDownloadWorkerArgs, Rpc};
