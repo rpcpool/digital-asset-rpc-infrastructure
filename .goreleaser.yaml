@@ -4,7 +4,7 @@
 # repo. GCS upload, cosigning, and GitHub Release publishing are injected via
 # ci/goreleaser-patch.yaml in Binaries-ci at build time.
 #
-# All four workspace binaries are built in a single cargo build invocation
+# All five workspace binaries are built in a single cargo build invocation
 # via before.hooks (avoids cargo file-lock contention from parallel builds).
 # Each build entry then uses tool:/bin/true so goreleaser skips cargo entirely
 # and picks up the already-compiled binaries from the target directory.
@@ -16,7 +16,7 @@ version: 2
 before:
   hooks:
     - sh -c "git rev-parse --short HEAD > short-commit-hash.txt"
-    - cargo build --release --target x86_64-unknown-linux-gnu --package=das_api --package=migration --package=das-ops --package=nft_ingester
+    - cargo build --release --target x86_64-unknown-linux-gnu --package=das_api --package=migration --package=das-ops --package=nft_ingester --package=das-grpc-ingest
 
 builds:
   - id: das_api
@@ -54,6 +54,15 @@ builds:
       - x86_64-unknown-linux-gnu
     flags:
       - --package=nft_ingester
+
+  - id: das-grpc-ingest
+    builder: rust
+    tool: /bin/true
+    binary: das-grpc-ingest
+    targets:
+      - x86_64-unknown-linux-gnu
+    flags:
+      - --package=das-grpc-ingest
 
 archives:
   - formats: [binary]
