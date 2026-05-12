@@ -18,7 +18,7 @@ use {
         time::sleep,
     },
     tracing::{debug, warn},
-    yellowstone_grpc_client::GeyserGrpcClient,
+    yellowstone_grpc_client::{ClientTlsConfig, GeyserGrpcClient},
     yellowstone_grpc_proto::{
         geyser::{
             subscribe_update::UpdateOneof, SubscribeRequest, SubscribeRequestFilterBlocksMeta,
@@ -175,9 +175,14 @@ impl SubscriptionTask {
             .collect();
         let mut tasks = FuturesUnordered::new();
 
+        // Yellowstone v9 (tonic-based) requires explicit TLS config for any
+        // `https://` endpoint, otherwise the channel fails with "Connecting to
+        // HTTPS without TLS enabled". Mirrors `../yellowstone-steamboat`'s
+        // client setup.
         let mut dragon_mouth_client =
             GeyserGrpcClient::build_from_shared(config.geyser.endpoint.clone())?
                 .x_token(config.geyser.x_token.clone())?
+                .tls_config(ClientTlsConfig::new().with_native_roots())?
                 .connect_timeout(Duration::from_secs(config.geyser.connect_timeout))
                 .timeout(Duration::from_secs(config.geyser.timeout))
                 .connect()
