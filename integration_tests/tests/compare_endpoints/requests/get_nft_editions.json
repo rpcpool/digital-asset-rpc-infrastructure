@@ -1,0 +1,11 @@
+[
+  {
+    "label": "jupiter-rewards-master",
+    "method": "getNftEditions",
+    "params": {
+      "mint": "68vEcQin42ee6eiTXP94UCgUrHC1Vc4LvefoFSeiGXcW",
+      "page": 1,
+      "limit": 50
+    }
+  }
+]

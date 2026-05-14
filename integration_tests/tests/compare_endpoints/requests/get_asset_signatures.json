@@ -1,0 +1,12 @@
+[
+  {
+    "label": "cnft-recent-50",
+    "method": "getAssetSignatures",
+    "params": { "id": "5uS2E6GoBhok5z5TMDPUjSXw2kNaYQZW36ue4YHReYP9", "limit": 50 }
+  },
+  {
+    "label": "tree-recent-50",
+    "method": "getAssetSignatures",
+    "params": { "tree": "6jn6AkZpLiY8vrU1c5nF3D6osde8HCgrE4LpiD6kAFUv", "limit": 50 }
+  }
+]

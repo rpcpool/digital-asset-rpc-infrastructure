@@ -1,0 +1,52 @@
+[
+  {
+    "label": "by-owner-sort-recent",
+    "method": "searchAssets",
+    "params": {
+      "ownerAddress": "Ec8ZkxwfFXyJFqsDQGfCfD9GRkUeo65SSNpKuYfvigrF",
+      "sortBy": { "sortBy": "recent_action", "sortDirection": "desc" },
+      "page": 1,
+      "limit": 50
+    }
+  },
+  {
+    "label": "by-owner-token-type-nonfungible",
+    "method": "searchAssets",
+    "params": {
+      "ownerAddress": "Ec8ZkxwfFXyJFqsDQGfCfD9GRkUeo65SSNpKuYfvigrF",
+      "tokenType": "nonFungible",
+      "page": 1,
+      "limit": 50
+    }
+  },
+  {
+    "label": "by-owner-token-type-fungible",
+    "method": "searchAssets",
+    "params": {
+      "ownerAddress": "Ec8ZkxwfFXyJFqsDQGfCfD9GRkUeo65SSNpKuYfvigrF",
+      "tokenType": "fungible",
+      "page": 1,
+      "limit": 50
+    }
+  },
+  {
+    "label": "is-agent-true",
+    "method": "searchAssets",
+    "params": {
+      "ownerAddress": "Ec8ZkxwfFXyJFqsDQGfCfD9GRkUeo65SSNpKuYfvigrF",
+      "isAgent": true,
+      "page": 1,
+      "limit": 50
+    }
+  },
+  {
+    "label": "by-creator-verified",
+    "method": "searchAssets",
+    "params": {
+      "creatorAddress": "JUP2z2jNBFVLdwNbFCXLV27tAPy8TWvTfXNJiP83iBj",
+      "creatorVerified": true,
+      "page": 1,
+      "limit": 50
+    }
+  }
+]

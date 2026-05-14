@@ -1,0 +1,18 @@
+[
+  {
+    "label": "single-cnft",
+    "method": "getAssetProof",
+    "params": { "id": "5uS2E6GoBhok5z5TMDPUjSXw2kNaYQZW36ue4YHReYP9" }
+  },
+  {
+    "label": "batch-cnfts",
+    "method": "getAssetProofs",
+    "params": {
+      "ids": [
+        "5uS2E6GoBhok5z5TMDPUjSXw2kNaYQZW36ue4YHReYP9",
+        "ABsTjw4nPc5k5pYrjf1QJ4KUctRKA6M2ax4hKWf13xsj",
+        "BQB2PpdzJecp61tLdsyr2FwXZh4zsUuLb7LfQVe1XJwx"
+      ]
+    }
+  }
+]

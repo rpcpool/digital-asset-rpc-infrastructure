@@ -1,0 +1,24 @@
+[
+  {
+    "label": "mixed-batch",
+    "method": "getAssets",
+    "params": {
+      "ids": [
+        "68vEcQin42ee6eiTXP94UCgUrHC1Vc4LvefoFSeiGXcW",
+        "5uS2E6GoBhok5z5TMDPUjSXw2kNaYQZW36ue4YHReYP9",
+        "8fHCyomQpXXupwQyJQAzD3Q6ttwCJLJyV1Dcu9CkikDs",
+        "AYkdtZ5cnpf6mXP3K4q2HbxqwyoANUUAi8X5pgZKzRHf"
+      ]
+    }
+  },
+  {
+    "label": "batch-with-unknown",
+    "method": "getAssets",
+    "params": {
+      "ids": [
+        "68vEcQin42ee6eiTXP94UCgUrHC1Vc4LvefoFSeiGXcW",
+        "11111111111111111111111111111111"
+      ]
+    }
+  }
+]

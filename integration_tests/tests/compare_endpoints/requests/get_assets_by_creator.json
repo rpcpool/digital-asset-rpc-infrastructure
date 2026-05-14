@@ -1,0 +1,22 @@
+[
+  {
+    "label": "jupiter-rewards-only-verified",
+    "method": "getAssetsByCreator",
+    "params": {
+      "creatorAddress": "JUP2z2jNBFVLdwNbFCXLV27tAPy8TWvTfXNJiP83iBj",
+      "onlyVerified": true,
+      "page": 1,
+      "limit": 50
+    }
+  },
+  {
+    "label": "jupiter-rewards-all",
+    "method": "getAssetsByCreator",
+    "params": {
+      "creatorAddress": "JUP2z2jNBFVLdwNbFCXLV27tAPy8TWvTfXNJiP83iBj",
+      "onlyVerified": false,
+      "page": 1,
+      "limit": 50
+    }
+  }
+]

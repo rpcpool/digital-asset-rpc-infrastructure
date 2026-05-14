@@ -1,0 +1,33 @@
+[
+  {
+    "label": "core-collection-leveraged-labs",
+    "method": "getAssetsByGroup",
+    "params": {
+      "groupKey": "collection",
+      "groupValue": "5giCDNuy2Z1ownDiPYzw2koJRKBMZtACkHeeHYqWKNhK",
+      "page": 1,
+      "limit": 50
+    }
+  },
+  {
+    "label": "v1-collection-jupiter-rewards",
+    "method": "getAssetsByGroup",
+    "params": {
+      "groupKey": "collection",
+      "groupValue": "566E9s1KwmYzXXh4kBmqpJKfTsohJK9GhC95vXSCxmyt",
+      "page": 1,
+      "limit": 50
+    }
+  },
+  {
+    "label": "cnft-collection-include-unverified",
+    "method": "getAssetsByGroup",
+    "params": {
+      "groupKey": "collection",
+      "groupValue": "J33XJu5P4y1oxbXkxhw6nsfJ2osrWHyv1TsCVGtxvb3A",
+      "page": 1,
+      "limit": 50,
+      "displayOptions": { "showUnverifiedCollections": true }
+    }
+  }
+]

@@ -4,8 +4,15 @@ name = "integration_tests"
 publish = false
 version = "0.1.0"
 
+#   cargo test --test compare_endpoints --release -- --rpc1 URL --rpc2 URL
+[[test]]
+name = "compare_endpoints"
+path = "tests/compare_endpoints/main.rs"
+harness = false
+
 [dev-dependencies]
 anyhow = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 borsh = { workspace = true }
 das_api = { workspace = true }
 digital_asset_types = { workspace = true }

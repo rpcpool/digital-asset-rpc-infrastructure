@@ -1,0 +1,11 @@
+[
+  {
+    "label": "jupiter-authority",
+    "method": "getAssetsByAuthority",
+    "params": {
+      "authorityAddress": "3cC8FntsWggXQteyDWULMdnmSoMN59hYUBiZ1bkRVYQ8",
+      "page": 1,
+      "limit": 50
+    }
+  }
+]
