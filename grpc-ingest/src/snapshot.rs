@@ -857,6 +857,7 @@ async fn download_and_process_snapshot_file(
         Pubkey::from_str("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s").unwrap(),
         Pubkey::from_str("inscokhJarcjaEs59QbQ7hYjrKz25LEPRfCbP8EmdUp").unwrap(),
         Pubkey::from_str("CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d").unwrap(),
+        Pubkey::from_str("1DREGFgysWYxLnRnKQnwrxnJQeSMk2HmGaC6whw2B2p").unwrap(),
     ];
 
     // The accounts-file iteration helpers in solana-accounts-db 3.x carry
