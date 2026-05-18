@@ -16,6 +16,7 @@ members = [
   "tools/acc_forwarder",
   "tools/bgtask_creator",
   "tools/fetch_trees",
+  "tools/legacy_token_list_backfill",
   "tools/load_generation",
   "tools/tree-status",
   "tools/txn_forwarder",
