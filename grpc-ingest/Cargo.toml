@@ -56,12 +56,16 @@ tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
-yellowstone-grpc-tools = { workspace = true }
 
 solana-program = { workspace = true }
 solana-accounts-db = { workspace = true }
+solana-hard-forks = { workspace = true }
+solana-message = { workspace = true }
 solana-runtime = { workspace = true }
 solana-sdk = { workspace = true }
+solana-stake-interface = { workspace = true }
+solana-system-interface = { workspace = true }
+solana-transaction-status = { workspace = true }
 zstd = { workspace = true }
 tar = { workspace = true }
 bincode = { workspace = true }

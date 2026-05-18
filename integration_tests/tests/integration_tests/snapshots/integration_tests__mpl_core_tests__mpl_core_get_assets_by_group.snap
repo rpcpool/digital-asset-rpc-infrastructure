@@ -1,5 +1,6 @@
 ---
 source: integration_tests/tests/integration_tests/mpl_core_tests.rs
+assertion_line: 149
 expression: response
 ---
 {
@@ -66,7 +67,9 @@ expression: response
       "mpl_core_info": {
         "plugins_json_version": 1
       },
-      "external_plugins": []
+      "external_plugins": [],
+      "is_agent": false,
+      "asset_signer": "3YW5ybtJapz8GMuUJUCxDfivphJame2KQCWWt3fzTZoS"
     },
     {
       "interface": "MplCoreAsset",
@@ -127,7 +130,9 @@ expression: response
       "mpl_core_info": {
         "plugins_json_version": 1
       },
-      "external_plugins": []
+      "external_plugins": [],
+      "is_agent": false,
+      "asset_signer": "4q9esDqpZD5KJsSQ9avp4udKGivuCSsLJVj96QMKcFos"
     },
     {
       "interface": "MplCoreAsset",
@@ -188,7 +193,9 @@ expression: response
       "mpl_core_info": {
         "plugins_json_version": 1
       },
-      "external_plugins": []
+      "external_plugins": [],
+      "is_agent": false,
+      "asset_signer": "2MVYXux6mm5W582gZYwBiZKVgrWkSowSV1vNXhp6Dqnz"
     }
   ]
 }

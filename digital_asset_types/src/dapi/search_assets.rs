@@ -17,7 +17,7 @@ pub async fn search_assets(
     let (column, order) = sorting.into_sorting();
     search_assets_query.validate()?;
 
-    let assets = scopes::asset::search_assets(
+    let mut assets = scopes::asset::search_assets(
         db,
         &search_assets_query,
         column,
@@ -27,6 +27,19 @@ pub async fn search_assets(
         options,
     )
     .await?;
+
+    // MIP-11 (#270): if the request filtered by grouping, drop assets whose
+    // surviving grouping state (after `filter_out_stale_asset_groupings` runs
+    // during hydration) no longer matches. The asset_grouping JOIN can match
+    // a row that was later superseded by a higher-slot NULL sentinel.
+    if let Some((ref gk, ref gv)) = search_assets_query.grouping {
+        assets.retain(|asset| {
+            asset
+                .groups
+                .iter()
+                .any(|(g, _)| g.group_key == *gk && g.group_value.as_deref() == Some(gv.as_str()))
+        });
+    }
 
     Ok(build_asset_response(
         assets,

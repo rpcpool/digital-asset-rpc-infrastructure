@@ -1,0 +1,18 @@
+[
+  {
+    "label": "core-collection-leveraged-labs",
+    "method": "getGrouping",
+    "params": {
+      "groupKey": "collection",
+      "groupValue": "5giCDNuy2Z1ownDiPYzw2koJRKBMZtACkHeeHYqWKNhK"
+    }
+  },
+  {
+    "label": "v1-collection-jupiter-rewards",
+    "method": "getGrouping",
+    "params": {
+      "groupKey": "collection",
+      "groupValue": "566E9s1KwmYzXXh4kBmqpJKfTsohJK9GhC95vXSCxmyt"
+    }
+  }
+]

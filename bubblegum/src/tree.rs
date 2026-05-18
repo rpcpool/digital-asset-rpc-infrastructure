@@ -2,13 +2,18 @@ use super::error::ErrorKind;
 use anyhow::Result;
 use borsh::BorshDeserialize;
 use das_core::Rpc;
-use solana_client::rpc_filter::{Memcmp, RpcFilterType};
-use solana_sdk::{account::Account, pubkey::Pubkey};
-use spl_account_compression::id;
-use spl_account_compression::state::{
+use mpl_account_compression::state::{
     merkle_tree_get_size, ConcurrentMerkleTreeHeader, CONCURRENT_MERKLE_TREE_HEADER_SIZE_V1,
 };
+use solana_client::rpc_filter::{Memcmp, RpcFilterType};
+use solana_sdk::{account::Account, pubkey::Pubkey};
 use std::str::FromStr;
+
+/// Legacy SPL Account Compression program ID — `cmtDvXumGCrqC1Age74AVPhSRVXJMd8PJS91L8KbNCK`.
+/// Kept hard-coded because the workspace replaced `spl-account-compression` with
+/// `mpl-account-compression`, but the on-chain program id we still query is the SPL one.
+const SPL_ACCOUNT_COMPRESSION_ID: Pubkey =
+    solana_sdk::pubkey!("cmtDvXumGCrqC1Age74AVPhSRVXJMd8PJS91L8KbNCK");
 
 #[derive(Clone)]
 pub struct TreeHeaderResponse {
@@ -69,7 +74,7 @@ impl TreeResponse {
     pub async fn all(client: &Rpc) -> Result<Vec<Self>, ErrorKind> {
         Ok(client
             .get_program_accounts(
-                &id(),
+                &SPL_ACCOUNT_COMPRESSION_ID,
                 Some(vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
                     0,
                     vec![1u8],

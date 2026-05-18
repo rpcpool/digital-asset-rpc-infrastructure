@@ -1,5 +1,6 @@
 ---
 source: integration_tests/tests/integration_tests/mpl_core_tests.rs
+assertion_line: 692
 expression: response
 ---
 {
@@ -75,5 +76,6 @@ expression: response
         }
       }
     }
-  ]
+  ],
+  "is_agent": false
 }

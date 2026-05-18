@@ -461,11 +461,13 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
     }
 
     let mpl_core_info = match interface {
-        Interface::MplCoreAsset | Interface::MplCoreCollection => Some(MplCoreInfo {
-            num_minted: asset.mpl_core_collection_num_minted,
-            current_size: asset.mpl_core_collection_current_size,
-            plugins_json_version: asset.mpl_core_plugins_json_version,
-        }),
+        Interface::MplCoreAsset | Interface::MplCoreCollection | Interface::MplCoreGroup => {
+            Some(MplCoreInfo {
+                num_minted: asset.mpl_core_collection_num_minted,
+                current_size: asset.mpl_core_collection_current_size,
+                plugins_json_version: asset.mpl_core_plugins_json_version,
+            })
+        }
         _ => None,
     };
 
@@ -592,6 +594,14 @@ pub fn asset_to_rpc(asset: FullAsset, options: &Options) -> Result<RpcAsset, DbE
         mpl_core_info,
         external_plugins: asset.mpl_core_external_plugins,
         unknown_external_plugins: asset.mpl_core_unknown_external_plugins,
+        is_agent: match interface {
+            Interface::MplCoreAsset | Interface::MplCoreCollection | Interface::MplCoreGroup => {
+                Some(asset.is_agent)
+            }
+            _ => None,
+        },
+        agent_token: asset.agent_token.map(|t| bs58::encode(t).into_string()),
+        asset_signer: asset.asset_signer.map(|s| bs58::encode(s).into_string()),
     })
 }
 

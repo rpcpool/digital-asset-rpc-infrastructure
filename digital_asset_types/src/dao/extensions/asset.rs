@@ -137,6 +137,10 @@ impl Default for asset::Model {
             asset_data_hash: None,
             bubblegum_flags: None,
             non_transferable: None,
+            is_agent: false,
+            agent_token: None,
+            asset_signer: None,
+            slot_updated_agent_registry: None,
         }
     }
 }
@@ -180,6 +184,9 @@ pub struct Row {
     pub asset_data_hash: Option<String>,
     pub bubblegum_flags: Option<i16>,
     pub non_transferable: Option<bool>,
+    pub is_agent: bool,
+    pub agent_token: Option<Vec<u8>>,
+    pub asset_signer: Option<Vec<u8>>,
 
     // asset_data
     pub chain_data_mutability: Option<ChainMutability>,
@@ -248,6 +255,9 @@ pub enum Column {
     AssetDataHash,
     BubblegumFlags,
     NonTransferable,
+    IsAgent,
+    AgentToken,
+    AssetSigner,
 
     // asset_data
     ChainDataMutability,
@@ -316,6 +326,9 @@ impl Default for Row {
             asset_data_hash: None,
             bubblegum_flags: None,
             non_transferable: None,
+            is_agent: false,
+            agent_token: None,
+            asset_signer: None,
             chain_data_mutability: None,
             chain_data: None,
             metadata_url: None,
@@ -396,6 +409,9 @@ impl Row {
             .column((Entity, asset::Column::AssetDataHash))
             .column((Entity, asset::Column::BubblegumFlags))
             .column((Entity, asset::Column::NonTransferable))
+            .column((Entity, asset::Column::IsAgent))
+            .column((Entity, asset::Column::AgentToken))
+            .column((Entity, asset::Column::AssetSigner))
             .expr(
                 Expr::col((asset_data::Entity, asset_data::Column::ChainDataMutability))
                     .as_enum(Alias::new("TEXT")),

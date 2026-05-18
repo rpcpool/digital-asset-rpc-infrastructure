@@ -71,6 +71,9 @@ pub struct SearchAssetsQuery {
     pub json_uri: Option<String>,
     pub name: Option<Vec<u8>>,
     pub token_type: Option<TokenTypeClass>,
+    pub is_agent: Option<bool>,
+    pub agent_token: Option<Vec<u8>>,
+    pub asset_signer: Option<Vec<u8>>,
 }
 
 impl SearchAssetsQuery {

@@ -1,0 +1,27 @@
+[
+  {
+    "label": "by-owner",
+    "method": "getTokenAccounts",
+    "params": {
+      "owner": "Ec8ZkxwfFXyJFqsDQGfCfD9GRkUeo65SSNpKuYfvigrF",
+      "limit": 100
+    }
+  },
+  {
+    "label": "by-mint-usdc",
+    "method": "getTokenAccounts",
+    "params": {
+      "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "limit": 100
+    }
+  },
+  {
+    "label": "by-owner-show-zero",
+    "method": "getTokenAccounts",
+    "params": {
+      "owner": "Ec8ZkxwfFXyJFqsDQGfCfD9GRkUeo65SSNpKuYfvigrF",
+      "limit": 100,
+      "options": { "showZeroBalance": true }
+    }
+  }
+]

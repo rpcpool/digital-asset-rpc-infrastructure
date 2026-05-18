@@ -1,0 +1,49 @@
+[
+  {
+    "label": "empty-owner",
+    "method": "getAssetsByOwner",
+    "params": {
+      "ownerAddress": "11111111111111111111111111111111",
+      "page": 1,
+      "limit": 10
+    }
+  },
+  {
+    "label": "small-owner-page-1",
+    "method": "getAssetsByOwner",
+    "params": {
+      "ownerAddress": "Ec8ZkxwfFXyJFqsDQGfCfD9GRkUeo65SSNpKuYfvigrF",
+      "page": 1,
+      "limit": 50
+    }
+  },
+  {
+    "label": "whale-page-1-100",
+    "method": "getAssetsByOwner",
+    "params": {
+      "ownerAddress": "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix",
+      "page": 1,
+      "limit": 100
+    }
+  },
+  {
+    "label": "small-owner-show-fungible",
+    "method": "getAssetsByOwner",
+    "params": {
+      "ownerAddress": "Ec8ZkxwfFXyJFqsDQGfCfD9GRkUeo65SSNpKuYfvigrF",
+      "page": 1,
+      "limit": 50,
+      "displayOptions": { "showFungible": true }
+    }
+  },
+  {
+    "label": "small-owner-show-unverified",
+    "method": "getAssetsByOwner",
+    "params": {
+      "ownerAddress": "Ec8ZkxwfFXyJFqsDQGfCfD9GRkUeo65SSNpKuYfvigrF",
+      "page": 1,
+      "limit": 50,
+      "displayOptions": { "showUnverifiedCollections": true }
+    }
+  }
+]

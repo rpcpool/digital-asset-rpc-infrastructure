@@ -252,8 +252,11 @@ where
                 .from(asset_grouping::Entity)
                 .cond_where(
                     Condition::all()
-                        .add(asset_grouping::Column::GroupKey.eq(group_key))
-                        .add(asset_grouping::Column::GroupValue.eq(group_value))
+                        // Cloned because the same values are reused by the
+                        // post-fetch `full_assets.retain(...)` below (MIP-11
+                        // safety net for stale groupings).
+                        .add(asset_grouping::Column::GroupKey.eq(group_key.clone()))
+                        .add(asset_grouping::Column::GroupValue.eq(group_value.clone()))
                         .add(asset_grouping::Column::GroupValue.is_not_null())
                         .add_option((!options.show_unverified_collections).then(|| {
                             asset_grouping::Column::Verified
@@ -319,7 +322,19 @@ where
         .all(conn)
         .await?;
 
-    get_related_for_assets(conn, assets, options, None).await
+    let mut full_assets = get_related_for_assets(conn, assets, options, None).await?;
+
+    // MIP-11 (#270): the JOIN on asset_grouping is slot-blind, so it can match
+    // a stale row that was superseded by a higher-slot NULL sentinel. Drop any
+    // asset whose surviving groups (after `filter_out_stale_asset_groupings`
+    // ran in `get_related_for_assets`) no longer contain the requested key/value.
+    full_assets.retain(|asset| {
+        asset.groups.iter().any(|(g, _)| {
+            g.group_key == group_key && g.group_value.as_deref() == Some(group_value.as_str())
+        })
+    });
+
+    Ok(full_assets)
 }
 
 pub async fn get_by_owner<D>(
@@ -1282,6 +1297,15 @@ where
             }))
             .add_option(query.burnt.map(|x| {
                 Expr::tbl(extensions::asset::Entity, extensions::asset::Column::Burnt).eq(x)
+            }))
+            .add_option(query.is_agent.map(|x| {
+                Expr::tbl(extensions::asset::Entity, extensions::asset::Column::IsAgent).eq(x)
+            }))
+            .add_option(query.agent_token.to_owned().map(|x| {
+                Expr::tbl(extensions::asset::Entity, extensions::asset::Column::AgentToken).eq(x)
+            }))
+            .add_option(query.asset_signer.to_owned().map(|x| {
+                Expr::tbl(extensions::asset::Entity, extensions::asset::Column::AssetSigner).eq(x)
             }));
 
     if let Some(s) = query.supply {
@@ -1786,7 +1810,19 @@ where
     let grouping_base_query = asset_grouping::Entity::find().filter(
         Condition::all()
             .add(asset_grouping::Column::AssetId.is_in(ids.clone()))
-            .add(asset_grouping::Column::GroupValue.is_not_null())
+            // MIP-11 (#270): collection groupings only match if group_value is
+            // non-null, but other group keys must be allowed through with NULL
+            // sentinels so `filter_out_stale_asset_groupings` can prune them
+            // by max(slot_updated).
+            .add(
+                Condition::any()
+                    .add(
+                        asset_grouping::Column::GroupKey
+                            .eq("collection")
+                            .and(asset_grouping::Column::GroupValue.is_not_null()),
+                    )
+                    .add(asset_grouping::Column::GroupKey.ne("collection")),
+            )
             .add_option(cond),
     );
 
@@ -1836,6 +1872,12 @@ where
             }
         }
     };
+
+    // MIP-11 (#270): drop stale `group` rows whose slot_updated is below the
+    // max for that (asset_id, group_key), and drop the NULL sentinel rows.
+    for asset in full_assets.values_mut() {
+        filter_out_stale_asset_groupings(&mut asset.groups);
+    }
 
     Ok(full_assets.into_values().collect())
 }
@@ -1984,5 +2026,25 @@ fn filter_out_stale_creators(creators: &mut Vec<asset_creators::Model>) {
         if let Some(seq) = seq {
             creators.retain(|creator| creator.seq == seq);
         }
+    }
+}
+
+fn filter_out_stale_asset_groupings(
+    asset_groupings_with_date: &mut Vec<(asset_grouping::Model, Option<asset_data::Model>)>,
+) {
+    // For core assets, any asset groupings that do not have the max
+    // `slot_updated` value are stale and should be removed.
+    // However, only filter out groupings where group_key is "group".
+    // All other groupings should be kept.
+    let max_slot_updated = asset_groupings_with_date
+        .iter()
+        .filter(|ag| ag.0.group_key == "group")
+        .map(|ag| ag.0.slot_updated)
+        .max();
+    if let Some(max_slot_updated) = max_slot_updated {
+        asset_groupings_with_date.retain(|ag| {
+            ag.0.group_key != "group"
+                || (ag.0.slot_updated == max_slot_updated && ag.0.group_value.is_some())
+        });
     }
 }

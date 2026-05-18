@@ -4,13 +4,126 @@ use {
     serde::{de, Deserialize},
     std::{collections::HashMap, net::SocketAddr, path::Path, time::Duration},
     tokio::fs,
-    yellowstone_grpc_tools::config::{
-        deserialize_usize_str, ConfigGrpcRequestAccounts, ConfigGrpcRequestCommitment,
-        ConfigGrpcRequestTransactions,
+    yellowstone_grpc_proto::geyser::{
+        subscribe_request_filter_accounts_filter::Filter as AccountsFilterDataOneof,
+        subscribe_request_filter_accounts_filter_memcmp::Data as AccountsFilterMemcmpOneof,
+        CommitmentLevel, SubscribeRequestFilterAccounts, SubscribeRequestFilterAccountsFilter,
+        SubscribeRequestFilterAccountsFilterMemcmp, SubscribeRequestFilterTransactions,
     },
 };
 
 pub const REDIS_STREAM_DATA_KEY: &str = "data";
+
+// Vendored from the deleted `yellowstone-grpc-tools::config` module
+// (last present in upstream tag v1.15.1+solana.1.18.22). The v9 crates.io
+// release used here matches `../yellowstone-steamboat`'s usage and ships
+// only `yellowstone-grpc-{client,proto}` — config DTOs and their proto
+// converters now live in this crate.
+pub fn deserialize_usize_str<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Value {
+        Integer(usize),
+        String(String),
+    }
+
+    match Value::deserialize(deserializer)? {
+        Value::Integer(value) => Ok(value),
+        Value::String(value) => value
+            .replace('_', "")
+            .parse::<usize>()
+            .map_err(de::Error::custom),
+    }
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct ConfigGrpcRequestAccounts {
+    pub account: Vec<String>,
+    pub owner: Vec<String>,
+    pub filters: Vec<ConfigGrpcRequestAccountsFilter>,
+}
+
+impl ConfigGrpcRequestAccounts {
+    pub fn to_proto(self) -> SubscribeRequestFilterAccounts {
+        SubscribeRequestFilterAccounts {
+            account: self.account,
+            owner: self.owner,
+            filters: self.filters.into_iter().map(|f| f.to_proto()).collect(),
+            nonempty_txn_signature: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub enum ConfigGrpcRequestAccountsFilter {
+    Memcmp { offset: u64, base58: String },
+    DataSize(u64),
+    TokenAccountState,
+}
+
+impl ConfigGrpcRequestAccountsFilter {
+    fn to_proto(self) -> SubscribeRequestFilterAccountsFilter {
+        SubscribeRequestFilterAccountsFilter {
+            filter: Some(match self {
+                Self::Memcmp { offset, base58 } => {
+                    AccountsFilterDataOneof::Memcmp(SubscribeRequestFilterAccountsFilterMemcmp {
+                        offset,
+                        data: Some(AccountsFilterMemcmpOneof::Base58(base58)),
+                    })
+                }
+                Self::DataSize(size) => AccountsFilterDataOneof::Datasize(size),
+                Self::TokenAccountState => AccountsFilterDataOneof::TokenAccountState(true),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct ConfigGrpcRequestTransactions {
+    pub vote: Option<bool>,
+    pub failed: Option<bool>,
+    pub signature: Option<String>,
+    pub account_include: Vec<String>,
+    pub account_exclude: Vec<String>,
+    pub account_required: Vec<String>,
+}
+
+impl ConfigGrpcRequestTransactions {
+    pub fn to_proto(self) -> SubscribeRequestFilterTransactions {
+        SubscribeRequestFilterTransactions {
+            vote: self.vote,
+            failed: self.failed,
+            signature: self.signature,
+            account_include: self.account_include,
+            account_exclude: self.account_exclude,
+            account_required: self.account_required,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConfigGrpcRequestCommitment {
+    #[default]
+    Processed,
+    Confirmed,
+    Finalized,
+}
+
+impl ConfigGrpcRequestCommitment {
+    pub const fn to_proto(self) -> CommitmentLevel {
+        match self {
+            Self::Processed => CommitmentLevel::Processed,
+            Self::Confirmed => CommitmentLevel::Confirmed,
+            Self::Finalized => CommitmentLevel::Finalized,
+        }
+    }
+}
 
 pub async fn load<T>(path: impl AsRef<Path> + Copy) -> anyhow::Result<T>
 where

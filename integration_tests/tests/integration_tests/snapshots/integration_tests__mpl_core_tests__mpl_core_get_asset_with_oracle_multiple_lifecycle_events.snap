@@ -1,5 +1,6 @@
 ---
 source: integration_tests/tests/integration_tests/mpl_core_tests.rs
+assertion_line: 332
 expression: response
 ---
 {
@@ -79,5 +80,7 @@ expression: response
         ]
       }
     }
-  ]
+  ],
+  "is_agent": false,
+  "asset_signer": "6oQKiTkADNHMpuhmBmiMujmboXHjQvBy7SgM8Mz2jDa1"
 }

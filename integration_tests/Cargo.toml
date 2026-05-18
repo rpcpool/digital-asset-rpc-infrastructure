@@ -4,8 +4,15 @@ name = "integration_tests"
 publish = false
 version = "0.1.0"
 
+#   cargo test --test compare_endpoints --release -- --rpc1 URL --rpc2 URL
+[[test]]
+name = "compare_endpoints"
+path = "tests/compare_endpoints/main.rs"
+harness = false
+
 [dev-dependencies]
 anyhow = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 borsh = { workspace = true }
 das_api = { workspace = true }
 digital_asset_types = { workspace = true }
@@ -27,7 +34,9 @@ serde_json = { workspace = true }
 serial_test = { workspace = true }
 solana-account-decoder = { workspace = true }
 solana-client = { workspace = true }
+solana-commitment-config = { workspace = true }
 solana-sdk = { workspace = true }
+solana-system-interface = { workspace = true }
 solana-transaction-status = { workspace = true }
 spl-token = { workspace = true, features = ["no-entrypoint"] }
 sqlx = { workspace = true }
