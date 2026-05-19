@@ -715,6 +715,18 @@ where
             ),
             (
                 extensions::asset::Entity,
+                extensions::asset::Column::IsAgent,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::AgentToken,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::AssetSigner,
+            ),
+            (
+                extensions::asset::Entity,
                 extensions::asset::Column::ChainDataMutability,
             ),
             (
@@ -1106,6 +1118,18 @@ where
             (
                 extensions::asset::Entity,
                 extensions::asset::Column::NonTransferable,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::IsAgent,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::AgentToken,
+            ),
+            (
+                extensions::asset::Entity,
+                extensions::asset::Column::AssetSigner,
             ),
             (
                 extensions::asset::Entity,
