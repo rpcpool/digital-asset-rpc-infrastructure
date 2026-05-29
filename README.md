@@ -1,18 +1,19 @@
-## IMPORTANT: See Prerequisites below
+# Digital Asset RPC API Infrastructure
 
-## Digital Asset RPC API Infrastructure
+> [!IMPORTANT]  
+> See Prerequisites below
 
-This repo houses the API Ingester and Database Types components of the Metaplex Digital Asset RPC API. Together these
+This repo houses the API Ingester and Database Types components of the Metaplex Digital Asset RPC API. Together, these
 components are responsible for the aggregation of Solana Validator Data into an extremely fast and well typed api. This
 api provides a nice interface on top of the Metaplex programs. It abstracts the byte layout on chain, allows for
-super-fast querying and searching, as well as serves the merkle proofs needed to operate over compressed nfts.
+super-fast querying and searching, and serves the merkle proofs needed to operate over compressed nfts.
 
 ### Components
 
 1. Ingester -> A background processing system that gets messages from a [Messenger](https://github.com/metaplex-foundation/digital-asset-validator-plugin), and uses [BlockBuster](https://github.com/metaplex-foundation/blockbuster) Parsers to store the canonical representation of Metaplex types in a storage system. This system also holds the re-articulated Merkle tree that supports the compressed NFTs system.
-2. Api -> A JSON Rpc api that serves Metaplex objects. This api allows filtering, pagination and searching over Metaplex data. This data includes serving the merkle proofs for the compressed NFTs system. It is intended to be run right alongside the Solana RPC and works in much the same way. Just like the solana RPC takes data from the validator and serves it in a new format, so this api takes data off the validator and serves it.
+2. Api -> A JSON Rpc api that serves Metaplex objects. This api allows filtering, pagination, and searching over Metaplex data. This data includes serving the merkle proofs for the compressed NFTs system. It is intended to be run right alongside the Solana RPC and works in much the same way. Just like the solana RPC takes data from the validator and serves it in a new format, this api takes data from the validator and serves it.
 
-The API specification is located here https://github.com/metaplex-foundation/api-specifications
+The API specification is located here: https://github.com/metaplex-foundation/api-specifications
 This spec is what providers of this api must implement against.
 
 ### Infrastructure and Deployment Examples
@@ -22,18 +23,18 @@ The example infrastructure is as follows.
 
 - A Solana No-Vote Validator - This validator is configured to only have secure access to the validator ledger and account data under consensus.
 - A Geyser Plugin (Plerkle) - The above validator is further configured to load this geyser plugin that sends Plerkle Serialized Messages over a messaging system.
-- A Redis Cluster (Stream Optimized) - The example messaging system is a light weight redis deployment that supports the streaming configuration.
-- A Kubernetes Cluster - The orchestration system for the API and Ingester processes. Probably overkill for a small installation, but it's a rock solid platform for critical software.
+- A Redis Cluster (Stream Optimized) - The example messaging system is a lightweight redis deployment that supports the streaming configuration.
+- A Kubernetes Cluster - The orchestration system for the API and Ingester processes. Probably overkill for a small installation, but it's a rock-solid platform for critical software.
 
-This repo houses Helm Charts, Docker files and Terraform files to assist in the deployment of the example infrastructure.
+This repository houses Helm Charts, Docker files, and Terraform files to assist in deploying the example infrastructure.
 
 ### Developing
 
 #### Prerequisites:
 
-You must clone the https://github.com/metaplex-foundation/blockbuster repo, this is un publishable for now due to active development in like 1000 branches and serious mathematics avoiding dependency hell.
+You must clone the https://github.com/metaplex-foundation/blockbuster repo. This is unpublished for now due to active development in approximately 1,000 branches and the need for serious mathematics to avoid dependency hell.
 
-Because this is a multi component system the easiest way to develop or locally test this system is with docker but developing locally without docker is possible.
+Because this is a multi-component system, the easiest way to develop or locally test this system is with Docker, but developing locally without Docker is also possible.
 
 #### Regenerating DB Types
 
@@ -41,9 +42,10 @@ Edit the init.sql, then run `docker compose up db`
 Then with a local `DATABASE_URL` var exported like this `export DATABASE_URL=postgres://solana:solana@localhost/solana` you can run
 `sea-orm-cli generate entity -o ./digital_asset_types/src/dao/generated/ --database-url $DATABASE_URL --with-serde both --expanded-format`
 
-If you need to install `sea-orm-cli` run `cargo install sea-orm-cli`.
+If you need to install `sea-orm-cli`, run `cargo install sea-orm-cli`.
 
-Note: The current SeaORM types were generated using version 0.9.3 so unless you want to upgrade you can install using `cargo install sea-orm-cli --version 0.9.3`.
+> [!Note]
+> The current SeaORM types were generated using version 0.9.3. Unless you want to upgrade, you can install using `cargo install sea-orm-cli --version 0.9.3`.
 
 #### Developing Locally
 
@@ -52,7 +54,7 @@ _Prerequisites_
 - A Postgres Server running with the database setup according to ./init.sql
 - A Redis instance that has streams enabled or a version that supports streams
 - A local solana validator with the Plerkle plugin running.
-- Environment Variables set to allow your validator, ingester and api to access those prerequisites.
+- Environment Variables set to allow your validator, ingester, and api to access those prerequisites.
 
 See [Plugin Configuration](https://github.com/metaplex-foundation/digital-asset-validator-plugin#building-locally) for how to locally configure the test validator plugin to work.
 
@@ -67,19 +69,19 @@ APP_SERVER_PORT=9090
 cargo run -p das_api
 ```
 
-For the Ingester you need the following environment variables:
+For the Ingester, you need the following environment variables:
 
 ```bash
 INGESTER_DATABASE_CONFIG: '{listener_channel="backfill_item_added", url="postgres://solana:solana@db/solana"}' # your database host
 INGESTER_MESSENGER_CONFIG: '{messenger_type="Redis", connection_config={ redis_connection_str="redis://redis" } }' #your redis
-INGESTER_RPC_CONFIG: '{url="http://validator:8899", commitment="finalized"}' # your solana validator or same network rpc, if local you must use your solana instance running localy
+INGESTER_RPC_CONFIG: '{url="http://validator:8899", commitment="finalized"}' # your solana validator or same network rpc, if local, you must use your solana instance running locally
 ```
 
 ```bash
 cargo run -p nft_ingester
 ```
 
-When making changes you will need to stop the cargo process and re-run. Someday we will have auto rebuild for local cargo stuff but for now you are on your own.
+When making changes, you will need to stop the cargo process and rerun it. Someday, we will have auto-rebuild for local cargo items, but for now, you are on your own.
 
 #### NOTE
 
@@ -94,11 +96,11 @@ Ingester for just the Listeners to txn and acct
 Backfiller for just the backfiller scheduler and notifyer
 Background for just the background tasks.
 
-For production you should split the coponents up.
+For production, you should separate the components.
 
 ### Developing With Docker
 
-Developing with Docker is much easier, but has some nuances to it. This test docker compose system relies on a programs folder being accessible, this folder needs to have the shared object files for the following programs
+Developing with Docker is much easier, but it has some nuances to it. This test docker compose system relies on a programs folder being accessible. This folder needs to have the shared object files for the following programs
 
 - Token Metadata
 - Bubblegum
@@ -112,8 +114,8 @@ You need to run the following script in order to get the .so files.
 ./prepare-local-docker-env.sh
 ```
 
-This script grabs all the code for these programs and compiles it, and chucks it into your programs folder. Go grab some coffe because this will take a while/
-If you get some permissions errors, just sudo delete the programs directory and start again.
+This script grabs all the code for these programs and compiles it, and chucks it into your programs folder. Grab some coffee because this will take a while/
+If you encounter permission errors, use `sudo` to delete the programs directory and start again.
 
 #### Authentication with Docker and AWS
 
@@ -121,14 +123,14 @@ If you get some permissions errors, just sudo delete the programs directory and 
 
 #### Running the application
 
-We use `docker-compose` to build the multi-container Docker application. On some systems its `docker compose`.
+We use `docker-compose` to build the multi-container Docker application. On some systems, it's `docker compose`.
 
 ```bash
 docker-compose build
 ```
 
 This builds the docker container for API and the Ingester components and will download the appropriate Redis, Postgres and Solana+plerkle docker images.
-Keep in mind that the version `latest` on the Solana Validator image will match the latest version available on the docs, for other versions please change that version in your docker compose file.
+Keep in mind that the version `latest` on the Solana Validator image will match the latest version available on the docs; for other versions please change that version in your docker compose file.
 
 ```bash
 docker-compose up
@@ -136,10 +138,10 @@ docker-compose up
 
 #### Developing
 
-When making changes you will need to `docker compose up --build --force-recreate` again to get the latest changes.
-Also when mucking about with the docker file if your gut tells you that something is wrong, and you are getting build errors run `docker compose build --no-cache`
+When making changes, you will need to run `docker compose up --build --force-recreate` again to get the latest changes.
+Also, when mucking about with the docker file, if your gut tells you that something is wrong, and you are getting build errors, run `docker compose build --no-cache`
 
-Sometimes you will want to delete the db do so with `sudo rm -rf db-data`. You can also delete the ledger with `sudo rm -rf ledger`.
+Sometimes you will want to delete the db, do so with `sudo rm -rf db-data`. You can also delete the ledger with `sudo rm -rf ledger`.
 
 #### Running Bubblegum Test Sequences
 
@@ -160,7 +162,7 @@ cd tools/txn_forwarder/bubblegum_tests/
 
 You should see it log something like:
 
-```
+```console
 Running 10 scenarios forwards
 mint_transfer_burn.scenario initial asset table state passed
 mint_transfer_burn.scenario initial asset_creators table state passed
@@ -181,13 +183,13 @@ You can also run the sequences in reverse:
 ./run-bubblegum-sequences.sh reverse
 ```
 
-And after it runs you should see `ALL TESTS PASSED IN REVERSE!`
+And after it runs, you should see `ALL TESTS PASSED IN REVERSE!`
 
 A few detailed notes about this test script:
 
-- This script is not all-encompassing. It is only meant to automate some normal basic tests that were previously done manually. The reason this test is not added to CI is because requires a more powerful system to run the Docker application, which contains the no-vote Solana validator.
-- The test sequences are in `.scenario` files, but instead of sending those files to the `txn_forwarder` directly (which supports the file format), we parse them out and send them individually using the `single` parameter. This is because using the `.scenario` file directly results in random ordering of the transactions and we are explicity trying to test them going forwards and in reverse.
-- In general the expected database results are the same when running the transactions forwards and backwards. However, for assets that are decompressed, this is not true because we don't index some of the asset information from Bubblegum mint indexing if we already know the asset has been decompressed. We instead let Token Metadata account based indexing fill in that information. This is not reflected by this test script so the results differ when running these sequences in reverse. The differing results are reflected in test files with the `_reverse` suffix.
+- This script is not all-encompassing. It is intended to automate some basic routine tests that were previously performed manually. The reason this test is not added to CI is that it requires a more powerful system to run the Docker application, which contains the no-vote Solana validator.
+- The test sequences are in `.scenario` files, but instead of sending those files to the `txn_forwarder` directly (which supports the file format), we parse them out and send them individually using the `single` parameter. This is because using the `.scenario` file directly results in a random ordering of the transactions, and we are explicitly trying to test them going forward and in reverse.
+- In general, the expected database results are the same when running the transactions forward and backwards. However, for assets that are decompressed, this is not true because we don't index some of the asset information from Bubblegum mint indexing if we already know the asset has been decompressed. We instead let Token Metadata account based indexing fill in that information. This test script does not account for this, so the results differ when running these sequences in reverse. The differing results are reflected in test files with the `_reverse` suffix.
 
 #### Logs
 
@@ -201,7 +203,7 @@ grafana:
       - GF_LOG_MODE=file
 ```
 
-and set Solana Rust logs to error level:
+And set Solana Rust logs to error level:
 
 ```
   solana:
@@ -212,7 +214,7 @@ and set Solana Rust logs to error level:
 
 #### Interacting with API
 
-Once everything is working you can see that there is a api being served on
+Once everything is working, you can see that there is an api being served on
 
 ```
 http://localhost:9090
@@ -290,13 +292,13 @@ Make sure you have the env vars you need to satisfy this part of the skaffold.ya
 
 ```bash
 skaffold build --file-output skaffold-state.json --cache-artifacts=false
-## Your namepsace may differ.
+## Your namespace may differ.
 skaffold deploy -p devnet --build-artifacts skaffold-state.json --namespace devnet-read-api --tail=true
 ```
 
 # METRICS
 
-Here are the metrics that various parts of ths system expose;
+Here are the metrics that various parts of this system expose;
 
 ## NFT INGESTER
 
