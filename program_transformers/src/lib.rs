@@ -46,6 +46,7 @@ mod agent_registry;
 mod asset_upserts;
 pub mod bubblegum;
 pub mod error;
+mod legacy_tokens;
 pub mod metrics;
 mod mpl_core_program;
 mod system;
