@@ -707,10 +707,12 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
                                                 Alias::new("excluded"),
                                                 asset::Column::AssetSigner,
                                             )
-                                            .ne(Expr::tbl(
-                                                asset::Entity,
-                                                asset::Column::AssetSigner,
-                                            )),
+                                            .ne(
+                                                Expr::tbl(
+                                                    asset::Entity,
+                                                    asset::Column::AssetSigner,
+                                                ),
+                                            ),
                                         ),
                                 )
                                 .add(

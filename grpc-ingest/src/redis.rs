@@ -69,15 +69,12 @@ fn proto_to_compiled_instruction(
 fn proto_to_inner_instructions(
     ix: ProtoInnerInstructions,
 ) -> Result<InnerInstructions, RedisStreamMessageError> {
-    let index = u8::try_from(ix.index).map_err(|_| {
-        RedisStreamMessageError::InvalidData("InnerInstructions.index".to_string())
-    })?;
+    let index = u8::try_from(ix.index)
+        .map_err(|_| RedisStreamMessageError::InvalidData("InnerInstructions.index".to_string()))?;
     let mut instructions = Vec::with_capacity(ix.instructions.len());
     for inner in ix.instructions {
         let program_id_index = u8::try_from(inner.program_id_index).map_err(|_| {
-            RedisStreamMessageError::InvalidData(
-                "InnerInstruction.program_id_index".to_string(),
-            )
+            RedisStreamMessageError::InvalidData("InnerInstruction.program_id_index".to_string())
         })?;
         instructions.push(InnerInstruction {
             instruction: MessageCompiledInstruction {

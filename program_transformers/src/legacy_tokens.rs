@@ -35,7 +35,9 @@ fn build() -> HashMap<[u8; 32], LegacyEntry> {
         if addr.is_empty() || logo.is_empty() {
             continue;
         }
-        let Ok(pk) = Pubkey::from_str(addr) else { continue };
+        let Ok(pk) = Pubkey::from_str(addr) else {
+            continue;
+        };
         let name = t.get("name").and_then(Value::as_str).unwrap_or("");
         let symbol = t.get("symbol").and_then(Value::as_str).unwrap_or("");
         let mime = mime_of(logo);

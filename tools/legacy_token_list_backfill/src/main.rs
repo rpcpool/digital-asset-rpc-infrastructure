@@ -10,7 +10,9 @@ use {
 const TOKEN_LIST_JSON: &str = include_str!("../solana.tokenlist.json");
 
 #[derive(Parser)]
-#[command(about = "Backfill asset_data with legacy token-list metadata for fungibles with empty on-chain URIs.")]
+#[command(
+    about = "Backfill asset_data with legacy token-list metadata for fungibles with empty on-chain URIs."
+)]
 struct Args {
     #[arg(long, env = "DATABASE_URL")]
     database_url: String,
@@ -42,8 +44,8 @@ const SOLANA_MAINNET_CHAIN_ID: u32 = 101;
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let list: TokenList = serde_json::from_str(TOKEN_LIST_JSON)
-        .context("parsing bundled solana.tokenlist.json")?;
+    let list: TokenList =
+        serde_json::from_str(TOKEN_LIST_JSON).context("parsing bundled solana.tokenlist.json")?;
 
     let mut mints = Vec::new();
     let mut names = Vec::new();
@@ -58,7 +60,8 @@ async fn main() -> Result<()> {
         if uri.is_empty() {
             continue;
         }
-        let mint = bs58::decode(&t.address).into_vec()
+        let mint = bs58::decode(&t.address)
+            .into_vec()
             .map_err(|e| anyhow!("bad mint base58 {}: {}", t.address, e))?;
         if mint.len() != 32 {
             continue;
