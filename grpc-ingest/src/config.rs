@@ -48,11 +48,11 @@ pub struct ConfigGrpcRequestAccounts {
 }
 
 impl ConfigGrpcRequestAccounts {
-    pub fn to_proto(self) -> SubscribeRequestFilterAccounts {
+    pub fn into_proto(self) -> SubscribeRequestFilterAccounts {
         SubscribeRequestFilterAccounts {
             account: self.account,
             owner: self.owner,
-            filters: self.filters.into_iter().map(|f| f.to_proto()).collect(),
+            filters: self.filters.into_iter().map(|f| f.into_proto()).collect(),
             nonempty_txn_signature: None,
         }
     }
@@ -66,7 +66,7 @@ pub enum ConfigGrpcRequestAccountsFilter {
 }
 
 impl ConfigGrpcRequestAccountsFilter {
-    fn to_proto(self) -> SubscribeRequestFilterAccountsFilter {
+    fn into_proto(self) -> SubscribeRequestFilterAccountsFilter {
         SubscribeRequestFilterAccountsFilter {
             filter: Some(match self {
                 Self::Memcmp { offset, base58 } => {
@@ -94,7 +94,7 @@ pub struct ConfigGrpcRequestTransactions {
 }
 
 impl ConfigGrpcRequestTransactions {
-    pub fn to_proto(self) -> SubscribeRequestFilterTransactions {
+    pub fn into_proto(self) -> SubscribeRequestFilterTransactions {
         SubscribeRequestFilterTransactions {
             vote: self.vote,
             failed: self.failed,

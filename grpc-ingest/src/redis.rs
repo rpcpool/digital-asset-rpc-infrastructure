@@ -570,7 +570,7 @@ impl<H: MessageHandler> IngestStream<H> {
 
                             tasks.spawn(async move {
                                 let start_time = tokio::time::Instant::now();
-                                let result = handler.handle(map).await.map_err(IngestMessageError::into);
+                                let result = handler.handle(map).await;
                                 let elapsed_time = start_time.elapsed().as_secs_f64();
 
                                 ingest_job_time_set(&config.name, &config.consumer, elapsed_time);

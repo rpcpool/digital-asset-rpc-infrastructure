@@ -177,7 +177,7 @@ impl SignatureWorkerArgs {
     }
 }
 
-async fn queue_transaction<'a>(
+async fn queue_transaction(
     client: Rpc,
     sender: Sender<TransactionInfo>,
     signature: Signature,

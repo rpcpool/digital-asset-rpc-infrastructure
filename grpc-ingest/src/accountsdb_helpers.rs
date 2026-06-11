@@ -6,6 +6,11 @@
 // with `solana-runtime`'s `serde_snapshot` module — bincode serializes by
 // position, not by name, so a drift here would silently misparse snapshots.
 // Sourced from solana-runtime 3.1.x.
+//
+// These snapshot types are marked deprecated upstream (Agave unstable API) but
+// are intentionally mirrored here to deserialize snapshots, so suppress the lint
+// for the whole module.
+#![allow(deprecated)]
 use {
     serde::Deserialize,
     solana_accounts_db::{ancestors::AncestorsForSerialization, blockhash_queue::BlockhashQueue},
