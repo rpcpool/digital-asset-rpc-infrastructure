@@ -993,6 +993,69 @@ where
             .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::SupplyMint).is_null())
             .union(UnionType::All, token_asset_stmt)
             .to_owned()
+    } else if query.is_agent == Some(true)
+        || query.agent_token.is_some()
+        || query.asset_signer.is_some()
+    {
+        extensions::asset::Row::select()
+            .expr_as(
+                Expr::val::<Option<Decimal>>(None),
+                extensions::asset::Column::MintSupply,
+            )
+            .expr_as(
+                Expr::val::<Option<i32>>(None),
+                extensions::asset::Column::MintDecimals,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintTokenProgram,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintAuthority,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintFreezeAuthority,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintCloseAuthority,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::MintExtensionData,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::TokenAccountPubkey,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::TokenOwner,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::TokenAccountDelegate,
+            )
+            .expr_as(
+                Expr::val::<Option<i64>>(None),
+                extensions::asset::Column::TokenAccountAmount,
+            )
+            .expr_as(
+                Expr::val::<Option<bool>>(None),
+                extensions::asset::Column::TokenAccountFrozen,
+            )
+            .expr_as(
+                Expr::val::<Option<Vec<u8>>>(None),
+                extensions::asset::Column::TokenAccountCloseAuthority,
+            )
+            .expr_as(
+                Expr::val::<Option<i64>>(None),
+                extensions::asset::Column::TokenAccountDelegatedAmount,
+            )
+            .from_as(asset::Entity, extensions::asset::Entity)
+            .to_owned()
     } else {
         return Err(DbErr::Custom("No owner address provided".to_string()));
     };
