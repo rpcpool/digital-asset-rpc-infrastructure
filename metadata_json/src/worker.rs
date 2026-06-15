@@ -32,14 +32,6 @@ impl From<WorkerArgs> for Worker {
         }
     }
 }
-#[allow(clippy::large_enum_variant)]
-#[derive(thiserror::Error, Debug)]
-pub enum WorkerError {
-    #[error("send error: {0}")]
-    Send(#[from] mpsc::error::SendError<asset_data::Model>),
-    #[error("join error: {0}")]
-    Join(#[from] tokio::task::JoinError),
-}
 
 impl Worker {
     pub fn start(

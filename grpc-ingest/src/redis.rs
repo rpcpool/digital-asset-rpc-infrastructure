@@ -69,15 +69,12 @@ fn proto_to_compiled_instruction(
 fn proto_to_inner_instructions(
     ix: ProtoInnerInstructions,
 ) -> Result<InnerInstructions, RedisStreamMessageError> {
-    let index = u8::try_from(ix.index).map_err(|_| {
-        RedisStreamMessageError::InvalidData("InnerInstructions.index".to_string())
-    })?;
+    let index = u8::try_from(ix.index)
+        .map_err(|_| RedisStreamMessageError::InvalidData("InnerInstructions.index".to_string()))?;
     let mut instructions = Vec::with_capacity(ix.instructions.len());
     for inner in ix.instructions {
         let program_id_index = u8::try_from(inner.program_id_index).map_err(|_| {
-            RedisStreamMessageError::InvalidData(
-                "InnerInstruction.program_id_index".to_string(),
-            )
+            RedisStreamMessageError::InvalidData("InnerInstruction.program_id_index".to_string())
         })?;
         instructions.push(InnerInstruction {
             instruction: MessageCompiledInstruction {
@@ -573,7 +570,7 @@ impl<H: MessageHandler> IngestStream<H> {
 
                             tasks.spawn(async move {
                                 let start_time = tokio::time::Instant::now();
-                                let result = handler.handle(map).await.map_err(IngestMessageError::into);
+                                let result = handler.handle(map).await;
                                 let elapsed_time = start_time.elapsed().as_secs_f64();
 
                                 ingest_job_time_set(&config.name, &config.consumer, elapsed_time);

@@ -1323,13 +1323,25 @@ where
                 Expr::tbl(extensions::asset::Entity, extensions::asset::Column::Burnt).eq(x)
             }))
             .add_option(query.is_agent.map(|x| {
-                Expr::tbl(extensions::asset::Entity, extensions::asset::Column::IsAgent).eq(x)
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::IsAgent,
+                )
+                .eq(x)
             }))
             .add_option(query.agent_token.to_owned().map(|x| {
-                Expr::tbl(extensions::asset::Entity, extensions::asset::Column::AgentToken).eq(x)
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::AgentToken,
+                )
+                .eq(x)
             }))
             .add_option(query.asset_signer.to_owned().map(|x| {
-                Expr::tbl(extensions::asset::Entity, extensions::asset::Column::AssetSigner).eq(x)
+                Expr::tbl(
+                    extensions::asset::Entity,
+                    extensions::asset::Column::AssetSigner,
+                )
+                .eq(x)
             }));
 
     if let Some(s) = query.supply {

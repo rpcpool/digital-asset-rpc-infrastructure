@@ -151,11 +151,11 @@ impl SubscriptionTask {
         } = filter;
 
         if let Some(accounts) = accounts {
-            req_accounts.insert(label.clone(), accounts.to_proto());
+            req_accounts.insert(label.clone(), accounts.into_proto());
         }
 
         if let Some(transactions) = transactions {
-            req_transactions.insert(label.clone(), transactions.to_proto());
+            req_transactions.insert(label.clone(), transactions.into_proto());
         }
 
         if let Some(true) = slot {

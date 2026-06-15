@@ -18,7 +18,7 @@ impl ParseResult for SystemProgramAccount {
     {
         self
     }
-    fn result_type(&self) -> ProgramParseResult {
+    fn result_type(&self) -> ProgramParseResult<'_> {
         ProgramParseResult::SystemProgramAccount(self)
     }
 }

@@ -452,7 +452,11 @@ impl ApiContract for DasApi {
             SearchConditionType::All => ConditionType::All,
         });
         let owner_address = validate_opt_pubkey(&owner_address)?;
-        let name = validate_search_with_name(&name, &owner_address)?;
+        let name = if is_agent == Some(true) || agent_token.is_some() || asset_signer.is_some() {
+            name.as_ref().map(|n| n.clone().into_bytes())
+        } else {
+            validate_search_with_name(&name, &owner_address)?
+        };
         let creator_address = validate_opt_pubkey(&creator_address)?;
         let delegate = validate_opt_pubkey(&delegate)?;
 

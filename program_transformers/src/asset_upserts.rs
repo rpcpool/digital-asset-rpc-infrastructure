@@ -665,10 +665,12 @@ pub async fn upsert_assets_metadata_account_columns<T: ConnectionTrait + Transac
                                                 Alias::new("excluded"),
                                                 asset::Column::AssetSigner,
                                             )
-                                            .ne(Expr::tbl(
-                                                asset::Entity,
-                                                asset::Column::AssetSigner,
-                                            )),
+                                            .ne(
+                                                Expr::tbl(
+                                                    asset::Entity,
+                                                    asset::Column::AssetSigner,
+                                                ),
+                                            ),
                                         ),
                                 )
                                 .add(

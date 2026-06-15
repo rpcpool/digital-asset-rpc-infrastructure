@@ -92,10 +92,10 @@ async fn run(args: Args) -> Result<()> {
             .and_then(|s| s.to_str())
             .unwrap_or("(unknown)")
             .to_string();
-        let raw = std::fs::read_to_string(path)
-            .with_context(|| format!("read {}", path.display()))?;
-        let cases: Vec<Value> = serde_json::from_str(&raw)
-            .with_context(|| format!("parse {}", path.display()))?;
+        let raw =
+            std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+        let cases: Vec<Value> =
+            serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
 
         for case in cases {
             let label = case
@@ -149,13 +149,14 @@ async fn run(args: Args) -> Result<()> {
         }
     }
 
-    println!("\n===== {total} requests, {} mismatches, {errors} transport errors =====",
-        mismatches.len());
+    println!(
+        "\n===== {total} requests, {} mismatches, {errors} transport errors =====",
+        mismatches.len()
+    );
 
     if !mismatches.is_empty() {
         let dump = serde_json::to_string_pretty(&Value::Array(mismatches.clone()))?;
-        std::fs::write(MISMATCH_FILE, dump)
-            .with_context(|| format!("write {MISMATCH_FILE}"))?;
+        std::fs::write(MISMATCH_FILE, dump).with_context(|| format!("write {MISMATCH_FILE}"))?;
         println!("wrote {MISMATCH_FILE} ({} entries)", mismatches.len());
         return Err(anyhow!("{} mismatches", mismatches.len()));
     }
@@ -179,11 +180,7 @@ fn build_jsonrpc(case: &Value) -> Result<Value> {
     }))
 }
 
-async fn call(
-    client: &reqwest::Client,
-    url: &str,
-    body: &Value,
-) -> Result<(Value, u128)> {
+async fn call(client: &reqwest::Client, url: &str, body: &Value) -> Result<(Value, u128)> {
     let start = Instant::now();
     let resp = client
         .post(url)

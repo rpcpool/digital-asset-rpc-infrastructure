@@ -380,7 +380,7 @@ impl AccountSnapshotWriter {
         self.update_sender.clone()
     }
 
-    pub fn take_error_receiver(&mut self) -> Option<mpsc::Receiver<()>> {
+    pub const fn take_error_receiver(&mut self) -> Option<mpsc::Receiver<()>> {
         self.error_receiver.take()
     }
 
@@ -865,10 +865,8 @@ async fn download_and_process_snapshot_file(
     // which is *not* the same Rust type as the `solana_sdk::pubkey::Pubkey`
     // used by `program_transformers::AccountInfo`. Bridge via the 32-byte
     // representation, which is stable across both crates.
-    let programs_to_process_bytes: std::collections::HashSet<[u8; 32]> = programs_to_process
-        .iter()
-        .map(|p| p.to_bytes())
-        .collect();
+    let programs_to_process_bytes: std::collections::HashSet<[u8; 32]> =
+        programs_to_process.iter().map(|p| p.to_bytes()).collect();
 
     let mut total_accounts = 0;
 
@@ -902,14 +900,13 @@ async fn download_and_process_snapshot_file(
         // Second pass: re-read each surviving account *with* data, using the
         // public single-account callback API.
         for offset in offsets_to_load {
-            let account_info_opt = accounts.get_stored_account_callback(offset, |full| {
-                AccountInfo {
+            let account_info_opt =
+                accounts.get_stored_account_callback(offset, |full| AccountInfo {
                     pubkey: Pubkey::from(full.pubkey.to_bytes()),
                     owner: Pubkey::from(full.owner.to_bytes()),
                     slot: account_slot,
                     data: full.data.to_vec(),
-                }
-            });
+                });
 
             if let Some(account_info) = account_info_opt {
                 if let Err(e) = account_snapshot_writer_sender.send(account_info).await {

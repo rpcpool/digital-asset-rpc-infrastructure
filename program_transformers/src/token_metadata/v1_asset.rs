@@ -116,14 +116,38 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         true => ChainMutability::Mutable,
         false => ChainMutability::Immutable,
     };
+    let (write_uri, write_metadata, write_mutability, write_reindex) = if uri.is_empty() {
+        if let Some(e) = crate::legacy_tokens::get(&mint_pubkey_array) {
+            (
+                e.uri.clone(),
+                e.metadata.clone(),
+                Mutability::Immutable,
+                Some(false),
+            )
+        } else {
+            (
+                uri.clone(),
+                JsonValue::String("processing".to_string()),
+                Mutability::Mutable,
+                Some(true),
+            )
+        }
+    } else {
+        (
+            uri.clone(),
+            JsonValue::String("processing".to_string()),
+            Mutability::Mutable,
+            Some(true),
+        )
+    };
     let asset_data_model = asset_data::ActiveModel {
         chain_data_mutability: ActiveValue::Set(chain_mutability),
         chain_data: ActiveValue::Set(chain_data_json),
-        metadata_url: ActiveValue::Set(uri.clone()),
-        metadata: ActiveValue::Set(JsonValue::String("processing".to_string())),
-        metadata_mutability: ActiveValue::Set(Mutability::Mutable),
+        metadata_url: ActiveValue::Set(write_uri),
+        metadata: ActiveValue::Set(write_metadata),
+        metadata_mutability: ActiveValue::Set(write_mutability),
         slot_updated: ActiveValue::Set(slot_i),
-        reindex: ActiveValue::Set(Some(true)),
+        reindex: ActiveValue::Set(write_reindex),
         id: ActiveValue::Set(mint_pubkey_vec.clone()),
         raw_name: ActiveValue::Set(Some(name.to_vec())),
         raw_symbol: ActiveValue::Set(Some(symbol.to_vec())),
