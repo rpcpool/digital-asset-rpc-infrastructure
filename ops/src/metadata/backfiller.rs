@@ -10,7 +10,8 @@ use indicatif::HumanDuration;
 use log::{debug, error};
 use reqwest::Client;
 use sea_orm::{
-    ColumnTrait, EntityTrait, JsonValue, PaginatorTrait, QueryFilter, SqlxPostgresConnector,
+    ColumnTrait, EntityTrait, JsonValue, QueryFilter, QueryOrder, QuerySelect,
+    SqlxPostgresConnector,
 };
 use std::sync::Arc;
 use tokio::{sync::mpsc::unbounded_channel, task::JoinSet, time::Instant};
@@ -62,21 +63,40 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
     let control = tokio::spawn(async move {
         let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(db_pool);
 
-        let mut paginator = asset_data::Entity::find()
-            .filter(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
-            .paginate(&conn, batch_size);
+        // Keyset pagination by id; avoids OFFSET re-scans that hit the statement timeout.
+        let mut last_id: Option<Vec<u8>> = None;
 
-        debug!(
-            "download metadata json len: {}",
-            paginator.num_items().await.unwrap_or(0)
-        );
+        loop {
+            let mut query = asset_data::Entity::find()
+                .filter(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())));
 
-        while let Ok(Some(dm)) = paginator.fetch_and_next().await {
-            let download_metadata_info_vec: Vec<DownloadMetadataInfo> = dm
+            if let Some(ref id) = last_id {
+                query = query.filter(asset_data::Column::Id.gt(id.clone()));
+            }
+
+            let rows = match query
+                .order_by_asc(asset_data::Column::Id)
+                .limit(batch_size)
+                .all(&conn)
+                .await
+            {
+                Ok(rows) => rows,
+                Err(e) => {
+                    error!("Failed to fetch asset_data batch: {e}");
+                    break;
+                }
+            };
+
+            if rows.is_empty() {
+                break;
+            }
+
+            last_id = rows.last().map(|row| row.id.clone());
+
+            let download_metadata_info_vec: Vec<DownloadMetadataInfo> = rows
                 .into_iter()
-                .map(|asset_data| DownloadMetadataInfo {
-                    asset_data_id: asset_data.id,
-                    uri: asset_data.metadata_url,
+                .map(|asset_data| {
+                    DownloadMetadataInfo::new(asset_data.id, asset_data.metadata_url)
                 })
                 .collect();
 
@@ -110,14 +130,6 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
     control.await?;
 
     while tasks.join_next().await.is_some() {}
-
-    let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(database_pool.clone());
-    let remaining = asset_data::Entity::find()
-        .filter(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())))
-        .count(&conn)
-        .await?;
-
-    debug!("Remaining metadata json: {}", remaining);
 
     Ok(())
 }

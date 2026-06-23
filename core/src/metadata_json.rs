@@ -87,7 +87,7 @@ pub struct MetadataJsonDownloadWorkerArgs {
     #[arg(long, env, default_value = "25")]
     pub metadata_json_download_worker_count: usize,
     /// The request timeout in milliseconds
-    #[arg(long, env, default_value = "1000")]
+    #[arg(long, env, default_value = "5000")]
     pub metadata_json_download_worker_request_timeout: u64,
 }
 
@@ -272,6 +272,11 @@ pub enum FetchMetadataJsonError {
         source: reqwest::Error,
         url: ReqwestUrl,
     },
+    #[error("json deserialize for url({url}) with {source}")]
+    Deserialize {
+        source: serde_json::Error,
+        url: ReqwestUrl,
+    },
     #[error("response {status} for url ({url}) with {source}")]
     Response {
         source: reqwest::Error,
@@ -288,6 +293,37 @@ pub enum StatusCode {
     Code(reqwest::StatusCode),
 }
 
+fn decode_and_sanitize_metadata_json(
+    bytes: &[u8],
+) -> Result<serde_json::Value, serde_json::Error> {
+    let value = match serde_json::from_slice::<serde_json::Value>(bytes) {
+        Ok(value) => value,
+        Err(_) => {
+            // Non-UTF-8 body (e.g. Latin-1 `é`); fall back to Windows-1252.
+            let (text, _, _) = encoding_rs::WINDOWS_1252.decode(bytes);
+            serde_json::from_str::<serde_json::Value>(&text)?
+        }
+    };
+
+    Ok(sanitize_json_nuls(value))
+}
+
+// Strip NUL from keys/strings; Postgres jsonb rejects it.
+fn sanitize_json_nuls(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::String(s) => serde_json::Value::String(s.replace('\0', "")),
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(arr.into_iter().map(sanitize_json_nuls).collect())
+        }
+        serde_json::Value::Object(map) => serde_json::Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (k.replace('\0', ""), sanitize_json_nuls(v)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 async fn fetch_metadata_json(
     client: Client,
     metadata_json_url: &str,
@@ -299,10 +335,17 @@ async fn fetch_metadata_json(
         let response = client.get(url.clone()).send().await?;
 
         match response.error_for_status() {
-            Ok(res) => res
-                .json::<serde_json::Value>()
-                .await
-                .map_err(|source| FetchMetadataJsonError::Parse { source, url }),
+            Ok(res) => {
+                let bytes = res.bytes().await.map_err(|source| {
+                    FetchMetadataJsonError::Parse {
+                        source,
+                        url: url.clone(),
+                    }
+                })?;
+
+                decode_and_sanitize_metadata_json(&bytes)
+                    .map_err(|source| FetchMetadataJsonError::Deserialize { source, url })
+            }
             Err(source) => {
                 let status = source
                     .status()
