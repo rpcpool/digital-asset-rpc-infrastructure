@@ -10,11 +10,11 @@ use indicatif::HumanDuration;
 use log::{debug, error};
 use reqwest::Client;
 use sea_orm::{
-    ColumnTrait, EntityTrait, JsonValue, QueryFilter, QueryOrder, QuerySelect,
-    SqlxPostgresConnector,
+    sea_query::Expr, ColumnTrait, Condition, EntityTrait, JsonValue, QueryFilter, QueryOrder,
+    QuerySelect, SqlxPostgresConnector,
 };
 use std::sync::Arc;
-use tokio::{sync::mpsc::unbounded_channel, task::JoinSet, time::Instant};
+use tokio::{sync::mpsc::channel, task::JoinSet, time::Instant};
 
 #[derive(Parser, Clone, Debug)]
 pub struct ConfigArgs {
@@ -58,7 +58,8 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
 
     let db_pool = database_pool.clone();
 
-    let (batch_sender, mut batch_receiver) = unbounded_channel::<Vec<DownloadMetadataInfo>>();
+    let (batch_sender, mut batch_receiver) =
+        channel::<Vec<DownloadMetadataInfo>>(worker_count.max(1));
 
     let control = tokio::spawn(async move {
         let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(db_pool);
@@ -67,8 +68,16 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
         let mut last_id: Option<Vec<u8>> = None;
 
         loop {
-            let mut query = asset_data::Entity::find()
-                .filter(asset_data::Column::Metadata.eq(JsonValue::String("processing".to_string())));
+            let mut query = asset_data::Entity::find().filter(
+                Condition::any()
+                    .add(
+                        asset_data::Column::Metadata
+                            .eq(JsonValue::String("processing".to_string())),
+                    )
+                    .add(Expr::cust(
+                        "asset_data.metadata->>'_das_status' = 'unreachable' AND asset_data.metadata->>'_das_url' IS DISTINCT FROM asset_data.metadata_url",
+                    )),
+            );
 
             if let Some(ref id) = last_id {
                 query = query.filter(asset_data::Column::Id.gt(id.clone()));
@@ -100,8 +109,9 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
                 })
                 .collect();
 
-            if batch_sender.send(download_metadata_info_vec).is_err() {
+            if batch_sender.send(download_metadata_info_vec).await.is_err() {
                 error!("Failed to send batch to worker");
+                break;
             }
         }
     });
@@ -114,6 +124,8 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
         ))
         .build()?;
 
+    let retry_config = Arc::new(DownloadMetadataJsonRetryConfig::default());
+
     while let Some(dm_vec) = batch_receiver.recv().await {
         let pool = database_pool.clone();
         if tasks.len() >= worker_count {
@@ -124,6 +136,7 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
             client.clone(),
             pool.clone(),
             dm_vec,
+            Arc::clone(&retry_config),
         ));
     }
 
@@ -138,8 +151,8 @@ async fn fetch_metadata_and_process(
     client: reqwest::Client,
     pool: sqlx::PgPool,
     download_metadata_info: Vec<DownloadMetadataInfo>,
+    config: Arc<DownloadMetadataJsonRetryConfig>,
 ) {
-    let download_metadata_info = download_metadata_info.to_vec();
     debug!(
         "Spawning metadata fetch task for {} assets",
         download_metadata_info.len()
@@ -153,7 +166,7 @@ async fn fetch_metadata_and_process(
             client.clone(),
             pool.clone(),
             d,
-            Arc::new(DownloadMetadataJsonRetryConfig::default()),
+            Arc::clone(&config),
         )
         .await
         {

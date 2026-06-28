@@ -8,7 +8,11 @@ use {
     reqwest::{Client, Url as ReqwestUrl},
     sea_orm::{entity::*, SqlxPostgresConnector},
     serde::{Deserialize, Serialize},
-    std::{sync::Arc, time::Duration},
+    std::{
+        borrow::Cow,
+        sync::Arc,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    },
     tokio::{
         sync::mpsc::{unbounded_channel, UnboundedSender},
         task::{JoinError, JoinHandle},
@@ -324,13 +328,58 @@ fn sanitize_json_nuls(value: serde_json::Value) -> serde_json::Value {
     }
 }
 
+const IPFS_GATEWAY: &str = "https://ipfs.io/ipfs/";
+const ARWEAVE_GATEWAY: &str = "https://arweave.net/";
+
+// Rewrite `ipfs://`/`ar://` URIs to an HTTP gateway; reqwest only speaks http(s).
+fn normalize_metadata_uri(uri: &str) -> Cow<'_, str> {
+    let trimmed = uri.trim();
+
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        return Cow::Borrowed(uri);
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("ipfs://") {
+        let rest = rest.strip_prefix("ipfs/").unwrap_or(rest);
+        return Cow::Owned(format!("{IPFS_GATEWAY}{rest}"));
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("ar://") {
+        return Cow::Owned(format!("{ARWEAVE_GATEWAY}{rest}"));
+    }
+
+    if is_bare_cid(trimmed) {
+        return Cow::Owned(format!("{IPFS_GATEWAY}{trimmed}"));
+    }
+
+    Cow::Borrowed(uri)
+}
+
+// Bare CIDv0 used as the metadata uri (no scheme); validated to avoid false positives.
+// CIDv0 is base58btc of a sha2-256 multihash (0x12 0x20 + 32-byte digest).
+fn is_bare_cid(uri: &str) -> bool {
+    let candidate = uri
+        .split(|c: char| c == '/' || c == '?' || c == '#')
+        .next()
+        .unwrap_or(uri);
+
+    if candidate.len() != 46 || !candidate.starts_with("Qm") {
+        return false;
+    }
+
+    matches!(
+        bs58::decode(candidate).into_vec().as_deref(),
+        Ok([0x12, 0x20, rest @ ..]) if rest.len() == 32
+    )
+}
+
 async fn fetch_metadata_json(
     client: Client,
     metadata_json_url: &str,
     config: Arc<DownloadMetadataJsonRetryConfig>,
 ) -> Result<serde_json::Value, FetchMetadataJsonError> {
     (|| async {
-        let url = ReqwestUrl::parse(metadata_json_url)?;
+        let url = ReqwestUrl::parse(&normalize_metadata_uri(metadata_json_url))?;
 
         let response = client.get(url.clone()).send().await?;
 
@@ -400,7 +449,32 @@ pub async fn perform_metadata_json_task(
 
             Ok(())
         }
-        Err(e) => Err(MetadataJsonTaskError::Fetch(e)),
+        Err(e) => {
+            let tried_at = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+
+            let metadata = serde_json::json!({
+                "_das_status": "unreachable",
+                "_das_url": download_metadata_info.uri,
+                "_das_reason": e.to_string(),
+                "_das_tried_at": tried_at,
+            });
+
+            let active_model = asset_data::ActiveModel {
+                id: Set(download_metadata_info.asset_data_id.clone()),
+                metadata: Set(metadata),
+                reindex: Set(Some(false)),
+                ..Default::default()
+            };
+
+            let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
+
+            active_model.update(&conn).await?;
+
+            Err(MetadataJsonTaskError::Fetch(e))
+        }
     }
 }
 
