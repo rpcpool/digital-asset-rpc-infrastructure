@@ -1,20 +1,17 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use das_core::{
     connect_db, perform_metadata_json_task, DownloadMetadataInfo, DownloadMetadataJsonRetryConfig,
     MetadataJsonDownloadWorkerArgs, PoolArgs,
 };
 
-use digital_asset_types::dao::asset_data;
 use indicatif::HumanDuration;
 use log::{debug, error};
 use reqwest::Client;
-use sea_orm::{
-    sea_query::Expr, ColumnTrait, Condition, EntityTrait, JsonValue, QueryFilter, QueryOrder,
-    QuerySelect, SqlxPostgresConnector,
-};
 use std::sync::Arc;
 use tokio::{sync::mpsc::channel, task::JoinSet, time::Instant};
+
+const SCAN_WINDOW: i64 = 50_000;
 
 #[derive(Parser, Clone, Debug)]
 pub struct ConfigArgs {
@@ -55,65 +52,64 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
     } = context;
 
     let worker_count = metadata_json_download_worker_count;
+    let batch_size = batch_size.max(1) as usize;
 
-    let db_pool = database_pool.clone();
+    let control_pool = database_pool.clone();
 
     let (batch_sender, mut batch_receiver) =
         channel::<Vec<DownloadMetadataInfo>>(worker_count.max(1));
 
     let control = tokio::spawn(async move {
-        let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(db_pool);
-
-        // Keyset pagination by id; avoids OFFSET re-scans that hit the statement timeout.
-        let mut last_id: Option<Vec<u8>> = None;
+        let mut last_id: Vec<u8> = Vec::new();
 
         loop {
-            let mut query = asset_data::Entity::find().filter(
-                Condition::any()
-                    .add(
-                        asset_data::Column::Metadata
-                            .eq(JsonValue::String("processing".to_string())),
-                    )
-                    .add(Expr::cust(
-                        "asset_data.metadata->>'_das_status' = 'unreachable' AND asset_data.metadata->>'_das_url' IS DISTINCT FROM asset_data.metadata_url",
-                    )),
-            );
-
-            if let Some(ref id) = last_id {
-                query = query.filter(asset_data::Column::Id.gt(id.clone()));
-            }
-
-            let rows = match query
-                .order_by_asc(asset_data::Column::Id)
-                .limit(batch_size)
-                .all(&conn)
-                .await
-            {
-                Ok(rows) => rows,
-                Err(e) => {
-                    error!("Failed to fetch asset_data batch: {e}");
-                    break;
-                }
-            };
+            let rows: Vec<(Vec<u8>, String, bool)> = sqlx::query_as(
+                r#"
+                SELECT
+                    id,
+                    metadata_url,
+                    (
+                        metadata = '"processing"'::jsonb
+                        OR (
+                            metadata ->> '_das_status' = 'unreachable'
+                            AND metadata ->> '_das_url' IS DISTINCT FROM metadata_url
+                        )
+                    ) AS is_match
+                FROM asset_data
+                WHERE id > $1
+                ORDER BY id ASC
+                LIMIT $2
+                "#,
+            )
+            .bind(&last_id)
+            .bind(SCAN_WINDOW)
+            .fetch_all(&control_pool)
+            .await
+            .context("fetching asset_data primary-key window")?;
 
             if rows.is_empty() {
                 break;
             }
 
-            last_id = rows.last().map(|row| row.id.clone());
+            last_id = rows
+                .last()
+                .map(|(id, _, _)| id.clone())
+                .expect("non-empty window has a last row");
 
-            let download_metadata_info_vec: Vec<DownloadMetadataInfo> = rows
+            let matches: Vec<DownloadMetadataInfo> = rows
                 .into_iter()
-                .map(|asset_data| {
-                    DownloadMetadataInfo::new(asset_data.id, asset_data.metadata_url)
-                })
+                .filter(|(_, _, is_match)| *is_match)
+                .map(|(id, metadata_url, _)| DownloadMetadataInfo::new(id, metadata_url))
                 .collect();
 
-            if batch_sender.send(download_metadata_info_vec).await.is_err() {
-                error!("Failed to send batch to worker");
-                break;
+            for chunk in matches.chunks(batch_size) {
+                if batch_sender.send(chunk.to_vec()).await.is_err() {
+                    return Ok(());
+                }
             }
         }
+
+        Ok::<(), anyhow::Error>(())
     });
 
     let mut tasks = JoinSet::new();
@@ -140,7 +136,7 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
         ));
     }
 
-    control.await?;
+    control.await??;
 
     while tasks.join_next().await.is_some() {}
 
@@ -162,13 +158,8 @@ async fn fetch_metadata_and_process(
         let timing = Instant::now();
         let asset_data_id = bs58::encode(d.asset_data_id.clone()).into_string();
 
-        if let Err(e) = perform_metadata_json_task(
-            client.clone(),
-            pool.clone(),
-            d,
-            Arc::clone(&config),
-        )
-        .await
+        if let Err(e) =
+            perform_metadata_json_task(client.clone(), pool.clone(), d, Arc::clone(&config)).await
         {
             error!("Asset {} failed: {}", asset_data_id, e);
         }
