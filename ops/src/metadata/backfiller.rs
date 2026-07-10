@@ -68,12 +68,13 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
                 SELECT
                     id,
                     metadata_url,
-                    (
+                    COALESCE(
                         metadata = '"processing"'::jsonb
                         OR (
                             metadata ->> '_das_status' = 'unreachable'
                             AND metadata ->> '_das_url' IS DISTINCT FROM metadata_url
-                        )
+                        ),
+                        false
                     ) AS is_match
                 FROM asset_data
                 WHERE id > $1
