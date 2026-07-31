@@ -6,7 +6,7 @@ use {
     indicatif::HumanDuration,
     log::{debug, error},
     reqwest::{Client, Url as ReqwestUrl},
-    sea_orm::{entity::*, SqlxPostgresConnector},
+    sea_orm::{entity::*, sea_query::Expr, QueryFilter, SqlxPostgresConnector},
     serde::{Deserialize, Serialize},
     std::{
         borrow::Cow,
@@ -19,6 +19,16 @@ use {
         time::Instant,
     },
 };
+
+pub const METADATA_JSON_USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+pub fn build_download_client(request_timeout_ms: u64) -> reqwest::Result<Client> {
+    Client::builder()
+        .timeout(Duration::from_millis(request_timeout_ms))
+        .user_agent(METADATA_JSON_USER_AGENT)
+        .build()
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadMetadataInfo {
@@ -202,9 +212,7 @@ impl MetadataJsonDownloadWorkerBuilder {
             .request_timeout
             .ok_or(MetadataJsonDownloadWorkerError::Option)?;
 
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_millis(request_timeout))
-            .build()?;
+        let client = build_download_client(request_timeout)?;
 
         Ok(MetadataJsonDownloadWorker {
             worker_count: self
@@ -462,16 +470,17 @@ pub async fn perform_metadata_json_task(
                 "_das_tried_at": tried_at,
             });
 
-            let active_model = asset_data::ActiveModel {
-                id: Set(download_metadata_info.asset_data_id.clone()),
-                metadata: Set(metadata),
-                reindex: Set(Some(false)),
-                ..Default::default()
-            };
-
             let conn = SqlxPostgresConnector::from_sqlx_postgres_pool(pool);
 
-            active_model.update(&conn).await?;
+            asset_data::Entity::update_many()
+                .col_expr(asset_data::Column::Metadata, Expr::value(metadata))
+                .col_expr(asset_data::Column::Reindex, Expr::value(Some(false)))
+                .filter(asset_data::Column::Id.eq(download_metadata_info.asset_data_id.clone()))
+                .filter(Expr::cust(
+                    r#"metadata = '"processing"'::jsonb OR metadata->>'_das_status' = 'unreachable'"#,
+                ))
+                .exec(&conn)
+                .await?;
 
             Err(MetadataJsonTaskError::Fetch(e))
         }

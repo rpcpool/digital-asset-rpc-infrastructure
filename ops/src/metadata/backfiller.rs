@@ -1,13 +1,12 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use das_core::{
-    connect_db, perform_metadata_json_task, DownloadMetadataInfo, DownloadMetadataJsonRetryConfig,
-    MetadataJsonDownloadWorkerArgs, PoolArgs,
+    build_download_client, connect_db, perform_metadata_json_task, DownloadMetadataInfo,
+    DownloadMetadataJsonRetryConfig, MetadataJsonDownloadWorkerArgs, PoolArgs,
 };
 
 use indicatif::HumanDuration;
 use log::{debug, error};
-use reqwest::Client;
 use std::sync::Arc;
 use tokio::{sync::mpsc::channel, task::JoinSet, time::Instant};
 
@@ -115,11 +114,7 @@ pub async fn start_backfill(context: MetadataJsonBackfillerContext) -> Result<()
 
     let mut tasks = JoinSet::new();
 
-    let client = Client::builder()
-        .timeout(std::time::Duration::from_millis(
-            metadata_json_download_worker_request_timeout,
-        ))
-        .build()?;
+    let client = build_download_client(metadata_json_download_worker_request_timeout)?;
 
     let retry_config = Arc::new(DownloadMetadataJsonRetryConfig::default());
 

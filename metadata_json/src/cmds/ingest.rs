@@ -1,10 +1,8 @@
 use crate::stream::{Receiver, ReceiverArgs};
 use crate::worker::{Worker, WorkerArgs};
 use clap::Parser;
-use das_core::{connect_db, setup_metrics, MetricsArgs, PoolArgs};
+use das_core::{build_download_client, connect_db, setup_metrics, MetricsArgs, PoolArgs};
 use log::info;
-use reqwest::ClientBuilder;
-use tokio::time::Duration;
 
 #[derive(Parser, Clone, Debug)]
 pub struct IngestArgs {
@@ -31,9 +29,7 @@ pub async fn run(args: IngestArgs) -> Result<(), anyhow::Error> {
 
     setup_metrics(&args.metrics)?;
 
-    let client = ClientBuilder::new()
-        .timeout(Duration::from_millis(args.timeout))
-        .build()?;
+    let client = build_download_client(args.timeout)?;
 
     let worker = Worker::from(args.worker);
 

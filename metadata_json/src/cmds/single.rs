@@ -1,9 +1,7 @@
 use crate::worker::perform_metadata_json_task;
 use clap::Parser;
-use das_core::{connect_db, setup_metrics, MetricsArgs, PoolArgs};
+use das_core::{build_download_client, connect_db, setup_metrics, MetricsArgs, PoolArgs};
 use log::{debug, error};
-use reqwest::ClientBuilder;
-use tokio::time::Duration;
 
 #[derive(Parser, Clone, Debug)]
 pub struct SingleArgs {
@@ -26,9 +24,7 @@ pub async fn run(args: SingleArgs) -> Result<(), anyhow::Error> {
 
     let asset_data = bs58::decode(args.mint.as_str()).into_vec()?;
 
-    let client = ClientBuilder::new()
-        .timeout(Duration::from_millis(args.timeout))
-        .build()?;
+    let client = build_download_client(args.timeout)?;
 
     if let Err(e) = perform_metadata_json_task(client, pool, asset_data).await {
         error!("{}", e);
