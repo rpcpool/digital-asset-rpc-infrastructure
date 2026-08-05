@@ -477,7 +477,7 @@ pub async fn perform_metadata_json_task(
                 .col_expr(asset_data::Column::Reindex, Expr::value(Some(false)))
                 .filter(asset_data::Column::Id.eq(download_metadata_info.asset_data_id.clone()))
                 .filter(Expr::cust(
-                    r#"metadata = '"processing"'::jsonb OR metadata->>'_das_status' = 'unreachable'"#,
+                    r#"(metadata = '"processing"'::jsonb OR metadata->>'_das_status' = 'unreachable')"#,
                 ))
                 .exec(&conn)
                 .await?;
