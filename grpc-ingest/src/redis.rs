@@ -764,6 +764,37 @@ impl<H: MessageHandler> IngestStream<H> {
                                         &config.name,
                                         err
                                     );
+
+                                    if err.code() == Some("NOGROUP") {
+                                        warn!(
+                                            "action=xread_recreate_group stream={} group={} consumer={} message=re-creating consumer group after NOGROUP",
+                                            &config.name, &config.group, &config.consumer
+                                        );
+
+                                        if let Err(e) =
+                                            xgroup_create(&mut connection, &config.name, &config.group)
+                                                .await
+                                        {
+                                            error!(
+                                                "action=xread_recreate_group_failed stream={} error={:?}",
+                                                &config.name, e
+                                            );
+                                        } else if let Err(e) = xgroup_create_consumer(
+                                            &mut connection,
+                                            &config.name,
+                                            &config.group,
+                                            &config.consumer,
+                                        )
+                                        .await
+                                        {
+                                            error!(
+                                                "action=xread_recreate_consumer_failed stream={} error={:?}",
+                                                &config.name, e
+                                            );
+                                        }
+                                    }
+
+                                    sleep(Duration::from_millis(500)).await;
                                 }
                             }
                         }
