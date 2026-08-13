@@ -2000,7 +2000,12 @@ where
         )
         .from_as(asset::Entity, extensions::asset::Entity)
         .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Id).eq(asset_id.clone()))
-        .and_where(Expr::tbl(extensions::asset::Entity, asset::Column::Supply).gt(0))
+        .and_where(
+            Expr::tbl(extensions::asset::Entity, asset::Column::Supply).gt(0).or(
+                Expr::tbl(extensions::asset::Entity, asset::Column::OwnerType)
+                    .ne(OwnerType::Single.as_enum()),
+            ),
+        )
         .to_owned();
 
     let (sql, values) = stmt.build(PostgresQueryBuilder);

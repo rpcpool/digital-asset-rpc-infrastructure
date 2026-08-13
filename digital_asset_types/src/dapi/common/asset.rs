@@ -323,7 +323,14 @@ pub fn v1_content_from_json(asset_data: &extensions::asset::Row) -> Result<Conte
 }
 
 pub fn get_content(data: &extensions::asset::Row) -> Option<Content> {
-    v1_content_from_json(data).ok()
+    Some(v1_content_from_json(data).unwrap_or_else(|_| Content {
+        schema: "https://schema.metaplex.com/nft1.0.json".to_string(),
+        json_uri: String::new(),
+        files: Some(vec![]),
+        metadata: MetadataMap::new(),
+        links: Some(HashMap::new()),
+        category: None,
+    }))
 }
 
 pub fn to_authority(authority: Vec<asset_authority::Model>) -> Vec<Authority> {
