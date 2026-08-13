@@ -2,11 +2,11 @@ use {
     super::{BgTask, FromTaskData, IngesterError, IntoTaskData, TaskData},
     async_trait::async_trait,
     chrono::{NaiveDateTime, Utc},
-    das_core::{DownloadMetadataInfo, DownloadMetadataNotifier},
+    das_core::{build_download_client, DownloadMetadataInfo, DownloadMetadataNotifier},
     digital_asset_types::dao::asset_data,
     futures::future::BoxFuture,
     log::debug,
-    reqwest::{Client, ClientBuilder},
+    reqwest::Client,
     sea_orm::*,
     serde::{Deserialize, Serialize},
     std::{
@@ -89,7 +89,7 @@ impl DownloadMetadataTask {
         uri: String,
         timeout: Duration,
     ) -> Result<serde_json::Value, IngesterError> {
-        let client = ClientBuilder::new().timeout(timeout).build()?;
+        let client = build_download_client(timeout.as_millis() as u64)?;
         let response = Client::get(&client, uri) // Need to check for malicious sites ?
             .send()
             .await?;

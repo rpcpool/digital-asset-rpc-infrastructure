@@ -1,12 +1,10 @@
 use {
     crate::worker::{Worker, WorkerArgs},
     clap::Parser,
-    das_core::{connect_db, setup_metrics, MetricsArgs, PoolArgs},
+    das_core::{build_download_client, connect_db, setup_metrics, MetricsArgs, PoolArgs},
     digital_asset_types::dao::asset_data,
     log::info,
-    reqwest::ClientBuilder,
     sea_orm::{entity::*, prelude::*, query::*, EntityTrait, SqlxPostgresConnector},
-    tokio::time::Duration,
 };
 
 #[derive(Parser, Clone, Debug)]
@@ -34,9 +32,7 @@ pub async fn run(args: BackfillArgs) -> Result<(), anyhow::Error> {
 
     setup_metrics(&args.metrics)?;
 
-    let client = ClientBuilder::new()
-        .timeout(Duration::from_millis(args.timeout))
-        .build()?;
+    let client = build_download_client(args.timeout)?;
 
     let worker = Worker::from(args.worker);
 

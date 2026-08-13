@@ -2399,6 +2399,7 @@ dependencies = [
  "clap 4.6.1",
  "derive_more",
  "digital_asset_types",
+ "encoding_rs",
  "figment",
  "futures",
  "indicatif 0.17.11",

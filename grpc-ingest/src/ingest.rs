@@ -10,8 +10,8 @@ use {
         util::create_shutdown,
     },
     das_core::{
-        create_download_metadata_notifier, DownloadMetadata, DownloadMetadataInfo,
-        DownloadMetadataJsonRetryConfig,
+        build_download_client, create_download_metadata_notifier, DownloadMetadata,
+        DownloadMetadataInfo, DownloadMetadataJsonRetryConfig,
     },
     futures::stream::StreamExt,
     program_transformers::ProgramTransformer,
@@ -200,9 +200,8 @@ pub async fn run(config: ConfigIngest) -> anyhow::Result<()> {
         pool.clone(),
         download_metadata_notifier,
     ));
-    let http_client = reqwest::Client::builder()
-        .timeout(config.download_metadata.request_timeout)
-        .build()?;
+    let http_client =
+        build_download_client(config.download_metadata.request_timeout.as_millis() as u64)?;
 
     let download_metadata = Arc::new(DownloadMetadata::new(http_client, pool.clone()));
     let download_metadatas = IngestStream::build()

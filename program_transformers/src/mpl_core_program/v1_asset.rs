@@ -142,6 +142,14 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
 
     let slot_i = slot as i64;
 
+    let group_authority_changed = matches!(account_data, MplCoreAccountData::Collection(_))
+        && asset_authority::Entity::find()
+            .filter(asset_authority::Column::AssetId.eq(id_vec.clone()))
+            .one(conn)
+            .await?
+            .map(|model| model.authority != update_authority && model.slot_updated <= slot_i)
+            .unwrap_or(true);
+
     let txn = conn.begin().await?;
 
     let set_lock_timeout = "SET LOCAL lock_timeout = '1s';";
@@ -192,7 +200,7 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         .await
         .map_err(|db_err| ProgramTransformerError::AssetIndexError(db_err.to_string()))?;
 
-    if matches!(account_data, MplCoreAccountData::Collection(_)) {
+    if group_authority_changed {
         update_group_asset_authorities(conn, id_vec.clone(), update_authority.clone(), slot_i)
             .await?;
     }
@@ -1150,15 +1158,15 @@ async fn update_group_asset_authorities<T: ConnectionTrait + TransactionTrait>(
     let group_key = "collection".to_string();
     let group_value = bs58::encode(group_value).into_string();
 
-    let mut query = asset_grouping::Entity::find()
-        .filter(asset_grouping::Column::GroupKey.eq(group_key))
-        .filter(asset_grouping::Column::GroupValue.eq(group_value))
-        .cursor_by(asset_grouping::Column::AssetId);
-    let mut query = query.first(1_000);
-
     loop {
+        let mut query = asset_grouping::Entity::find()
+            .filter(asset_grouping::Column::GroupKey.eq(group_key.clone()))
+            .filter(asset_grouping::Column::GroupValue.eq(group_value.clone()))
+            .cursor_by(asset_grouping::Column::AssetId);
+        query.first(1_000);
+
         if let Some(after) = after.clone() {
-            query = query.after(after);
+            query.after(after);
         }
 
         let entries = query.all(conn).await?;
