@@ -40,7 +40,7 @@ impl ProgramParser for SystemProgramParser {
     fn handle_account(
         &self,
         _account_data: &[u8],
-    ) -> Result<Box<(dyn ParseResult + 'static)>, BlockbusterError> {
+    ) -> Result<Box<dyn ParseResult + 'static>, BlockbusterError> {
         Ok(Box::new(SystemProgramAccount))
     }
 }

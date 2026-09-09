@@ -1,7 +1,95 @@
 use {
-    plerkle_serialization::deserializer::*,
+    flatbuffers::{ForwardsUOffset, Vector},
+    plerkle_serialization::{
+        deserializer::*, CompiledInnerInstructions as FBCompiledInnerInstructions,
+        CompiledInstruction as FBCompiledInstruction, InnerInstructions as FBInnerInstructions,
+    },
     program_transformers::{error::ProgramTransformerError, AccountInfo, TransactionInfo},
+    solana_message::compiled_instruction::CompiledInstruction,
+    solana_transaction_status::{InnerInstruction, InnerInstructions},
 };
+
+// Plerkle's own deserializers build Solana 3.x types. These rebuild the same
+// values at the 4.x types this workspace uses. See core/README.md.
+fn deserialize_compiled_instruction(
+    cix: FBCompiledInstruction<'_>,
+) -> Result<CompiledInstruction, PlerkleDeserializerError> {
+    Ok(CompiledInstruction {
+        program_id_index: cix.program_id_index(),
+        accounts: cix
+            .accounts()
+            .ok_or(PlerkleDeserializerError::NotFound)?
+            .bytes()
+            .to_vec(),
+        data: cix
+            .data()
+            .ok_or(PlerkleDeserializerError::NotFound)?
+            .bytes()
+            .to_vec(),
+    })
+}
+
+fn deserialize_compiled_instructions(
+    vec_cix: Vector<'_, ForwardsUOffset<FBCompiledInstruction<'_>>>,
+) -> Result<Vec<CompiledInstruction>, PlerkleDeserializerError> {
+    vec_cix
+        .iter()
+        .map(deserialize_compiled_instruction)
+        .collect()
+}
+
+fn deserialize_compiled_inner_instructions(
+    vec_ixs: Vector<'_, ForwardsUOffset<FBCompiledInnerInstructions<'_>>>,
+) -> Result<Vec<InnerInstructions>, PlerkleDeserializerError> {
+    vec_ixs
+        .iter()
+        .map(|ixs| {
+            let instructions = ixs
+                .instructions()
+                .ok_or(PlerkleDeserializerError::NotFound)?
+                .iter()
+                .map(|ix| {
+                    Ok(InnerInstruction {
+                        instruction: deserialize_compiled_instruction(
+                            ix.compiled_instruction()
+                                .ok_or(PlerkleDeserializerError::NotFound)?,
+                        )?,
+                        stack_height: Some(u32::from(ix.stack_height())),
+                    })
+                })
+                .collect::<Result<Vec<_>, PlerkleDeserializerError>>()?;
+            Ok(InnerInstructions {
+                index: ixs.index(),
+                instructions,
+            })
+        })
+        .collect()
+}
+
+fn deserialize_legacy_inner_instructions(
+    vec_ixs: Vector<'_, ForwardsUOffset<FBInnerInstructions<'_>>>,
+) -> Result<Vec<InnerInstructions>, PlerkleDeserializerError> {
+    vec_ixs
+        .iter()
+        .map(|iixs| {
+            let instructions = iixs
+                .instructions()
+                .ok_or(PlerkleDeserializerError::NotFound)?
+                .iter()
+                .map(|cix| {
+                    Ok(InnerInstruction {
+                        instruction: deserialize_compiled_instruction(cix)?,
+                        stack_height: Some(0),
+                    })
+                })
+                .collect::<Result<Vec<_>, PlerkleDeserializerError>>()?;
+            Ok(InnerInstructions {
+                index: iixs.index(),
+                instructions,
+            })
+        })
+        .collect()
+}
 
 pub fn into_program_transformer_err(e: PlerkleDeserializerError) -> ProgramTransformerError {
     ProgramTransformerError::DeserializationError(e.to_string())
@@ -49,19 +137,17 @@ impl<'a> TryFrom<PlerkleTransactionInfo<'a>> for TransactionInfo {
         let slot = tx_info.slot();
         let signature = PlerkleOptionalStr(tx_info.signature()).try_into()?;
         let account_keys = PlerkleOptionalPubkeyVector(tx_info.account_keys()).try_into()?;
-        let message_instructions = PlerkleCompiledInstructionVector(
+        let message_instructions = deserialize_compiled_instructions(
             tx_info
                 .outer_instructions()
                 .ok_or(PlerkleDeserializerError::NotFound)?,
-        )
-        .try_into()?;
+        )?;
         let compiled = tx_info.compiled_inner_instructions();
         let inner = tx_info.inner_instructions();
         let meta_inner_instructions = if let Some(c) = compiled {
-            PlerkleCompiledInnerInstructionVector(c).try_into()
+            deserialize_compiled_inner_instructions(c)
         } else {
-            PlerkleInnerInstructionsVector(inner.ok_or(PlerkleDeserializerError::NotFound)?)
-                .try_into()
+            deserialize_legacy_inner_instructions(inner.ok_or(PlerkleDeserializerError::NotFound)?)
         }?;
 
         Ok(Self {

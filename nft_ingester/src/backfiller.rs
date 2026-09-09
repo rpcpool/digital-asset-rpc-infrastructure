@@ -249,7 +249,7 @@ impl<'a, T: Messenger> Backfiller<'a, T> {
         let rpc_block_config = RpcBlockConfig {
             encoding: Some(UiTransactionEncoding::Base64),
             commitment: Some(rpc_commitment),
-            max_supported_transaction_version: Some(0),
+            max_supported_transaction_version: Some(1),
             ..RpcBlockConfig::default()
         };
 

@@ -38,7 +38,7 @@ opentelemetry_sdk = { workspace = true, features = ["trace"] }
 program_transformers = { workspace = true }
 prometheus = { workspace = true }
 redis = { workspace = true, features = ["tokio-comp", "tokio-native-tls-comp"] }
-reqwest = { workspace = true, features = ["stream"] }
+reqwest = { workspace = true, features = ["stream", "json"] }
 rust-crypto = { workspace = true }
 sea-orm = { workspace = true, features = ["sqlx-postgres"] }
 serde = { workspace = true }
@@ -58,10 +58,12 @@ yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
 
 solana-program = { workspace = true }
+agave-fs = { workspace = true }
 solana-accounts-db = { workspace = true }
 solana-hard-forks = { workspace = true }
 solana-message = { workspace = true }
 solana-runtime = { workspace = true }
+solana-vote = { workspace = true }
 solana-sdk = { workspace = true }
 solana-stake-interface = { workspace = true }
 solana-system-interface = { workspace = true }

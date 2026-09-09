@@ -2,10 +2,10 @@ use anyhow::Result;
 use backon::ExponentialBuilder;
 use backon::Retryable;
 use clap::Parser;
-use solana_account_decoder::UiAccountEncoding;
+use solana_account_decoder::{UiAccount, UiAccountEncoding};
 use solana_client::rpc_response::RpcTokenAccountBalance;
 use solana_client::{
-    client_error::ClientError,
+    client_error::{ClientError, ClientErrorKind},
     nonblocking::rpc_client::RpcClient,
     rpc_client::GetConfirmedSignaturesForAddress2Config,
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcTransactionConfig},
@@ -29,6 +29,14 @@ pub struct SolanaRpcArgs {
 #[derive(Clone)]
 pub struct Rpc(Arc<RpcClient>);
 
+/// The RPC now returns `UiAccount`. Conversion fails on undecodable data or an
+/// invalid owner, so surface that as an error rather than panicking.
+fn ui_account_to_account(account: UiAccount) -> Result<Account, ClientError> {
+    account.to_account().ok_or_else(|| {
+        ClientErrorKind::Custom("failed to decode account data returned by RPC".to_string()).into()
+    })
+}
+
 impl Rpc {
     pub fn from_config(config: &SolanaRpcArgs) -> Self {
         Rpc(Arc::new(RpcClient::new(config.solana_rpc_url.clone())))
@@ -48,8 +56,8 @@ impl Rpc {
                 .get_transaction_with_config(
                     signature,
                     RpcTransactionConfig {
-                        encoding: Some(UiTransactionEncoding::Base58),
-                        max_supported_transaction_version: Some(0),
+                        encoding: Some(UiTransactionEncoding::Base64),
+                        max_supported_transaction_version: Some(1),
                         commitment: Some(CommitmentConfig {
                             commitment: CommitmentLevel::Finalized,
                         }),
@@ -95,9 +103,9 @@ impl Rpc {
         solana_client::rpc_response::Response<std::option::Option<solana_sdk::account::Account>>,
         ClientError,
     > {
-        (|| async {
+        let response = (|| async {
             self.0
-                .get_account_with_config(
+                .get_ui_account_with_config(
                     pubkey,
                     RpcAccountInfoConfig {
                         encoding: Some(UiAccountEncoding::Base64),
@@ -110,7 +118,14 @@ impl Rpc {
                 .await
         })
         .retry(&ExponentialBuilder::default())
-        .await
+        .await?;
+
+        let value = response.value.map(ui_account_to_account).transpose()?;
+
+        Ok(RpcResponse {
+            context: response.context,
+            value,
+        })
     }
 
     #[allow(deprecated)]
@@ -119,11 +134,11 @@ impl Rpc {
         program: &Pubkey,
         filters: Option<Vec<RpcFilterType>>,
     ) -> Result<Vec<(Pubkey, Account)>, ClientError> {
-        (|| async {
+        let accounts = (|| async {
             let filters = filters.clone();
 
             self.0
-                .get_program_accounts_with_config(
+                .get_program_ui_accounts_with_config(
                     program,
                     RpcProgramAccountsConfig {
                         filters,
@@ -140,7 +155,12 @@ impl Rpc {
                 .await
         })
         .retry(&ExponentialBuilder::default())
-        .await
+        .await?;
+
+        accounts
+            .into_iter()
+            .map(|(pubkey, account)| Ok((pubkey, ui_account_to_account(account)?)))
+            .collect()
     }
 
     #[allow(deprecated)]
@@ -148,9 +168,9 @@ impl Rpc {
         &self,
         pubkeys: &[Pubkey],
     ) -> Result<Vec<Option<Account>>, ClientError> {
-        Ok((|| async {
+        (|| async {
             self.0
-                .get_multiple_accounts_with_config(
+                .get_multiple_ui_accounts_with_config(
                     pubkeys,
                     RpcAccountInfoConfig {
                         commitment: Some(CommitmentConfig {
@@ -163,7 +183,10 @@ impl Rpc {
         })
         .retry(&ExponentialBuilder::default())
         .await?
-        .value)
+        .value
+        .into_iter()
+        .map(|account| account.map(ui_account_to_account).transpose())
+        .collect()
     }
 
     pub async fn get_token_largest_account(&self, mint: Pubkey) -> anyhow::Result<Pubkey> {

@@ -14,6 +14,7 @@ flatbuffers = { workspace = true }
 futures = { workspace = true }
 lazy_static = { workspace = true }
 log = { workspace = true }
+das-core = { workspace = true }
 plerkle_messenger = { workspace = true, features = ['redis'] }
 plerkle_serialization = { workspace = true }
 prometheus = { workspace = true }

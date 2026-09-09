@@ -471,6 +471,7 @@ impl ConfigDownloadMetadataPublish {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigIngesterRedisStreamType {

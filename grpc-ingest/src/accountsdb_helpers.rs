@@ -13,7 +13,7 @@
 #![allow(deprecated)]
 use {
     serde::Deserialize,
-    solana_accounts_db::{ancestors::AncestorsForSerialization, blockhash_queue::BlockhashQueue},
+    solana_accounts_db::blockhash_queue::BlockhashQueue,
     solana_hard_forks::HardForks,
     solana_program::{
         clock::{Epoch, Slot, UnixTimestamp},
@@ -21,9 +21,12 @@ use {
         fee_calculator::{FeeCalculator, FeeRateGovernor},
         hash::Hash,
     },
-    solana_runtime::{bank::BankHashStats, rent_collector::RentCollector, stakes::Stakes},
+    solana_runtime::{
+        bank::BankHashStats, rent_collector::RentCollector, stake_history::StakeHistory,
+    },
     solana_sdk::{deserialize_utils::default_on_eof, inflation::Inflation, pubkey::Pubkey},
     solana_stake_interface::state::Delegation,
+    solana_vote::vote_account::VoteAccounts,
     std::collections::{HashMap, HashSet},
 };
 
@@ -37,7 +40,7 @@ pub struct SerializableAccountStorageEntry {
 #[allow(dead_code)]
 pub struct DeserializableVersionedBank {
     pub blockhash_queue: BlockhashQueue,
-    pub ancestors: AncestorsForSerialization,
+    pub _unused_ancestors: HashMap<Slot, usize>,
     pub hash: Hash,
     pub parent_hash: Hash,
     pub parent_slot: Slot,
@@ -64,10 +67,22 @@ pub struct DeserializableVersionedBank {
     pub rent_collector: RentCollector,
     pub epoch_schedule: EpochSchedule,
     pub inflation: Inflation,
-    pub stakes: Stakes<Delegation>,
+    pub stakes: DeserializableStakes,
     pub unused_accounts: UnusedAccounts,
     pub unused_epoch_stakes: HashMap<Epoch, ()>,
     pub is_delta: bool,
+}
+
+/// Mirrors `solana_runtime::serde_snapshot::DeserializableStakes`, which is
+/// crate-private. `Stakes<T>` itself is no longer `Deserialize`.
+#[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct DeserializableStakes {
+    pub vote_accounts: VoteAccounts,
+    pub stake_delegations: Vec<(Pubkey, Delegation)>,
+    pub unused: u64,
+    pub epoch: Epoch,
+    pub stake_history: StakeHistory,
 }
 
 #[derive(Default, Clone, PartialEq, Eq, Debug, Deserialize)]

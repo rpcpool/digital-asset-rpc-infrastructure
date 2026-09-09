@@ -125,6 +125,7 @@ fn encoded_confirmed_transaction_with_status_meta(
                         stack_height: None,
                     }],
                     address_table_lookups: None,
+                    transaction_config: None,
                 }),
             }),
             meta: Some(UiTransactionStatusMeta {
@@ -145,6 +146,7 @@ fn encoded_confirmed_transaction_with_status_meta(
             }),
         },
         block_time: Some(1628633791),
+        transaction_index: None,
     }
 }
 

@@ -17,10 +17,12 @@ derive_more = { workspace = true }
 digital_asset_types = { workspace = true }
 encoding_rs = "0.8"
 figment = { workspace = true }
+flatbuffers = { workspace = true }
 futures = { workspace = true }
 indicatif = { workspace = true }
 log = { workspace = true }
 plerkle_messenger = { workspace = true }
+plerkle_serialization = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 sea-orm = { workspace = true, features = [
   "sqlx-postgres",
