@@ -221,19 +221,12 @@ pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + Transaction
     columns: AssetMintAccountColumns,
     txn_or_conn: &T,
 ) -> Result<(), DbErr> {
-    let (specification_asset_class, specification_version, owner_type) =
+    let specification_asset_class = SpecificationAssetClass::FungibleToken;
+    let (specification_version, owner_type) =
         if columns.supply == Decimal::from(1) && columns.decimals == 0 {
-            (
-                SpecificationAssetClass::Nft,
-                Some(SpecificationVersions::V1),
-                OwnerType::Single,
-            )
+            (Some(SpecificationVersions::V1), OwnerType::Single)
         } else {
-            (
-                SpecificationAssetClass::FungibleToken,
-                None,
-                OwnerType::Token,
-            )
+            (None, OwnerType::Token)
         };
 
     let active_model = asset::ActiveModel {
@@ -261,6 +254,12 @@ pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + Transaction
                     asset::Column::OwnerType,
                     asset::Column::SpecificationVersion,
                 ])
+                .value(
+                    asset::Column::SpecificationAssetClass,
+                    Expr::cust(
+                        r#"COALESCE("asset"."specification_asset_class", "excluded"."specification_asset_class")"#,
+                    ),
+                )
                 .action_cond_where(
                     Condition::any()
                         .add(
@@ -332,6 +331,13 @@ pub async fn upsert_assets_mint_account_columns<T: ConnectionTrait + Transaction
                                                     asset::Column::SpecificationVersion,
                                                 ),
                                             ),
+                                        )
+                                        .add(
+                                            Expr::tbl(
+                                                asset::Entity,
+                                                asset::Column::SpecificationAssetClass,
+                                            )
+                                            .is_null(),
                                         ),
                                 )
                                 .add(

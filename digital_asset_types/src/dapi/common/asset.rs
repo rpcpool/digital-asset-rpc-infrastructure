@@ -407,13 +407,16 @@ pub fn to_grouping(
 }
 
 pub fn get_interface(asset: &extensions::asset::Row) -> Result<Interface, DbErr> {
-    Ok(Interface::from((
-        asset.specification_version.as_ref(),
-        asset
-            .specification_asset_class
-            .as_ref()
-            .ok_or(DbErr::Custom("interface not found".to_string()))?,
-    )))
+    Ok(match asset.specification_asset_class.as_ref() {
+        Some(class) => Interface::from((asset.specification_version.as_ref(), class)),
+        None => {
+            warn!(
+                "null specification_asset_class for asset {}; serving Interface::Custom",
+                bs58::encode(&asset.id).into_string()
+            );
+            Interface::Custom
+        }
+    })
 }
 
 //TODO -> impl custom error type
