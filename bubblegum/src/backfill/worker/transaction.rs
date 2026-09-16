@@ -68,29 +68,28 @@ impl TryFrom<FetchedEncodedTransactionWithStatusMeta> for TransactionInfo {
             account_keys.push(address);
         }
 
-        let ui_loaded_addresses = match meta.loaded_addresses {
-            OptionSerializer::Some(addresses) => addresses,
-            OptionSerializer::None => {
-                return Err(ErrorKind::Generic(
-                    "loaded addresses data is missing".to_string(),
-                ))
-            }
-            OptionSerializer::Skip => {
-                return Err(ErrorKind::Generic(
-                    "loaded addresses are skipped".to_string(),
-                ));
-            }
-        };
-
-        let writtable_loaded_addresses = ui_loaded_addresses.writable;
-        let readable_loaded_addresses = ui_loaded_addresses.readonly;
-
+        // Only a message that declares lookup tables has loaded addresses. v1
+        // has none, so requiring them unconditionally would reject valid input.
         if msg.address_table_lookups().is_some() {
-            for address in writtable_loaded_addresses {
+            let ui_loaded_addresses = match meta.loaded_addresses {
+                OptionSerializer::Some(addresses) => addresses,
+                OptionSerializer::None => {
+                    return Err(ErrorKind::Generic(
+                        "loaded addresses data is missing".to_string(),
+                    ))
+                }
+                OptionSerializer::Skip => {
+                    return Err(ErrorKind::Generic(
+                        "loaded addresses are skipped".to_string(),
+                    ));
+                }
+            };
+
+            for address in ui_loaded_addresses.writable {
                 account_keys.push(PubkeyString(address).try_into()?);
             }
 
-            for address in readable_loaded_addresses {
+            for address in ui_loaded_addresses.readonly {
                 account_keys.push(PubkeyString(address).try_into()?);
             }
         }
@@ -204,4 +203,72 @@ fn spawn_transaction_worker(
             error!("queue transaction: {:?}", e);
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use solana_sdk::message::VersionedMessage;
+
+    // Shared with the das-core v1 test: a real devnet v1 transaction.
+    const V1_FIXTURE: &str = include_str!("../../../../core/tests/fixtures/transaction_v1.json");
+
+    /// Hits devnet, where transaction v1 is active. Run with:
+    /// `cargo test -p das-bubblegum --lib -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore = "requires network access to devnet"]
+    async fn fetches_and_converts_a_live_v1_transaction() {
+        let rpc = Rpc::from_config(&das_core::SolanaRpcArgs {
+            solana_rpc_url: "https://api.devnet.solana.com".to_string(),
+        });
+
+        let signature: Signature = "5fw6J243j6796Jf7KryyRuw4jkvbioX39gjc4dWW98zNQRTDAcAESMsusX41qtozNZCmkWm2GGmxbKLqJfo6njcR"
+            .parse()
+            .expect("signature parses");
+
+        let fetched = rpc
+            .get_transaction(&signature)
+            .await
+            .expect("devnet returns the v1 transaction");
+
+        let decoded = fetched
+            .transaction
+            .transaction
+            .decode()
+            .expect("live v1 transaction decodes");
+        assert!(
+            matches!(decoded.message, VersionedMessage::V1(_)),
+            "devnet returned a v1 message"
+        );
+
+        let info: TransactionInfo = FetchedEncodedTransactionWithStatusMeta(fetched)
+            .try_into()
+            .expect("live v1 transaction converts");
+
+        println!(
+            "devnet v1 tx: slot={} account_keys={} instructions={}",
+            info.slot,
+            info.account_keys.len(),
+            info.message_instructions.len()
+        );
+        assert_eq!(info.signature, signature);
+        assert_eq!(info.account_keys.len(), 2);
+        assert_eq!(info.message_instructions.len(), 1);
+    }
+
+    #[test]
+    fn builds_transaction_info_from_a_v1_transaction() {
+        let fetched: EncodedConfirmedTransactionWithStatusMeta =
+            serde_json::from_str(V1_FIXTURE).expect("fixture parses");
+        let slot = fetched.slot;
+
+        let info: TransactionInfo = FetchedEncodedTransactionWithStatusMeta(fetched)
+            .try_into()
+            .expect("v1 transaction converts");
+
+        assert_eq!(info.slot, slot);
+        // v1 has no lookup tables, so the key list is exactly the static keys.
+        assert_eq!(info.account_keys.len(), 2);
+        assert_eq!(info.message_instructions.len(), 1);
+    }
 }

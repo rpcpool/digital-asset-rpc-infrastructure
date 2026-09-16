@@ -861,7 +861,7 @@ pub async fn report_xlen<C: AsyncCommands>(
     }
     let xlens: Vec<usize> = pipe.query_async(&mut connection).await?;
 
-    for (stream, xlen) in streams.iter().zip(xlens.into_iter()) {
+    for (stream, xlen) in streams.iter().zip(xlens) {
         redis_xlen_set(stream, xlen);
     }
 
@@ -923,5 +923,253 @@ pub async fn xgroup_delete_consumer<C: AsyncCommands>(
     match result {
         Ok(_) => Ok(()),
         Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::StreamExt;
+    use std::{collections::HashMap, time::Duration};
+    use yellowstone_grpc_client::{ClientTlsConfig, GeyserGrpcClient};
+    use yellowstone_grpc_proto::geyser::{
+        subscribe_update::UpdateOneof, SubscribeRequest, SubscribeRequestFilterTransactions,
+    };
+
+    /// The same real devnet v1 transaction used by the das-core tests.
+    const V1_FIXTURE: &str = include_str!("../../core/tests/fixtures/transaction_v1.json");
+
+    /// Builds the `SubscribeUpdateTransaction` a v1-capable Yellowstone plugin
+    /// emits, then runs it through the real redis-stream parser. Yellowstone
+    /// proto v9 has no `config` field, so a v1 message reaches us as an
+    /// ordinary versioned message; only the keys and instructions matter.
+    #[test]
+    fn parses_a_v1_transaction_from_the_grpc_proto() {
+        use yellowstone_grpc_proto::geyser::SubscribeUpdateTransactionInfo;
+        use yellowstone_grpc_proto::solana::storage::confirmed_block::{
+            CompiledInstruction as ProtoCompiledInstruction, Message as ProtoMessage,
+            MessageHeader as ProtoMessageHeader, Transaction as ProtoTransaction,
+            TransactionStatusMeta as ProtoMeta,
+        };
+
+        let fetched: solana_transaction_status::EncodedConfirmedTransactionWithStatusMeta =
+            serde_json::from_str(V1_FIXTURE).expect("fixture parses");
+        let slot = fetched.slot;
+
+        let decoded = fetched
+            .transaction
+            .transaction
+            .decode()
+            .expect("v1 transaction decodes");
+        let header = decoded.message.header();
+
+        let proto = SubscribeUpdateTransaction {
+            slot,
+            transaction: Some(SubscribeUpdateTransactionInfo {
+                signature: decoded.signatures[0].as_ref().to_vec(),
+                is_vote: false,
+                index: 0,
+                transaction: Some(ProtoTransaction {
+                    signatures: decoded
+                        .signatures
+                        .iter()
+                        .map(|s| s.as_ref().to_vec())
+                        .collect(),
+                    message: Some(ProtoMessage {
+                        header: Some(ProtoMessageHeader {
+                            num_required_signatures: header.num_required_signatures as u32,
+                            num_readonly_signed_accounts: header.num_readonly_signed_accounts
+                                as u32,
+                            num_readonly_unsigned_accounts: header.num_readonly_unsigned_accounts
+                                as u32,
+                        }),
+                        account_keys: decoded
+                            .message
+                            .static_account_keys()
+                            .iter()
+                            .map(|k| k.to_bytes().to_vec())
+                            .collect(),
+                        recent_blockhash: decoded.message.recent_blockhash().to_bytes().to_vec(),
+                        instructions: decoded
+                            .message
+                            .instructions()
+                            .iter()
+                            .map(|ix| ProtoCompiledInstruction {
+                                program_id_index: ix.program_id_index as u32,
+                                accounts: ix.accounts.clone(),
+                                data: ix.data.clone(),
+                            })
+                            .collect(),
+                        // v1 is a versioned message with no lookup tables.
+                        versioned: true,
+                        address_table_lookups: vec![],
+                    }),
+                }),
+                meta: Some(ProtoMeta::default()),
+            }),
+        };
+
+        let mut msg = HashMap::new();
+        msg.insert(
+            REDIS_STREAM_DATA_KEY.to_string(),
+            RedisValue::Data(proto.encode_to_vec()),
+        );
+
+        let info = TransactionInfo::try_parse_msg(msg).expect("v1 proto message parses");
+
+        assert_eq!(info.slot, slot);
+        assert_eq!(info.signature, decoded.signatures[0]);
+        // v1 has no loaded addresses, so the key list is exactly the static keys.
+        assert_eq!(info.account_keys.len(), 2);
+        assert_eq!(info.message_instructions.len(), 1);
+        assert_eq!(
+            info.account_keys,
+            decoded.message.static_account_keys().to_vec()
+        );
+    }
+
+    const BUBBLEGUM: &str = "BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY";
+
+    /// Yellowstone proto v9 has no per-message version: `Message.versioned` is
+    /// true for both v0 and v1. Ask the RPC what version a signature really was.
+    async fn transaction_version(rpc_url: &str, signature: &str) -> Option<i64> {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "getTransaction",
+            "params": [signature, {
+                "encoding": "base64",
+                "maxSupportedTransactionVersion": 1,
+                "commitment": "confirmed"
+            }]
+        });
+        let res: serde_json::Value = reqwest::Client::new()
+            .post(rpc_url)
+            .json(&body)
+            .send()
+            .await
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        match res.get("result")?.get("version")? {
+            serde_json::Value::Number(n) => n.as_i64(),
+            // "legacy"
+            _ => Some(-1),
+        }
+    }
+
+    /// Streams live transactions and runs them through the real redis-stream
+    /// parser. Run with:
+    /// `GRPC_ENDPOINT=... GRPC_X_TOKEN=... cargo test -p das-grpc-ingest --bin das-grpc-ingest -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore = "requires a live Dragon's Mouth endpoint"]
+    async fn parses_live_transactions_from_dragon_mouth() {
+        let endpoint = std::env::var("GRPC_ENDPOINT").expect("GRPC_ENDPOINT");
+        let x_token = std::env::var("GRPC_X_TOKEN").ok();
+
+        let mut client = GeyserGrpcClient::build_from_shared(endpoint)
+            .expect("endpoint")
+            .x_token(x_token)
+            .expect("token")
+            .tls_config(ClientTlsConfig::new().with_native_roots())
+            .expect("tls")
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
+            .connect()
+            .await
+            .expect("connects to Dragon's Mouth");
+
+        // Override to widen the filter, e.g. the memo program on devnet where
+        // the v1 test traffic lives.
+        let account_include =
+            std::env::var("GRPC_ACCOUNT_INCLUDE").unwrap_or_else(|_| BUBBLEGUM.to_string());
+
+        let mut transactions = HashMap::new();
+        transactions.insert(
+            "test".to_string(),
+            SubscribeRequestFilterTransactions {
+                account_include: account_include
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+                ..Default::default()
+            },
+        );
+
+        let (_tx, stream) = client
+            .subscribe_with_request(Some(SubscribeRequest {
+                transactions,
+                ..Default::default()
+            }))
+            .await
+            .expect("subscribes");
+        tokio::pin!(stream);
+
+        let target: usize = std::env::var("GRPC_SAMPLE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5);
+        let verify_rpc = std::env::var("VERIFY_RPC_URL").ok();
+
+        let (mut parsed, mut versioned) = (0usize, 0usize);
+        let mut signatures: Vec<String> = Vec::new();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+
+        while parsed < target && tokio::time::Instant::now() < deadline {
+            let Ok(Some(Ok(update))) =
+                tokio::time::timeout(Duration::from_secs(20), stream.next()).await
+            else {
+                break;
+            };
+
+            let Some(UpdateOneof::Transaction(update)) = update.update_oneof else {
+                continue;
+            };
+
+            if update
+                .transaction
+                .as_ref()
+                .and_then(|t| t.transaction.as_ref())
+                .and_then(|t| t.message.as_ref())
+                .map(|m| m.versioned)
+                .unwrap_or(false)
+            {
+                versioned += 1;
+            }
+
+            // Exactly what grpc2redis writes into the stream.
+            let mut msg = HashMap::new();
+            msg.insert(
+                REDIS_STREAM_DATA_KEY.to_string(),
+                RedisValue::Data(update.encode_to_vec()),
+            );
+
+            let info = TransactionInfo::try_parse_msg(msg).expect("live transaction parses");
+            assert!(!info.account_keys.is_empty());
+            assert!(!info.message_instructions.is_empty());
+            signatures.push(info.signature.to_string());
+            parsed += 1;
+        }
+
+        println!("parsed {parsed} live transactions ({versioned} versioned)");
+        assert!(parsed > 0, "expected at least one live transaction");
+
+        if let Some(rpc_url) = verify_rpc {
+            // The stream is ahead of what the RPC will serve; let it catch up.
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            let (mut legacy, mut v0, mut v1, mut unknown) = (0, 0, 0, 0);
+            for signature in &signatures {
+                match transaction_version(&rpc_url, signature).await {
+                    Some(-1) => legacy += 1,
+                    Some(0) => v0 += 1,
+                    Some(1) => v1 += 1,
+                    _ => unknown += 1,
+                }
+            }
+            println!("versions via RPC: legacy={legacy} v0={v0} v1={v1} unknown={unknown}");
+            if v1 > 0 {
+                println!("PROVEN: {v1} transaction v1 message(s) parsed from the live stream");
+            }
+        }
     }
 }

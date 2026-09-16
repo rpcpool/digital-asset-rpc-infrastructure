@@ -2,6 +2,7 @@ use crate::{
     accountsdb_helpers::{self, AccountsDbFields},
     config::ConfigSnapshot,
 };
+use agave_fs::FileInfo;
 use anyhow::anyhow;
 use bincode::Options;
 use das_core::{DownloadMetadataJsonRetryConfig, MetadataJsonDownloadWorker};
@@ -10,7 +11,7 @@ use futures::stream::StreamExt;
 use program_transformers::AccountInfo;
 use sea_orm::{sea_query::OnConflict, ActiveValue, EntityTrait, SqlxPostgresConnector, Value};
 use sea_orm::{ConnectionTrait, Statement};
-use solana_accounts_db::accounts_file::{AccountsFile, StorageAccess};
+use solana_accounts_db::accounts_file::AccountsFile;
 use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use std::{
@@ -880,8 +881,19 @@ async fn download_and_process_snapshot_file(
         write_version: _write_version,
     } in solana_snapshot
     {
-        let accounts = AccountsFile::new_for_startup(path, current_len, StorageAccess::Mmap)
-            .expect("Unpack account file");
+        // `new_for_startup` takes the used length to be the whole file. The
+        // snapshot metadata says otherwise only if the archive is malformed.
+        let file_len = std::fs::metadata(&path).expect("Stat account file").len() as usize;
+        if file_len != current_len {
+            warn!(
+                path = ?path,
+                file_len,
+                current_len,
+                "account file length differs from snapshot metadata"
+            );
+        }
+        let file_info = FileInfo::new_from_path(path).expect("Open account file");
+        let accounts = AccountsFile::new_for_startup(file_info).expect("Unpack account file");
 
         // First pass: enumerate offsets and tally totals without loading
         // account data — `scan_accounts_without_data` is the only `pub` API

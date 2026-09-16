@@ -8,7 +8,6 @@ use {
     },
     log::{error, info},
     plerkle_messenger::{MessengerConfig, ACCOUNT_BACKFILL_STREAM, TRANSACTION_BACKFILL_STREAM},
-    plerkle_serialization::serializer::seralize_encoded_transaction_with_status,
     prometheus::{IntCounterVec, Opts, Registry},
     solana_client::{
         nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig,
@@ -133,7 +132,7 @@ impl MessengerPool {
         }
 
         let fbb = flatbuffers::FlatBufferBuilder::new();
-        let fbb = seralize_encoded_transaction_with_status(fbb, tx)
+        let fbb = das_core::serialize_encoded_transaction_with_status(fbb, tx)
             .with_context(|| format!("failed to serialize transaction with {signature}"))?;
         let bytes = fbb.finished_data();
 
@@ -329,7 +328,7 @@ async fn send_tx(
         commitment: Some(CommitmentConfig {
             commitment: CommitmentLevel::Finalized,
         }),
-        max_supported_transaction_version: Some(0),
+        max_supported_transaction_version: Some(1),
     };
 
     let client = RpcClient::new(rpc_url);

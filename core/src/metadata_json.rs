@@ -305,9 +305,7 @@ pub enum StatusCode {
     Code(reqwest::StatusCode),
 }
 
-fn decode_and_sanitize_metadata_json(
-    bytes: &[u8],
-) -> Result<serde_json::Value, serde_json::Error> {
+fn decode_and_sanitize_metadata_json(bytes: &[u8]) -> Result<serde_json::Value, serde_json::Error> {
     let value = match serde_json::from_slice::<serde_json::Value>(bytes) {
         Ok(value) => value,
         Err(_) => {
@@ -366,10 +364,7 @@ fn normalize_metadata_uri(uri: &str) -> Cow<'_, str> {
 // Bare CIDv0 used as the metadata uri (no scheme); validated to avoid false positives.
 // CIDv0 is base58btc of a sha2-256 multihash (0x12 0x20 + 32-byte digest).
 fn is_bare_cid(uri: &str) -> bool {
-    let candidate = uri
-        .split(|c: char| c == '/' || c == '?' || c == '#')
-        .next()
-        .unwrap_or(uri);
+    let candidate = uri.split(['/', '?', '#']).next().unwrap_or(uri);
 
     if candidate.len() != 46 || !candidate.starts_with("Qm") {
         return false;
@@ -393,12 +388,13 @@ async fn fetch_metadata_json(
 
         match response.error_for_status() {
             Ok(res) => {
-                let bytes = res.bytes().await.map_err(|source| {
-                    FetchMetadataJsonError::Parse {
+                let bytes = res
+                    .bytes()
+                    .await
+                    .map_err(|source| FetchMetadataJsonError::Parse {
                         source,
                         url: url.clone(),
-                    }
-                })?;
+                    })?;
 
                 decode_and_sanitize_metadata_json(&bytes)
                     .map_err(|source| FetchMetadataJsonError::Deserialize { source, url })

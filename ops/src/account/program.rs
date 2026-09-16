@@ -108,8 +108,7 @@ pub async fn run(config: Args) -> Result<()> {
         let results = futures::future::try_join_all(
             batch
                 .iter()
-                .cloned()
-                .map(|(pubkey, _account)| account_info::fetch(&rpc, pubkey)),
+                .map(|(pubkey, _account)| account_info::fetch(&rpc, *pubkey)),
         )
         .await?;
 

@@ -84,6 +84,7 @@ impl Related<token_accounts::Entity> for asset::Entity {
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for RoyaltyTargetType {
     fn default() -> Self {
         Self::Creators

@@ -22,12 +22,14 @@ impl Related<asset::Entity> for asset_data::Entity {
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for ChainMutability {
     fn default() -> Self {
         Self::Unknown
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for Mutability {
     fn default() -> Self {
         Self::Unknown
