@@ -4,8 +4,9 @@ use crate::{
         asset_v1_account_attachments,
         extensions::{self, asset::AssetSelectStatementExt},
         generated::sea_orm_active_enums::OwnerType,
-        sea_orm_active_enums::V1AccountAttachments,
+        sea_orm_active_enums::{SpecificationAssetClass, V1AccountAttachments},
         token_accounts, tokens, FullAsset, Pagination, SearchAssetsQuery,
+        SELLER_FEE_BASIS_POINTS_INHERIT,
     },
     rpc::{filter::TokenTypeClass, options::Options},
 };
@@ -19,7 +20,8 @@ use sea_orm::{
     QueryFilter, QueryOrder, Statement,
 };
 
-use std::{collections::HashMap, hash::RandomState};
+use solana_sdk::pubkey::Pubkey;
+use std::{collections::HashMap, hash::RandomState, str::FromStr};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn get_by_creator<D>(
@@ -1915,7 +1917,10 @@ where
         filter_out_stale_asset_groupings(&mut asset.groups);
     }
 
-    Ok(full_assets.into_values().collect())
+    let mut assets: Vec<FullAsset> = full_assets.into_values().collect();
+    hydrate_inherited_sfbp_collection_royalties(conn, &mut assets).await?;
+
+    Ok(assets)
 }
 
 pub async fn get_by_id<D>(
@@ -2090,4 +2095,79 @@ fn filter_out_stale_asset_groupings(
                 || (ag.0.slot_updated == max_slot_updated && ag.0.group_value.is_some())
         });
     }
+}
+
+async fn hydrate_inherited_sfbp_collection_royalties(
+    conn: &impl ConnectionTrait,
+    assets: &mut [FullAsset],
+) -> Result<(), DbErr> {
+    let mut asset_to_collection = Vec::new();
+    let mut collection_ids = Vec::new();
+
+    for (i, asset) in assets.iter().enumerate() {
+        if asset.asset.royalty_amount != SELLER_FEE_BASIS_POINTS_INHERIT {
+            continue;
+        }
+        // Mirror Interface::MplBubblegumV2 detection in asset_to_rpc.
+        let is_bubblegum_v2 = matches!(
+            asset.asset.specification_asset_class,
+            Some(SpecificationAssetClass::MplBubblegumV2)
+        ) || (asset.asset.compressed
+            && asset.asset.collection_hash.is_some());
+        if !is_bubblegum_v2 {
+            continue;
+        }
+        let Some(collection_id) = asset
+            .groups
+            .iter()
+            .find(|(group, _)| group.group_key == "collection" && group.verified)
+            .and_then(|(group, _)| group.group_value.as_deref())
+            .and_then(|group_value| Pubkey::from_str(group_value).ok())
+            .map(|pubkey| pubkey.to_bytes().to_vec())
+        else {
+            continue;
+        };
+        asset_to_collection.push((i, collection_id.clone()));
+        if !collection_ids.contains(&collection_id) {
+            collection_ids.push(collection_id);
+        }
+    }
+
+    if collection_ids.is_empty() {
+        return Ok(());
+    }
+
+    let royalties = asset::Entity::find()
+        .filter(asset::Column::Id.is_in(collection_ids.clone()))
+        .all(conn)
+        .await?
+        .into_iter()
+        .map(|asset| (asset.id, asset.royalty_amount))
+        .collect::<HashMap<_, _>>();
+
+    let mut creators_by_collection: HashMap<Vec<u8>, Vec<asset_creators::Model>> = HashMap::new();
+    for creator in asset_creators::Entity::find()
+        .filter(asset_creators::Column::AssetId.is_in(collection_ids))
+        .order_by_asc(asset_creators::Column::AssetId)
+        .order_by_asc(asset_creators::Column::Position)
+        .all(conn)
+        .await?
+    {
+        creators_by_collection
+            .entry(creator.asset_id.clone())
+            .or_default()
+            .push(creator);
+    }
+
+    for creators in creators_by_collection.values_mut() {
+        filter_out_stale_creators(creators);
+    }
+
+    for (i, collection_id) in asset_to_collection {
+        assets[i].inherited_collection_royalty = royalties.get(&collection_id).copied();
+        assets[i].inherited_collection_creators =
+            creators_by_collection.get(&collection_id).cloned();
+    }
+
+    Ok(())
 }
