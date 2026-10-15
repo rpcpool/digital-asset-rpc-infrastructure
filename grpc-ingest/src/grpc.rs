@@ -32,7 +32,7 @@ const PING_ID: i32 = 0;
 
 pub async fn run(config: ConfigGrpc) -> anyhow::Result<()> {
     let redis_client = redis::Client::open(config.redis.url.clone())?;
-    let connection = redis_client.get_multiplexed_tokio_connection().await?;
+    let connection = redis::aio::ConnectionManager::new(redis_client).await?;
 
     let mut shutdown = create_shutdown()?;
 
@@ -97,7 +97,7 @@ pub struct Subscription {
 #[derive(Default)]
 pub struct SubscriptionTask {
     pub config: Arc<ConfigGrpc>,
-    pub connection: Option<redis::aio::MultiplexedConnection>,
+    pub connection: Option<redis::aio::ConnectionManager>,
     pub subscription: Option<Subscription>,
 }
 
@@ -116,7 +116,7 @@ impl SubscriptionTask {
         self
     }
 
-    pub fn connection(mut self, connection: redis::aio::MultiplexedConnection) -> Self {
+    pub fn connection(mut self, connection: redis::aio::ConnectionManager) -> Self {
         self.connection = Some(connection);
         self
     }

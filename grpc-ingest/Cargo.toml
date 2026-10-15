@@ -37,7 +37,7 @@ opentelemetry-jaeger = { workspace = true, features = ["rt-tokio"] }
 opentelemetry_sdk = { workspace = true, features = ["trace"] }
 program_transformers = { workspace = true }
 prometheus = { workspace = true }
-redis = { workspace = true, features = ["tokio-comp", "tokio-native-tls-comp"] }
+redis = { workspace = true, features = ["tokio-comp", "tokio-native-tls-comp", "connection-manager"] }
 reqwest = { workspace = true, features = ["stream", "json"] }
 rust-crypto = { workspace = true }
 sea-orm = { workspace = true, features = ["sqlx-postgres"] }

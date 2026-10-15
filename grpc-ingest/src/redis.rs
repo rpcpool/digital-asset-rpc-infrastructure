@@ -15,7 +15,7 @@ use {
     futures::future::BoxFuture,
     program_transformers::{AccountInfo, ProgramTransformer, SlotInfo, TransactionInfo},
     redis::{
-        aio::MultiplexedConnection,
+        aio::ConnectionManager,
         streams::{StreamId, StreamKey, StreamMaxlen, StreamReadOptions, StreamReadReply},
         AsyncCommands, ErrorKind as RedisErrorKind, RedisResult, Value as RedisValue,
     },
@@ -400,11 +400,11 @@ impl MessageHandler for SlotHandle {
 #[derive(Clone)]
 pub struct Acknowledge {
     config: Arc<ConfigIngestStream>,
-    connection: MultiplexedConnection,
+    connection: ConnectionManager,
 }
 
 impl Acknowledge {
-    pub const fn new(config: Arc<ConfigIngestStream>, connection: MultiplexedConnection) -> Self {
+    pub const fn new(config: Arc<ConfigIngestStream>, connection: ConnectionManager) -> Self {
         Self { config, connection }
     }
 }
@@ -445,7 +445,7 @@ impl Acknowledge {
 
 pub struct IngestStream<H: MessageHandler> {
     config: Arc<ConfigIngestStream>,
-    connection: Option<MultiplexedConnection>,
+    connection: Option<ConnectionManager>,
     handler: Option<H>,
     _handler: PhantomData<H>,
 }
@@ -470,12 +470,12 @@ impl<H: MessageHandler> IngestStream<H> {
         self
     }
 
-    pub fn connection(mut self, connection: MultiplexedConnection) -> Self {
+    pub fn connection(mut self, connection: ConnectionManager) -> Self {
         self.connection = Some(connection);
         self
     }
 
-    async fn read(&self, connection: &mut MultiplexedConnection) -> RedisResult<StreamReadReply> {
+    async fn read(&self, connection: &mut ConnectionManager) -> RedisResult<StreamReadReply> {
         let config = &self.config;
 
         let opts = StreamReadOptions::default()
@@ -838,7 +838,7 @@ impl TrackedPipeline {
         self.count += 1;
     }
 
-    pub async fn flush(&mut self, connection: &mut MultiplexedConnection) -> Result<usize, usize> {
+    pub async fn flush(&mut self, connection: &mut ConnectionManager) -> Result<usize, usize> {
         let result: RedisResult<RedisValue> = self.pipeline.atomic().query_async(connection).await;
         let count = self.count;
         self.count = 0;
