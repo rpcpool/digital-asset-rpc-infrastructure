@@ -15,7 +15,7 @@ use {
     },
     futures::stream::StreamExt,
     program_transformers::ProgramTransformer,
-    redis::{aio::MultiplexedConnection, streams::StreamMaxlen},
+    redis::{aio::ConnectionManager, streams::StreamMaxlen},
     std::sync::Arc,
     tokio::{
         sync::{
@@ -56,7 +56,7 @@ impl DownloadMetadataPublish {
 #[derive(Default)]
 pub struct DownloadMetadataPublishBuilder {
     config: Option<ConfigDownloadMetadataPublish>,
-    connection: Option<MultiplexedConnection>,
+    connection: Option<ConnectionManager>,
 }
 
 impl DownloadMetadataPublishBuilder {
@@ -69,7 +69,7 @@ impl DownloadMetadataPublishBuilder {
         self
     }
 
-    pub fn connection(mut self, connection: MultiplexedConnection) -> Self {
+    pub fn connection(mut self, connection: ConnectionManager) -> Self {
         self.connection = Some(connection);
         self
     }
@@ -180,7 +180,7 @@ impl DownloadMetadataPublishBuilder {
 
 pub async fn run(config: ConfigIngest) -> anyhow::Result<()> {
     let redis_client = redis::Client::open(config.redis)?;
-    let connection = redis_client.get_multiplexed_tokio_connection().await?;
+    let connection = ConnectionManager::new(redis_client).await?;
     let pool = pg_create_pool(config.postgres).await?;
 
     let mut download_metadata_publish = DownloadMetadataPublishBuilder::build()
