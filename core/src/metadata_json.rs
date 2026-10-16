@@ -334,15 +334,27 @@ fn sanitize_json_nuls(value: serde_json::Value) -> serde_json::Value {
     }
 }
 
-const IPFS_GATEWAY: &str = "https://ipfs.io/ipfs/";
+const IPFS_GATEWAY: &str = "https://ipfs.filebase.io/ipfs/";
 const ARWEAVE_GATEWAY: &str = "https://arweave.net/";
 
-// Rewrite `ipfs://`/`ar://` URIs to an HTTP gateway; reqwest only speaks http(s).
+// Public IPFS gateways that are shut down or refuse non-browser clients.
+// Metadata hosted on them is fetched through IPFS_GATEWAY instead.
+const REPLACED_IPFS_GATEWAYS: &[&str] = &[
+    "cloudflare-ipfs.com",
+    "cf-ipfs.com",
+    "ipfs.io",
+    "gateway.ipfs.io",
+    "dweb.link",
+    "nftstorage.link",
+    "w3s.link",
+];
+
+// Rewrite `ipfs://`/`ar://` URIs and replaced IPFS gateways to a working HTTP gateway.
 fn normalize_metadata_uri(uri: &str) -> Cow<'_, str> {
     let trimmed = uri.trim();
 
     if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-        return Cow::Borrowed(uri);
+        return replace_ipfs_gateway(trimmed).map_or(Cow::Borrowed(uri), Cow::Owned);
     }
 
     if let Some(rest) = trimmed.strip_prefix("ipfs://") {
@@ -359,6 +371,30 @@ fn normalize_metadata_uri(uri: &str) -> Cow<'_, str> {
     }
 
     Cow::Borrowed(uri)
+}
+
+// Handles path gateways (`https://ipfs.io/ipfs/<cid>/..`) and subdomain gateways
+// (`https://<cid>.ipfs.nftstorage.link/..`) on the replaced hosts only.
+fn replace_ipfs_gateway(uri: &str) -> Option<String> {
+    let url = ReqwestUrl::parse(uri).ok()?;
+    let host = url.host_str()?;
+
+    let mut rest = if REPLACED_IPFS_GATEWAYS.contains(&host) {
+        url.path().strip_prefix("/ipfs/")?.to_string()
+    } else {
+        let (cid, gateway) = host.split_once(".ipfs.")?;
+        if !REPLACED_IPFS_GATEWAYS.contains(&gateway) {
+            return None;
+        }
+        format!("{cid}{}", url.path().trim_end_matches('/'))
+    };
+
+    if let Some(query) = url.query() {
+        rest.push('?');
+        rest.push_str(query);
+    }
+
+    Some(format!("{IPFS_GATEWAY}{rest}"))
 }
 
 // Bare CIDv0 used as the metadata uri (no scheme); validated to avoid false positives.
