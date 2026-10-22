@@ -54,7 +54,14 @@ pub async fn burn_v1_asset<T: ConnectionTrait + TransactionTrait>(
                             Expr::tbl(Alias::new("excluded"), asset::Column::Burnt)
                                 .ne(Expr::tbl(asset::Entity, asset::Column::Burnt)),
                         )
-                        .add(Expr::tbl(asset::Entity, asset::Column::SlotUpdated).lte(slot_i)),
+                        .add(
+                            Condition::any()
+                                .add(Expr::tbl(asset::Entity, asset::Column::SlotUpdated).is_null())
+                                .add(
+                                    Expr::tbl(asset::Entity, asset::Column::SlotUpdated)
+                                        .lte(slot_i),
+                                ),
+                        ),
                 )
                 .to_owned(),
         )

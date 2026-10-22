@@ -58,7 +58,14 @@ pub async fn burn_v1_asset<T: ConnectionTrait + TransactionTrait>(
                             Expr::tbl(Alias::new("excluded"), asset::Column::Burnt)
                                 .ne(Expr::tbl(asset::Entity, asset::Column::Burnt)),
                         )
-                        .add(Expr::tbl(asset::Entity, asset::Column::SlotUpdated).lte(slot_i)),
+                        .add(
+                            Condition::any()
+                                .add(Expr::tbl(asset::Entity, asset::Column::SlotUpdated).is_null())
+                                .add(
+                                    Expr::tbl(asset::Entity, asset::Column::SlotUpdated)
+                                        .lte(slot_i),
+                                ),
+                        ),
                 )
                 .to_owned(),
         )
@@ -485,6 +492,7 @@ pub async fn save_v1_asset<T: ConnectionTrait + TransactionTrait>(
         frozen: ActiveValue::Set(frozen),
         delegate: ActiveValue::Set(transfer_delegate.clone()),
         slot_updated_token_account: ActiveValue::Set(Some(slot_i)),
+        slot_updated: ActiveValue::Set(Some(slot_i)),
         is_agent: ActiveValue::Set(is_agent),
         asset_signer: ActiveValue::Set(asset_signer_bytes),
         ..Default::default()
