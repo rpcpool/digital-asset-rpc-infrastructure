@@ -13,9 +13,7 @@ use crate::{
 use indexmap::IndexMap;
 use sea_orm::{
     prelude::Decimal,
-    sea_query::{
-        Alias, Condition, ConditionType, Expr, PostgresQueryBuilder, Query, SimpleExpr, UnionType,
-    },
+    sea_query::{Alias, Condition, ConditionType, Expr, PostgresQueryBuilder, Query, UnionType},
     ActiveEnum, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, FromQueryResult, JoinType, Order,
     QueryFilter, QueryOrder, Statement,
 };
@@ -1445,10 +1443,10 @@ where
             DbErr::Custom("Could not convert raw name bytes into string for comparison".to_owned())
         })?;
 
-        let name_expr = SimpleExpr::Custom(format!(
-            "extension_assets.chain_data->>'name' LIKE '%{}%'",
-            name_as_str
-        ));
+        let name_expr = Expr::cust_with_values(
+            "extension_assets.chain_data->>'name' LIKE $1",
+            [format!("%{}%", name_as_str)],
+        );
 
         conditions = conditions.add(name_expr);
     }
