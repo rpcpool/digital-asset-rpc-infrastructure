@@ -37,6 +37,10 @@ pub struct PoolArgs {
     #[arg(long, env, default_value = "true")]
     #[serde(default = "PoolArgs::default_database_test_before_acquire")]
     pub database_test_before_acquire: bool,
+    /// The server-side statement timeout in milliseconds.
+    #[arg(long, env, default_value = "30000")]
+    #[serde(default = "PoolArgs::default_database_statement_timeout")]
+    pub database_statement_timeout: u64,
 }
 
 impl PoolArgs {
@@ -63,6 +67,10 @@ impl PoolArgs {
     pub const fn default_database_test_before_acquire() -> bool {
         true
     }
+
+    pub const fn default_database_statement_timeout() -> u64 {
+        30000
+    }
 }
 
 ///// Establishes a connection to the database using the provided configuration.
@@ -75,10 +83,14 @@ impl PoolArgs {
 /////
 ///// * `Result<PgPool, sqlx::Error>` - On success, returns a `PgPool`. On failure, returns a `sqlx::Error`.
 pub async fn connect_db(config: &PoolArgs) -> Result<PgPool, sqlx::Error> {
+    let statement_timeout = config.database_statement_timeout.to_string();
     let options: PgConnectOptions = config
         .database_url
         .parse::<PgConnectOptions>()?
-        .options([("statement_timeout", "30000"), ("lock_timeout", "2000")]);
+        .options([
+            ("statement_timeout", statement_timeout.as_str()),
+            ("lock_timeout", "2000"),
+        ]);
 
     PgPoolOptions::new()
         .min_connections(config.database_min_connections)
